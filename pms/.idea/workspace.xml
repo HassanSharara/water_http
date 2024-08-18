@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="CargoProjects">
+    <cargoProject FILE="$PROJECT_DIR$/Cargo.toml" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="a258730d-1c79-45b0-bfe6-c4d0f5810c39" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/../.idea/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../.idea/knife_web_framework_lib.iml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../.idea/material_theme_project_new.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../.idea/modules.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../.idea/vcs.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/functions_builder/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/lib.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/.rustc_info.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/CACHEDIR.TAG" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.cargo-lock" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/pms-21d03e6279fcece5/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/pms-21d03e6279fcece5/lib-pms" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/pms-21d03e6279fcece5/lib-pms.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/pms-acd194b2a593805b/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/pms-acd194b2a593805b/test-lib-pms" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/pms-acd194b2a593805b/test-lib-pms.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-f102800c09fd2563/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-f102800c09fd2563/lib-proc_macro2" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-f102800c09fd2563/lib-proc_macro2.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-fca4143e57a9bc2f/build-script-build-script-build" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-fca4143e57a9bc2f/build-script-build-script-build.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-fca4143e57a9bc2f/dep-build-script-build-script-build" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-fca4143e57a9bc2f/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-fcec013a6ae2c7ae/run-build-script-build-script-build" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/proc-macro2-fcec013a6ae2c7ae/run-build-script-build-script-build.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/quote-86e3d4adf74db58f/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/quote-86e3d4adf74db58f/lib-quote" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/quote-86e3d4adf74db58f/lib-quote.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/syn-5913174c4eb4581e/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/syn-5913174c4eb4581e/lib-syn" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/syn-5913174c4eb4581e/lib-syn.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/unicode-ident-a890cd97ca9dad9d/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/unicode-ident-a890cd97ca9dad9d/lib-unicode-ident" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/.fingerprint/unicode-ident-a890cd97ca9dad9d/lib-unicode-ident.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fca4143e57a9bc2f/build-script-build.exe" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fca4143e57a9bc2f/build_script_build-fca4143e57a9bc2f.d" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fca4143e57a9bc2f/build_script_build-fca4143e57a9bc2f.exe" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fca4143e57a9bc2f/build_script_build-fca4143e57a9bc2f.pdb" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fca4143e57a9bc2f/build_script_build.pdb" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fcec013a6ae2c7ae/invoked.timestamp" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fcec013a6ae2c7ae/out/proc_macro2.d" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fcec013a6ae2c7ae/output" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fcec013a6ae2c7ae/root-output" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/target/debug/build/proc-macro2-fcec013a6ae2c7ae/stderr" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/framework_http/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/framework_http/request/cookies.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/framework_http/request/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/framework_http/request/multipart_form.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/framework_http/request/x_www_form_urlencoded.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/framework_http/response/mod.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/main.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/../src/structure/mod.rs" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$/.." />
+  </component>
+  <component name="MacroExpansionManager">
+    <option name="directoryName" value="r6oyoecz" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 1
+}]]></component>
+  <component name="ProjectId" id="2kCBwLepaeM7YkSgB6Y9lZh8FM8" />
+  <component name="ProjectLevelVcsManager">
+    <ConfirmationsSetting value="2" id="Add" />
+  </component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_ADD_EXTERNAL_FILES": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.rust.reset.selective.auto.import": "true",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "D:/projects/server/Rust/knife_web_framework_lib",
+    "nodejs_package_manager_path": "npm",
+    "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
+    "org.rust.first.attach.projects": "true"
+  }
+}]]></component>
+  <component name="RunManager">
+    <configuration name="Test pms" type="CargoCommandRunConfiguration" factoryName="Cargo Command">
+      <option name="command" value="test --workspace" />
+      <option name="workingDirectory" value="file://$PROJECT_DIR$" />
+      <envs />
+      <option name="emulateTerminal" value="true" />
+      <option name="channel" value="DEFAULT" />
+      <option name="requiredFeatures" value="true" />
+      <option name="allFeatures" value="false" />
+      <option name="withSudo" value="false" />
+      <option name="buildTarget" value="REMOTE" />
+      <option name="backtrace" value="SHORT" />
+      <option name="isRedirectInput" value="false" />
+      <option name="redirectInputPath" value="" />
+      <method v="2">
+        <option name="CARGO.BUILD_TASK_PROVIDER" enabled="true" />
+      </method>
+    </configuration>
+  </component>
+  <component name="RustProjectSettings">
+    <option name="toolchainHomeDirectory" value="$USER_HOME$/.cargo/bin" />
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="a258730d-1c79-45b0-bfe6-c4d0f5810c39" name="Changes" comment="" />
+      <created>1722777915969</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1722777915969</updated>
+      <workItem from="1722777917045" duration="256000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <option name="ADD_EXTERNAL_FILES_SILENTLY" value="true" />
+  </component>
+</project>
