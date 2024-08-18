@@ -5,13 +5,13 @@
 #[macro_export]
 macro_rules! MiddlewareBuilder {
     [ $context:ident  $async:tt $bb:block ]=>{
-            knife_web_framework_lib::MiddlewareBuilder!($context=> $async $bb)
+            water_http::MiddlewareBuilder!($context=> $async $bb)
     };
     [ ($context:ident) $async:tt  $bb:block ]=>{
-            knife_web_framework_lib::MiddlewareBuilder!($context=>$async $bb)
+            water_http::MiddlewareBuilder!($context=>$async $bb)
     };
     [ ($context:ident) => $async:tt $bb:block ]=>{
-            knife_web_framework_lib::MiddlewareBuilder!($context=>$async $bb)
+            water_http::MiddlewareBuilder!($context=>$async $bb)
     };
     ( $context:ident => $async:tt $bb:block )=>{
             |$context : &mut ___CONTEXT| Box::pin( $async move $bb)
@@ -30,7 +30,7 @@ macro_rules! FrameWorkControllerBuilder {
         )*
         },
         $($attributes:ident -> $data:expr ,)*} =>  {
-        knife_web_framework_lib::FrameWorkControllerBuilder! {
+        water_http::FrameWorkControllerBuilder! {
             holder -> $holder_type,
             name -> $name,
             functions -> {
@@ -57,7 +57,7 @@ macro_rules! FrameWorkControllerBuilder {
         )*
         },
         $($attributes:ident -> $data:expr ,)*} =>  {
-        knife_web_framework_lib::FrameWorkControllerBuilder! {
+        water_http::FrameWorkControllerBuilder! {
             holder -> $holder_type,
             name -> $name,
             functions -> {
@@ -86,7 +86,7 @@ macro_rules! FrameWorkControllerBuilder {
           )*
         },
         $($attributes:ident -> $data:expr ,)*} =>  {
-        knife_web_framework_lib::FrameWorkControllerBuilder! {
+        water_http::FrameWorkControllerBuilder! {
             holder -> $holder_type,
             name -> $name,
             functions -> {
@@ -123,13 +123,13 @@ macro_rules! FrameWorkControllerBuilder {
           pub mod $name {
                #![allow(non_snake_case)]
                pub type ___CONTEXTHOLDER = $holder_type;
-               pub type ___CONTEXT = knife_web_framework_lib::framework_http::HttpContext<___CONTEXTHOLDER>;
-               pub type __HttpContextRController = knife_web_framework_lib::structure::HttpContextRController<___CONTEXTHOLDER>;
+               pub type ___CONTEXT = water_http::framework_http::HttpContext<___CONTEXTHOLDER>;
+               pub type __HttpContextRController = water_http::structure::HttpContextRController<___CONTEXTHOLDER>;
 
                $(
                #[pms::route($method,$($path)/+)]
                pub async fn $fn_name($para:&mut ___CONTEXT)   {
-                knife_web_framework_lib::path_setter!($para->$($path)/+);
+                water_http::path_setter!($para->$($path)/+);
                    $($body_tokens)*
                }
                )*
@@ -137,7 +137,7 @@ macro_rules! FrameWorkControllerBuilder {
 
                 let controller = __HttpContextRController{
                  $(
-                 $attributes:knife_web_framework_lib::framework_att_setter!($attributes->$data),
+                 $attributes:water_http::framework_att_setter!($attributes->$data),
                  )*
                  functions:vec![
                    $(
@@ -180,7 +180,7 @@ macro_rules! path_setter {
     };
     ( $context_name:ident -> $($p_item:tt)/+) => {
         $(
-            knife_web_framework_lib::path_setter![$context_name () $p_item ];
+            water_http::path_setter![$context_name () $p_item ];
         )+
     };
 }
