@@ -6,6 +6,20 @@ use proc_macro::{Delimiter, Span, TokenStream, TokenTree};
 use functions_builder::*;
 use quote::quote;
 
+
+#[proc_macro_attribute]
+pub fn main(input:TokenStream,stream:TokenStream)->TokenStream{
+    if !input.to_string().is_empty() {
+        panic!("there is no parameters need to parse please delete this : {}",input.to_string());
+    }
+    let mut result = Vec::<TokenTree>::new();
+    let q:TokenStream = quote! {
+        #[tokio::main]
+    }.into();
+    result.extend(q.into_iter());
+    result.extend(stream.into_iter());
+    vec_to_token(result)
+}
 #[proc_macro_attribute]
 pub
 fn route(input:TokenStream,parameters:TokenStream)->TokenStream{
