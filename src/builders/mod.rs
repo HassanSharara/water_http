@@ -127,7 +127,6 @@ macro_rules! FrameWorkControllerBuilder {
                pub type __HttpContextRController = water_http::structure::HttpContextRController<___CONTEXTHOLDER>;
 
                $(
-               #[route($method,$($path)/+)]
                pub async fn $fn_name($para:&mut ___CONTEXT)   {
                 water_http::path_setter!($para->$($path)/+);
                    $($body_tokens)*
