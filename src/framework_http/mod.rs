@@ -697,10 +697,8 @@ async fn build_headers(_peer:&mut TcpStream,mut req_headers:Option<Vec<&str>>)->
                 header_string.push_str(&string_result);
                 break;
             }
-
             let mut counter:u8 = 0 ;
             let mut _i:Option<usize> = None;
-
             for (index,byte) in buf.iter().enumerate() {
                 match counter {
                     0 =>{
@@ -788,10 +786,11 @@ pub mod server_runner {
             if ! addr.contains(":") {
                 addr = format!("{}",addr);
             }
-            workers.push(tokio::spawn(async move {
-                println!("listening on {}",addr);
+            workers.push(
+                tokio::spawn(async move {
                 tcp_connections_threads_generator::<DataHolderGeneric>(&addr,controllers()).await;
-            }));
+                })
+            );
         }
 
         for worker in workers {
@@ -902,32 +901,3 @@ pub mod server_runner {
 
 
 
-
-// use std::sync::Arc;
-// use tokio::sync::Mutex;
-// type ContextWrapper<DataHolderGeneric> = Arc<Mutex<HttpContext<DataHolderGeneric>>>;
-// static  mut CONNECTIONS: Option<HashMap<String,(IpAddr,ContextWrapper)>> = None;
-
-
-// fn _cache_connection(ip:IpAddr,context:HttpContext)->Arc<Mutex<HttpContext>>{
-//     unsafe {
-//         let x =  CONNECTIONS.as_mut().unwrap();
-//         let data = Arc::new(Mutex::new(context));
-//         let cloned = data.clone();
-//         x.insert(ip.to_string(),(ip,data));
-//         return cloned;
-//     }
-// }
-
-
-// fn _cache_get(k:&str)->Option<&'static (IpAddr, ContextWrapper)>{
-//     unsafe {
-//         let res: Option<&(IpAddr, ContextWrapper)> =   CONNECTIONS.as_mut().unwrap().get(k);
-//         res
-//     }
-// }
-// fn clean_cached_connection(_ip:&str){
-//     unsafe {
-//         CONNECTIONS.as_mut().unwrap().remove(_ip);
-//     }
-// }
