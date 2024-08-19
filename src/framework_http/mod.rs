@@ -786,10 +786,10 @@ pub mod server_runner {
         for address in &configurations.addresses {
             let mut addr = address.replace("[","").replace("]", "");
             if ! addr.contains(":") {
-                addr = format!("0.0.0.0:{}",addr);
+                addr = format!("{}",addr);
             }
             workers.push(tokio::spawn(async move {
-
+                println!("listening on {}",addr);
                 tcp_connections_threads_generator::<DataHolderGeneric>(&addr,controllers()).await;
             }));
         }
