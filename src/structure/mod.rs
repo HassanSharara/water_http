@@ -15,12 +15,10 @@ pub struct HttpContextRController<T:Send + 'static>{
     pub middleware:Option<HttpMiddleWare<T>>,
     pub functions:Vec<(String,String,HttpContextRCFunction<T>)>,
     pub children:Vec<HttpContextRController<T>>,
-    pub apply_parents_middlewares:bool
+    pub apply_parents_middlewares:bool,
 }
 
-unsafe impl<T:Send + 'static> Sync for HttpContextRController<T> {
-
-}
+unsafe impl<T:Send + 'static> Sync for HttpContextRController<T> {}
 
 impl <T:Send> HttpContextRController<T> {
     #[async_recursion::async_recursion]
@@ -56,7 +54,50 @@ impl <T:Send> HttpContextRController<T> {
     }
 
 
-    pub fn ____insure_binding(&'static mut self){
+
+
+    pub fn get_full_father_prefixes(&mut self)->String{
+        let mut  path = String::new();
+        self.___get_ff__pp(&mut path,None);
+        return path;
+    }
+
+    #[allow(non_snake_case)]
+    fn ___get_ff__pp(&mut self,path:&mut String,father:Option<&mut HttpContextRController<T>>){
+        if let Some(prefix) = self.prefix.as_ref() {
+            *path = format!("{}/{}",prefix,path);
+        }
+         if let Some(father) =father {
+             if let Some(ref prefix) = father.prefix {
+                 *path = format!("{}/{}",prefix,path);
+             }
+             father.___get_ff__pp(path,Some(self));
+         }
+    }
+
+    pub (crate) fn ___after_insure_binding_build_router_map(&mut self){
+        let mut  full_path = self.get_full_father_prefixes();
+        for (method,path,function) in &mut self.functions {
+            let mut full_path = full_path.clone();
+            if let Some(_index) = method.find("_") {
+                let mut name = (&method[_index+1..]).to_string();
+                *method = (&method[.._index]).to_string();
+                full_path.push_str(path);
+                full_path = full_path.replace("//","/");
+                unsafe  {
+                    crate::___ROUTERS
+                        .as_mut()
+                        .unwrap()
+                        .insert(name,full_path);
+                };
+            }
+
+        }
+        for child in &mut self.children{
+            child.___after_insure_binding_build_router_map();
+        }
+    }
+    pub (crate) fn ____insure_binding(&'static mut self){
         let self_pointer :*const Self = self;
         for child in &mut self.children {
             child.father_controller = Some(self_pointer);
@@ -69,15 +110,3 @@ pub enum MiddlewareResult {
     Stop,
 }
 
-
-pub enum RequestMethods {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-    HEAD,
-    OPTIONS,
-    CONNECT,
-    TRACE,
-}

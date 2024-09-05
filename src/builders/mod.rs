@@ -18,25 +18,27 @@ macro_rules! MiddlewareBuilder {
     };
 }
 #[macro_export]
-macro_rules! FrameWorkControllerBuilder {
+macro_rules! WaterController {
+
+    // pattern
     {
-        holder -> $holder_type:path ,
-        name -> $name:ident,
-        functions ->  {
+         holder -> $holder_type:path ,
+         name -> $name:ident,
+         functions ->  {
             $(
-        $method:ident => $($path:tt)/+ => $fn_name:ident($function_para:ident) async  {
+           $method:ident => $($path:tt)/+ => $fn_name:ident($para:ident) $async:tt  {
             $($body_tokens:tt)*
         }
         )*
         },
         $($attributes:ident -> $data:expr ,)*} =>  {
-        water_http::FrameWorkControllerBuilder! {
+        water_http::WaterController! {
             holder -> $holder_type,
             name -> $name,
             functions -> {
                 $(
                  #[route($method,$($path)/+)]
-                pub async fn $fn_name($function_para)  {
+                pub $async fn $fn_name($para)  {
                      $($body_tokens)*
                  })*
             },
@@ -46,24 +48,30 @@ macro_rules! FrameWorkControllerBuilder {
 
 
 
-        {
+
+    // pattern
+    {
+        extra_code-> {$($code:tt)*},
         holder -> $holder_type:path ,
         name -> $name:ident,
         functions ->  {
             $(
-         $($path:tt)/+ => $fn_name:ident($function_para:ident) async  {
+        $method:ident => $($path:tt)/+ => $fn_name:ident($function_para:ident) $async:tt  {
             $($body_tokens:tt)*
         }
         )*
         },
         $($attributes:ident -> $data:expr ,)*} =>  {
-        water_http::FrameWorkControllerBuilder! {
+        water_http::WaterController! {
+            extra_code -> {
+                $($code)*
+            },
             holder -> $holder_type,
             name -> $name,
             functions -> {
                 $(
-                 #[route($($path)/+)]
-                pub async fn $fn_name($function_para)  {
+                 #[route($method,$($path)/+)]
+                pub $async fn $fn_name($function_para)  {
                      $($body_tokens)*
                  })*
             },
@@ -73,26 +81,115 @@ macro_rules! FrameWorkControllerBuilder {
 
 
 
+       // pattern
+        {
+        holder -> $holder_type:path ,
+        name -> $name:ident,
+        functions ->  {
+            $(
+         $($path:tt)/+ => $fn_name:ident($function_para:ident) $async:tt  {
+            $($body_tokens:tt)*
+        }
+        )*
+        },
+        $($attributes:ident -> $data:expr ,)*} =>  {
+        water_http::WaterController! {
+            holder -> $holder_type,
+            name -> $name,
+            functions -> {
+                $(
+                 #[route($($path)/+)]
+                pub $async fn $fn_name($function_para)  {
+                     $($body_tokens)*
+                 })*
+            },
+            $($attributes -> $data ,)*
+        }
+    };
 
+      // pattern
+        {
+        extra_code-> {$($code:tt)*},
+        holder -> $holder_type:path ,
+        name -> $name:ident,
+        functions ->  {
+            $(
+         $($path:tt)/+ => $fn_name:ident($function_para:ident) $async:tt  {
+            $($body_tokens:tt)*
+        }
+        )*
+        },
+        $($attributes:ident -> $data:expr ,)*} =>  {
+        water_http::WaterController! {
+            extra_code -> {
+                $($code)*
+            },
+            holder -> $holder_type,
+            name -> $name,
+            functions -> {
+                $(
+                 #[route($($path)/+)]
+                pub $async fn $fn_name($function_para)  {
+                     $($body_tokens)*
+                 })*
+            },
+            $($attributes -> $data ,)*
+        }
+    };
+
+
+
+     // pattern
        {
         holder -> $holder_type:path ,
         name -> $name:ident,
         functions ->  {
             $(
             #[route($($path:tt)/+)]
-            pub async fn $fn_name:ident($function_para:ident) {
+            pub $async:tt fn $fn_name:ident($para:ident) {
                 $($body_tokens:tt)*
             }
           )*
         },
         $($attributes:ident -> $data:expr ,)*} =>  {
-        water_http::FrameWorkControllerBuilder! {
+        water_http::WaterController! {
             holder -> $holder_type,
             name -> $name,
             functions -> {
                 $(
                  #[route(GET,$($path)/+)]
-                pub async fn $fn_name($function_para)  {
+                pub $async fn $fn_name($para)  {
+                     $($body_tokens)*
+                 })*
+            },
+            $($attributes -> $data ,)*
+        }
+    };
+
+
+
+     // pattern
+       {
+        extra_code-> {$($code:tt)*},
+        holder -> $holder_type:path ,
+        name -> $name:ident,
+        functions ->  {
+            $(
+            #[route($($path:tt)/+)]
+            pub $async:tt fn $fn_name:ident($function_para:ident) {
+                $($body_tokens:tt)*
+            }
+          )*
+        },
+        $($attributes:ident -> $data:expr ,)*} =>  {
+        water_http::WaterController! {
+            extra_code-> {$($code)*},
+            holder -> $holder_type,
+            name -> $name,
+            functions -> {
+                $(
+                 #[route(GET,$($path)/+)]
+                pub $async fn $fn_name($function_para)  {
                      $($body_tokens)*
                  })*
             },
@@ -104,13 +201,48 @@ macro_rules! FrameWorkControllerBuilder {
 
 
 
-      {
+     //pattern
+        {
         holder -> $holder_type:path ,
         name -> $name:ident,
         functions ->  {
             $(
             #[route($method:ident,$($path:tt)/+)]
-            pub async fn $fn_name:ident($para:ident) {
+            pub $async:tt fn $fn_name:ident($function_para:ident) {
+                $($body_tokens:tt)*
+            }
+          )*
+        },
+        $($attributes:ident -> $data:expr ,)*
+
+      } => {
+            water_http::WaterController! {
+                extra_code ->{},
+                holder -> $holder_type,
+                name -> $name,
+               functions -> {
+                $(
+                 #[route($method,$($path)/+)]
+                pub $async fn $fn_name($function_para)  {
+                     $($body_tokens)*
+                 })*
+              },
+             $($attributes -> $data ,)*
+
+            }
+        };
+
+     //result pattern
+      {
+        extra_code -> {
+            $($code:tt)*
+        },
+        holder -> $holder_type:path ,
+        name -> $name:ident,
+        functions ->  {
+            $(
+            #[route($method:ident,$($path:tt)/+)]
+            pub $async:tt fn $fn_name:ident($para:ident) {
                 $($body_tokens:tt)*
             }
           )*
@@ -121,10 +253,14 @@ macro_rules! FrameWorkControllerBuilder {
 
          #[allow(non_snake_case)]
           pub mod $name {
+
                #![allow(non_snake_case)]
+               use std::fmt::format;
                pub type ___CONTEXTHOLDER = $holder_type;
                pub type ___CONTEXT = water_http::framework_http::HttpContext<___CONTEXTHOLDER>;
                pub type __HttpContextRController = water_http::structure::HttpContextRController<___CONTEXTHOLDER>;
+
+               $($code)*
 
                $(
                pub async fn $fn_name($para:&mut ___CONTEXT)   {
@@ -132,29 +268,33 @@ macro_rules! FrameWorkControllerBuilder {
                    $($body_tokens)*
                }
                )*
-               pub fn build() -> __HttpContextRController{
 
+               pub fn build() -> __HttpContextRController{
                 let controller = __HttpContextRController{
                  $(
-                 $attributes:water_http::framework_att_setter!($attributes->$data),
+                  $attributes:water_http::framework_att_setter!($attributes->$data),
                  )*
                  functions:vec![
-                   $(
-                  (stringify!($method).replace(" ","").replace('\"',"").to_uppercase(),
+                     $(
+                     (
+                  stringify!($method).replace(" ","").replace('\"',""),
                   stringify!($($path)/+).replace(" ","").replace('\"',""),
-                  |context| Box::pin(
-                      async move {
+                  | context | Box::pin(
+                      $async move {
                           let _ = $fn_name(context).await;
                       }
-                  )),
-                   )*
+                  )
+                 ),)*
                  ],
                  ..__HttpContextRController::new()
               };
-            controller
+                 controller
             }
           }
     };
+
+
+
 
 }
 
@@ -163,7 +303,10 @@ macro_rules! framework_att_setter {
     (prefix -> $data:expr) => {
       String::from($data).into()
     };
- ( middleware -> $data:expr) => {
+
+
+
+   ( middleware -> $data:expr) => {
       Some($data)
     };
     ($attr:ident->$data:expr) => {

@@ -71,7 +71,6 @@ fn fill_vec_with_path_parts<'a>(v:&mut Vec<&'a str>,s:&'a str){
         for (method,function_path,function) in &controller.functions {
             let  mut function_path_parts:Vec<&str> = vec![];
             fill_vec_with_path_parts(&mut function_path_parts,function_path);
-
             if (function_path_parts.len() + current_url_parts_length ) != url_parts_length {
                 continue;
             }
@@ -102,10 +101,7 @@ fn fill_vec_with_path_parts<'a>(v:&mut Vec<&'a str>,s:&'a str){
 
                 founded = false;
             }
-            if !founded { continue ; }
-            if url_method_type != method {
-                return  Some(Err(format!("{url_method_type} is not supported for this route ")));
-            }
+            if !founded || url_method_type != method{ continue ; }
             return Some(Ok((function,controller,path_injected_parameters)));
         }
     }

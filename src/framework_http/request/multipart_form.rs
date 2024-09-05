@@ -1,6 +1,6 @@
 #![allow(unused)]
 use crate::framework_http::HttpContext;
-use nom::FindSubstring;
+use nom::{AsChar, FindSubstring};
 #[derive(Debug,Clone)]
 pub struct  HttpMultiPartFormDataField {
     file_name:Option<String>,
@@ -21,21 +21,16 @@ impl  HttpMultiPartFormDataField {
                 }
             }
             if line.contains("Content-Disposition"){
-                if let Some(last) = line.split("name=").last() {
-                    if let Some(n) = last.split(";").next(){
-                        if let Some(n) = n.split("\r\n").next() {
-                            name = String::from(n.replace('"',""));
-                        }
-                    }
-                }
-                if line.contains("filename=") {
-                    if let Some(last) = line.split("filename=").last() {
-                        if let Some(n) = last.split(";").next(){
-                            if let Some(n) = n.split("\r\n").next() {
-                                file_name = Some(String::from(n.replace('"',"")));
-                            }
-                        }
-                    }
+                for part_in_line in line.split(";") {
+                 if part_in_line.starts_with(" filename=") {
+                        let filename= part_in_line.replace(" ","").replace("filename=" ,"")
+                            .replace('"',"");
+                     file_name = Some(filename);
+                 }
+                      else  if part_in_line.starts_with(" name=") {
+                          name = part_in_line.replace(" ","").replace("name=" ,"")
+                              .replace('"',"");
+                      }
                 }
             }
             else if line.contains("Content-Type"){
@@ -65,7 +60,6 @@ impl  HttpMultiPartFormDataField {
 
 pub async  fn parse_body_to_list_of_multipart_fields<DataHolderGeneric:Send>(
     context:&mut HttpContext<DataHolderGeneric>)->Vec<(HttpMultiPartFormDataField,Vec<u8>)>
-
   where DataHolderGeneric : Send{
     let mut body_files = Vec::<(HttpMultiPartFormDataField,Vec<u8>)>::new();
     let mut r_field:Option<HttpMultiPartFormDataField> = None ;
@@ -91,53 +85,34 @@ pub async  fn parse_body_to_list_of_multipart_fields<DataHolderGeneric:Send>(
 }
 pub async fn parse_body_to_multipart_field_chunks
 <DataHolderGeneric>(context:&mut HttpContext<DataHolderGeneric>,
-                                    mut on_file_detected:impl FnMut(&HttpMultiPartFormDataField,&[u8]))
-                                    ->Result<(),String>
+                                    mut on_file_detected:impl FnMut(&HttpMultiPartFormDataField,&[u8]))->Result<(),String>
  where DataHolderGeneric:Send
 {
-    let _bound = context.get_request_content_boundary();
-    return if let Some(bou) = _bound {
-        let boundary = bou.to_vec();
-        let mut headers_vec = Vec::<u8>::new();
-        let mut data = Vec::<u8>::new();
-        let mut extra_bytes: Vec<u8> = vec![];
-        let mut field_option: Option<HttpMultiPartFormDataField> = None;
-        let _ = context.body_as_chunks(|chunk| {
-            extra_bytes.extend_from_slice(chunk);
-            while !extra_bytes.is_empty() {
 
-                let casting_res = multipart_bytes_to(&extra_bytes, &boundary, &mut headers_vec, &mut data);
-                if let Some(eb) = casting_res {
-                    extra_bytes = eb.to_vec();
-                } else {
-                    extra_bytes.clear();
-                }
-                if headers_vec.is_empty() && data.is_empty() {
-                    break;
-                }
-                // checking if field is exist
-                if let Some(field) = field_option.as_ref() {
-                    on_file_detected(field, &data);
-                } else if !headers_vec.is_empty() {
-                    let field = HttpMultiPartFormDataField::from_string(String::from_utf8_lossy(&headers_vec).as_ref());
-                    if let Ok(field) = field {
-                        on_file_detected(&field,&data);
-                        field_option = Some(field);
-                    }
-                }
-                if data.ends_with(b"\r\n") {
-                    headers_vec.clear();
-                    data.clear();
-                    field_option = None;
-                }
-            }
+    let boundary = context.get_request_content_boundary();
+    if let Some(boundary) = boundary {
+        let boundary = boundary.to_owned();
+        let mut working_on_field:Option<(HttpMultiPartFormDataField)> = None;
+        let mut extra_bytes = Vec::<u8>::new();
+
+        context.body_as_chunks(move |chunk| {
+            _handle_chunk(
+                &mut working_on_field,
+                Some(chunk),
+                &boundary,
+                &mut extra_bytes,
+                &mut on_file_detected
+            )
         }).await;
-        Ok(())
-    } else {
-        Err("invalid request".to_string())
-    }
 
+        return Ok(());
+    }
+    return Err("could not found boundary".to_string());
 }
+
+
+
+
 
 
 
@@ -159,10 +134,9 @@ fn multipart_bytes_to<'a>(
         }
     }
     if old_headers.is_empty() { return  Some(chunk); }
+
     if !chunk.is_empty(){
-
         if let Some(_end_of_data) = chunk.windows(boundary.len()).position(|w| w == boundary) {
-
             old_data.extend_from_slice(&chunk[.._end_of_data-
                  if _end_of_data > 2 {
                        2
@@ -173,7 +147,92 @@ fn multipart_bytes_to<'a>(
                 return  None;
             }
         }
+
         return Some(chunk);
     }
     None
 }
+
+
+
+fn _handle_chunk<'a>(
+    working_on_field:&'a mut  Option<(HttpMultiPartFormDataField)>,
+    chunk:Option<&'a [u8]>,
+    boundary:&'a [u8],
+    extra_bytes:&'a mut Vec<u8>,
+    mut on_file_detected:&mut impl FnMut(&HttpMultiPartFormDataField,&[u8])
+){
+    if let Some(chunk) = chunk {
+        extra_bytes.extend_from_slice(chunk);
+    }
+    if extra_bytes.is_empty() { return; }
+    if let Some((field)) = working_on_field {
+        if let Some((start_new_boundary,e_nd)) = fast_finding_pattern_in_bytes(&extra_bytes,boundary){
+            let written_data = &extra_bytes[..start_new_boundary-2];
+            on_file_detected(field,written_data);
+            *extra_bytes = (&extra_bytes[start_new_boundary..]).to_vec() ;
+            if extra_bytes.ends_with(b"--\r\n"){
+                if &extra_bytes[..extra_bytes.len()-b"--\r\n".len()] == boundary{
+                    extra_bytes.clear();
+                    return;
+                }
+            }
+            *working_on_field = None;
+            return  _handle_chunk(
+                working_on_field,
+                None,
+                boundary,
+                extra_bytes,
+                on_file_detected
+            );
+        }
+        else if extra_bytes.len() > boundary.len() {
+            if let Some((index,_)) =
+                fast_finding_pattern_in_bytes(&extra_bytes[(extra_bytes.len()-boundary.len())..]
+                                              ,&boundary[..2]){
+                let suspected_bytes = &extra_bytes[index..];
+                on_file_detected(field,&extra_bytes[..index]);
+                *extra_bytes = suspected_bytes.to_vec();
+                return  _handle_chunk(
+                    working_on_field,
+                    None,
+                    boundary,
+                    extra_bytes,
+                    on_file_detected
+                );
+            }
+        }
+        else {
+
+            on_file_detected(field,&extra_bytes);
+            extra_bytes.clear();
+        }
+    }else{
+        // find the headers by finding boundary and \r\n\r\n
+        let first_boundary = fast_finding_pattern_in_bytes(&extra_bytes,boundary);
+        if let Some((_,end_of_boundary_index))= first_boundary {
+            // let us find the end of multipart data headers which it \r\n\r\n
+            if let Some((_,end_of_headers_index)) = fast_finding_pattern_in_bytes(&extra_bytes,b"\r\n\r\n") {
+                let mut headers_bytes = &extra_bytes[end_of_boundary_index+2..=end_of_headers_index];
+                let headers_string = String::from_utf8_lossy(headers_bytes);
+                let field = HttpMultiPartFormDataField::from_string(
+                 &headers_string
+                );
+                *extra_bytes = (&extra_bytes[end_of_headers_index+1..]).to_vec();
+                if let Ok(field) = field {
+                    *working_on_field = Some((field));
+                    return  _handle_chunk(
+                        working_on_field,
+                        None,
+                        boundary,
+                        extra_bytes,
+                        on_file_detected
+                    );
+                }
+            }
+        }
+    }
+
+}
+
+use super::super::fast_finding_pattern_in_bytes;
