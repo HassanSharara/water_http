@@ -1,26 +1,42 @@
-pub mod context_route_function_finder;
+pub (crate) mod context_route_function_finder;
 use std::future::Future;
 use std::pin::Pin;
 use crate::framework_http::HttpContext;
 
+/// you do not need to worry about because it would be handled automatically by our macros
 pub type HttpContextRCFunction<T> =for <'a> fn(&'a mut HttpContext<T>) -> Pin<Box<dyn Future<Output = ()> + Send + 'a >>;
+
+/// you do not need to worry about because it would be handled automatically by our macros
+/// you only need to review [MiddlewareResult]
 pub type HttpMiddleWare<T> =  for <'a> fn(&'a mut HttpContext<T>)->Pin<Box<dyn Future <Output = MiddlewareResult> + Send
     +'a
 >>;
 
+
+/// # The Heart of the incoming request
+/// while every thing related to handle http request should be handled by WaterCapsuleController
+/// and also its managing ram using and preventing ram leaks
 #[derive(Debug)]
-pub struct HttpContextRController<T:Send + 'static>{
-    pub father_controller:Option<*const HttpContextRController<T>>,
+pub struct WaterCapsuleController<T:Send + 'static>{
+    pub (crate)father_controller:Option<*const WaterCapsuleController<T>>,
+
+    /// for providing prefix for each route inside this controller
     pub prefix:Option<String>,
+    /// for building middleware to check if user has fixed requirements for this request
     pub middleware:Option<HttpMiddleWare<T>>,
+    /// functions which holds all requests types and paths and handlers for these both
     pub functions:Vec<(String,String,HttpContextRCFunction<T>)>,
-    pub children:Vec<HttpContextRController<T>>,
+    /// if this controller has children so these children would be effected by father
+    /// controller prefix and also by middleware if children middleware property (apply_parents_middlewares) was true
+    pub children:Vec<WaterCapsuleController<T>>,
+
+    /// to determine if the current controller would affect by parents controllers or not
     pub apply_parents_middlewares:bool,
 }
 
-unsafe impl<T:Send + 'static> Sync for HttpContextRController<T> {}
+unsafe impl<T:Send + 'static> Sync for WaterCapsuleController<T> {}
 
-impl <T:Send> HttpContextRController<T> {
+impl <T:Send> WaterCapsuleController<T> {
     #[async_recursion::async_recursion]
     async fn try_passing_all_middlewares(&self,context:&mut HttpContext<T>)->MiddlewareResult{
         if self.apply_parents_middlewares {
@@ -42,8 +58,10 @@ impl <T:Send> HttpContextRController<T> {
         MiddlewareResult::Pass
     }
 
+
+    /// for initiating new object,but almost you don`t need to use it because we provided automatically implementations using our macros
     pub fn new()->Self{
-        HttpContextRController{
+        WaterCapsuleController{
             father_controller:None,
             prefix:None,
             middleware:None,
@@ -56,14 +74,15 @@ impl <T:Send> HttpContextRController<T> {
 
 
 
-    pub fn get_full_father_prefixes(&mut self)->String{
+
+    pub (crate) fn get_full_father_prefixes(&mut self)->String{
         let mut  path = String::new();
         self.___get_ff__pp(&mut path,None);
         return path;
     }
 
     #[allow(non_snake_case)]
-    fn ___get_ff__pp(&mut self,path:&mut String,father:Option<&mut HttpContextRController<T>>){
+    fn ___get_ff__pp(&mut self,path:&mut String,father:Option<&mut WaterCapsuleController<T>>){
         if let Some(prefix) = self.prefix.as_ref() {
             *path = format!("{}/{}",prefix,path);
         }
@@ -76,11 +95,11 @@ impl <T:Send> HttpContextRController<T> {
     }
 
     pub (crate) fn ___after_insure_binding_build_router_map(&mut self){
-        let mut  full_path = self.get_full_father_prefixes();
-        for (method,path,function) in &mut self.functions {
+        let   full_path = self.get_full_father_prefixes();
+        for (method,path,_) in &mut self.functions {
             let mut full_path = full_path.clone();
             if let Some(_index) = method.find("_") {
-                let mut name = (&method[_index+1..]).to_string();
+                let  name = (&method[_index+1..]).to_string();
                 *method = (&method[.._index]).to_string();
                 full_path.push_str(path);
                 full_path = full_path.replace("//","/");
@@ -105,6 +124,10 @@ impl <T:Send> HttpContextRController<T> {
         }
     }
 }
+
+/// # checks if middleware has already responded to client
+/// so that the server do not need to respond again
+/// or pass the request to the next node
 pub enum MiddlewareResult {
     Pass,
     Stop,

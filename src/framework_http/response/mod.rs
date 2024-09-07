@@ -1,29 +1,32 @@
 
-#[macro_use]
-pub (crate) mod senders;
 
-#[macro_use]
-pub(crate) mod getters;
 
 
 use std::collections::HashMap;
 use std::path::Path;
 
-pub struct HttpResponseHeaders {
+
+/// struct for building custom headers as response
+pub struct ResponseHeadersBuilder {
+    /// [FirstLine] which specify the status of the response and the status code and the version of request
     pub first_line:FirstLine,
+    /// for building response headers key and value pairs
     pub headers:HashMap<String,String>,
 }
 
-impl HttpResponseHeaders {
+impl ResponseHeadersBuilder {
+
+    /// for building custom [ResponseHeadersBuilder] from custom [FirstLine]
     pub fn custom(first_line:FirstLine)->Self{
-        HttpResponseHeaders{
+        ResponseHeadersBuilder{
             first_line,
             headers:HashMap::new(),
         }
     }
 
+    /// creating headers with switch protocols message
     pub fn switching_protocols_headers()->Self{
-         HttpResponseHeaders {
+         ResponseHeadersBuilder {
             first_line: FirstLine { 
                 http_version: HttpVersion::Http1, 
                 status: HttpStatus {
@@ -33,8 +36,10 @@ impl HttpResponseHeaders {
             },
             headers: HashMap::new()}
     }
+
+    /// creating headers that said using http2 is required
     pub fn required_h2_protocol_headers()->Self{
-         HttpResponseHeaders {
+         ResponseHeadersBuilder {
             first_line: FirstLine {
                 http_version: HttpVersion::Http1,
                 status: HttpStatus {
@@ -45,8 +50,9 @@ impl HttpResponseHeaders {
             headers: HashMap::new()}
     }
 
+    /// creating temporary redirect header with status code 307 (Internal Redirect)
     pub fn temporary_redirect_header(url:&str)->Self{
-       let mut headers =  HttpResponseHeaders {
+       let mut headers =  ResponseHeadersBuilder {
             first_line: FirstLine {
                 http_version: HttpVersion::Http1,
                 status: HttpStatus {
@@ -58,8 +64,10 @@ impl HttpResponseHeaders {
         headers.set_header_key_value("Location",url);
         headers
     }
+
+    /// Creating permanent Redirect header with status code 301 (Permanently Redirect)
     pub fn permanent_redirect_header(url:&str)->Self{
-       let mut headers =  HttpResponseHeaders {
+       let mut headers =  ResponseHeadersBuilder {
             first_line: FirstLine {
                 http_version: HttpVersion::Http1,
                 status: HttpStatus {
@@ -71,8 +79,11 @@ impl HttpResponseHeaders {
         headers.set_header_key_value("Location",url);
         headers
     }
+
+
+    /// creating found redirect header with status code 302 (Found Redirect)
     pub fn found_redirect_header(url:&str)->Self{
-       let mut headers =  HttpResponseHeaders {
+       let mut headers =  ResponseHeadersBuilder {
             first_line: FirstLine {
                 http_version: HttpVersion::Http1,
                 status: HttpStatus {
@@ -84,12 +95,16 @@ impl HttpResponseHeaders {
         headers.set_header_key_value("Location",url);
         headers
     }
+
+    /// Creating [ResponseHeadersBuilder] with requiring http2 to be the used protocol
     pub fn required_h2()->Self {
         let mut headers = Self::required_h2_protocol_headers();
         headers.set_header_key_value("Connection","Upgrade");
         headers.set_header_key_value("Upgrade","h2c");
         headers
     }
+
+   /// Creating headers that tells the client to switch to http2 protocol
     pub fn switch_to_h2c_headers()->Self {
         let mut headers = Self::switching_protocols_headers();
         headers.set_header_key_value("Connection","Upgrade");
@@ -97,8 +112,9 @@ impl HttpResponseHeaders {
         headers.set_header_key_value("Content-Length","0");
         headers
     }
+    /// creating headers with bad request status code is 400
     pub fn bad_request_headers()->Self{
-        HttpResponseHeaders{
+        ResponseHeadersBuilder{
             first_line:FirstLine{
                 http_version:HttpVersion::Http1_1,
                 status:HttpStatus { code: 400 , value: "Bad Request".to_owned() },
@@ -106,8 +122,11 @@ impl HttpResponseHeaders {
             headers:HashMap::new()
         }
     }
+
+
+    /// creating headers with not found response and the status code is 404
    pub fn not_found_headers()->Self{
-        HttpResponseHeaders{
+        ResponseHeadersBuilder{
             first_line:FirstLine{
                 http_version:HttpVersion::Http1_1,
                 status:HttpStatus { code: 404 , value: "Not Found".to_owned() },
@@ -115,17 +134,25 @@ impl HttpResponseHeaders {
             headers:HashMap::new()
         }
     }
+
+    /// for changing the first line of the current header
    pub fn change_first_line(&mut self,first_line: FirstLine){
         self.first_line  = first_line;
     }
+
+    /// making the header have partial content with status code 206
+    /// it`s meaning that the response would be sent is not the full response from the server
    pub fn change_first_line_to_partial_content(&mut self){
         self.change_first_line(FirstLine{
             http_version:HttpVersion::Http1_1,
             status:HttpStatus { code: 206 , value: "Partial".to_owned() },
         });
     }
+
+
+    /// creating headers with partial  content and the status code is 206
    pub fn success_partial_content()->Self{
-        HttpResponseHeaders{
+        ResponseHeadersBuilder{
             first_line:FirstLine{
                 http_version:HttpVersion::Http1_1,
                 status:HttpStatus { code: 206 , value: "Partial".to_owned() },
@@ -137,7 +164,7 @@ impl HttpResponseHeaders {
 
     /// for returning success response headers with 200 status code
    pub fn success()->Self{
-        HttpResponseHeaders{
+        ResponseHeadersBuilder{
             first_line:FirstLine{
                 http_version:HttpVersion::Http1_1,
                 status:HttpStatus { code: 200 , value: "OK".to_owned() },
@@ -145,8 +172,11 @@ impl HttpResponseHeaders {
             headers:HashMap::new()
         }
     }
+
+    /// specify content length with success header
+    /// notice that specifying content length is very important approach
     pub fn success_with_content_length(content_length:usize)->Self{
-        let mut headers = HttpResponseHeaders{
+        let mut headers = ResponseHeadersBuilder{
             headers:HashMap::new(),
             ..Self::success()
         };
@@ -164,17 +194,25 @@ impl HttpResponseHeaders {
             }
         }
     }
+
+    /// generating the headers with custom body
     pub fn with_body(&self,mut bytes:Vec<u8>)->Vec<u8>{
         let mut _bytes = self.to_bytes();
         _bytes.append(&mut bytes);
         _bytes
     }
+
+    /// for setting header key value pair to be sent to the users
     pub fn set_header_key_value<>(&mut self,k: impl ToString,v: impl ToString)->Option<String> {
         self.headers.insert(k.to_string(), v.to_string())
     }
+
+    /// for setting cookie key and value to the client
     pub fn set_cookie(&mut self,cookie:HttpRequestCookie){
         self.set_header_key_value("Set-Cookie",cookie.value());
     }
+
+    /// to set multiple cookies instead of one
     pub fn set_cookies(&mut self,cookies:Vec<HttpRequestCookie>){
         for cookie in cookies {
             self.set_cookie(cookie);
@@ -182,6 +220,8 @@ impl HttpResponseHeaders {
     }
 }
 
+
+/// generating cookie struct to form the data that should be sent to the client
 pub struct HttpRequestCookie<'a> {
     key:&'a str,
     value:&'a str,
@@ -190,6 +230,14 @@ pub struct HttpRequestCookie<'a> {
 
 
 impl<'a> HttpRequestCookie<'a> {
+
+    /// adding the default cookies properties
+    /// which it`s [
+    //             "Max-Age=7200",
+    //             "path=/",
+    //             "httponly",
+    //             "samesite=lax"
+    //         ]
     pub fn default_cookies_properties()->Vec<&'a str>{
         vec! [
             "Max-Age=7200",
@@ -198,6 +246,7 @@ impl<'a> HttpRequestCookie<'a> {
             "samesite=lax"
         ]
     }
+    /// creating cookie from key value
     pub fn from_key_value(key:&'a str,value:&'a str)->Self{
         HttpRequestCookie {
             key,
@@ -205,6 +254,8 @@ impl<'a> HttpRequestCookie<'a> {
             children: Self::default_cookies_properties()
         }
     }
+
+    /// getting cookie value from cookie struct
     pub fn value(&self)-> String {
        let mut result = format!("{}={}",self.key,self.value);
         result.extend(self.children.iter().map(|r| format!("; {}",r)));
@@ -213,7 +264,7 @@ impl<'a> HttpRequestCookie<'a> {
 }
 
 
-impl  HttpResponseTrait for HttpResponseHeaders {
+impl  WaterToBytesTrait for ResponseHeadersBuilder {
      fn to_bytes(&self)->Vec<u8>{
         let mut bytes : Vec<u8> = Vec::new();
         // Building The First Line in Http Request
@@ -229,25 +280,30 @@ impl  HttpResponseTrait for HttpResponseHeaders {
     }
 }
 
-pub trait  HttpResponseTrait{
+
+pub (crate) trait  WaterToBytesTrait{
     fn to_bytes(&self) -> Vec<u8>;
 }
 
+/// to provide writeable http version to be responded
 pub enum HttpVersion {
     Http1,
     Http1_1,
     Http2,
     Http3
 }
+/// for provide status code and status label for [ResponseHeadersBuilder]
 pub struct HttpStatus {
     pub code:u16,
     pub value:String
 }
+
+/// wrapper struct for [HttpVersion] and [HttpStatus]
 pub struct FirstLine {
     pub http_version:HttpVersion,
     pub status:HttpStatus
 }
-pub fn content_type_from_file_path(path: &&Path) -> Option<&'static str> {
+pub (crate) fn content_type_from_file_path(path: &&Path) -> Option<&'static str> {
     let extension = path
         .extension()
         .and_then(|ext| ext.to_str())

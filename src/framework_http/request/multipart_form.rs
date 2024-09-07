@@ -1,16 +1,22 @@
-#![allow(unused)]
 use crate::framework_http::HttpContext;
-use nom::{AsChar, FindSubstring};
+
+/// if the request body was multipart-form-data
+/// then it would handle as [HttpMultiPartFormDataField]
+#[allow(unused)]
 #[derive(Debug,Clone)]
 pub struct  HttpMultiPartFormDataField {
+    /// if it`s contains file name when the requested field is a file
     file_name:Option<String>,
+    /// the requested key when the Content-Disposition type called
     name:String,
+    /// provide metadata about the requested field
     content_type:Option<String>,
 }
 
 impl  HttpMultiPartFormDataField {
 
-    pub fn from_string(st:&str)->Result<Self,String>{
+
+    pub (crate) fn from_string(st:&str)->Result<Self,String>{
         let mut name = String::new();
         let mut file_name :Option<String>= None;
         let mut content_type = None;
@@ -48,17 +54,21 @@ impl  HttpMultiPartFormDataField {
         }
         Err("Fail to Build HttpRFile".to_string())
     }
+
+    /// returning file name of the requested file by the client ( the original requested file name)
+    /// but if field was not a file then the result would be None
     pub fn get_file_name(&self)->Option<&String>{
         return self.file_name.as_ref();
     }
 
+    /// returning the key of the requested field or name
     pub fn get_name_key(&self)->&str{
         return &self.name;
     }
 }
 
 
-pub async  fn parse_body_to_list_of_multipart_fields<DataHolderGeneric:Send>(
+pub (crate) async  fn parse_body_to_list_of_multipart_fields<DataHolderGeneric:Send>(
     context:&mut HttpContext<DataHolderGeneric>)->Vec<(HttpMultiPartFormDataField,Vec<u8>)>
   where DataHolderGeneric : Send{
     let mut body_files = Vec::<(HttpMultiPartFormDataField,Vec<u8>)>::new();
@@ -83,6 +93,8 @@ pub async  fn parse_body_to_list_of_multipart_fields<DataHolderGeneric:Send>(
     }
     body_files
 }
+
+/// for using fields data when it serialized synchronously
 pub async fn parse_body_to_multipart_field_chunks
 <DataHolderGeneric>(context:&mut HttpContext<DataHolderGeneric>,
                                     mut on_file_detected:impl FnMut(&HttpMultiPartFormDataField,&[u8]))->Result<(),String>
@@ -92,10 +104,10 @@ pub async fn parse_body_to_multipart_field_chunks
     let boundary = context.get_request_content_boundary();
     if let Some(boundary) = boundary {
         let boundary = boundary.to_owned();
-        let mut working_on_field:Option<(HttpMultiPartFormDataField)> = None;
+        let mut working_on_field:Option<HttpMultiPartFormDataField> = None;
         let mut extra_bytes = Vec::<u8>::new();
 
-        context.body_as_chunks(move |chunk| {
+        let _ = context.body_as_chunks(move |chunk| {
             _handle_chunk(
                 &mut working_on_field,
                 Some(chunk),
@@ -117,57 +129,22 @@ pub async fn parse_body_to_multipart_field_chunks
 
 
 
-fn multipart_bytes_to<'a>(
-    mut chunk:&'a[u8],
-    boundary:&[u8],
- old_headers:&mut Vec<u8>,
- old_data:&mut Vec<u8>
-)->Option<&'a [u8]>{
-    if old_headers.is_empty() {
-        if let Some(boundary_index) = chunk.windows(boundary.len()).position(|w| w==boundary) {
-            let headers_start_chunk:&[u8] = &chunk[boundary_index+boundary.len()+2..];
-            if let Some(headers_end) = headers_start_chunk.find_substring("\r\n\r\n"){
-                old_headers.extend_from_slice(&headers_start_chunk[..headers_end]);
-                chunk = &headers_start_chunk[headers_end+4..];
-            }
-
-        }
-    }
-    if old_headers.is_empty() { return  Some(chunk); }
-
-    if !chunk.is_empty(){
-        if let Some(_end_of_data) = chunk.windows(boundary.len()).position(|w| w == boundary) {
-            old_data.extend_from_slice(&chunk[.._end_of_data-
-                 if _end_of_data > 2 {
-                       2
-                 } else { 0 }
-                ]);
-            chunk = &chunk[_end_of_data..];
-            if chunk.is_empty() {
-                return  None;
-            }
-        }
-
-        return Some(chunk);
-    }
-    None
-}
 
 
 
 fn _handle_chunk<'a>(
-    working_on_field:&'a mut  Option<(HttpMultiPartFormDataField)>,
+    working_on_field:&'a mut  Option<HttpMultiPartFormDataField>,
     chunk:Option<&'a [u8]>,
     boundary:&'a [u8],
     extra_bytes:&'a mut Vec<u8>,
-    mut on_file_detected:&mut impl FnMut(&HttpMultiPartFormDataField,&[u8])
+    on_file_detected:&mut impl FnMut(&HttpMultiPartFormDataField,&[u8])
 ){
     if let Some(chunk) = chunk {
         extra_bytes.extend_from_slice(chunk);
     }
     if extra_bytes.is_empty() { return; }
-    if let Some((field)) = working_on_field {
-        if let Some((start_new_boundary,e_nd)) = fast_finding_pattern_in_bytes(&extra_bytes,boundary){
+    if let Some(field) = working_on_field {
+        if let Some((start_new_boundary,_)) = fast_finding_pattern_in_bytes(&extra_bytes,boundary){
             let written_data = &extra_bytes[..start_new_boundary-2];
             on_file_detected(field,written_data);
             *extra_bytes = (&extra_bytes[start_new_boundary..]).to_vec() ;
@@ -213,14 +190,14 @@ fn _handle_chunk<'a>(
         if let Some((_,end_of_boundary_index))= first_boundary {
             // let us find the end of multipart data headers which it \r\n\r\n
             if let Some((_,end_of_headers_index)) = fast_finding_pattern_in_bytes(&extra_bytes,b"\r\n\r\n") {
-                let mut headers_bytes = &extra_bytes[end_of_boundary_index+2..=end_of_headers_index];
+                let  headers_bytes = &extra_bytes[end_of_boundary_index+2..=end_of_headers_index];
                 let headers_string = String::from_utf8_lossy(headers_bytes);
                 let field = HttpMultiPartFormDataField::from_string(
                  &headers_string
                 );
                 *extra_bytes = (&extra_bytes[end_of_headers_index+1..]).to_vec();
                 if let Ok(field) = field {
-                    *working_on_field = Some((field));
+                    *working_on_field = Some(field);
                     return  _handle_chunk(
                         working_on_field,
                         None,

@@ -61,7 +61,7 @@ async fn main() {
 
 
 WaterController! {
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> MainController,
     functions -> {
        GET => / => any_thing_you_want_name(context)async{
@@ -92,7 +92,7 @@ async fn main() {
 
 
 WaterController! {
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> MainController,
     functions -> {
        GET => / => any_thing_you_want_name(context)async{
@@ -119,7 +119,7 @@ async fn main() {
 
 
 WaterController! {
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> MainController,
     functions -> {
        GET => / => any_thing_you_want_name(context)async{
@@ -144,7 +144,7 @@ async fn main() {
 
 
 WaterController! {
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> MainController,
     functions -> {
        GET => / => any_thing_you_want_name(context)async{
@@ -165,7 +165,7 @@ WaterController!{
         use water_http::structure::MiddlewareResult;
 
     },
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> SecondController,
     functions -> {
 
@@ -205,7 +205,7 @@ WaterController!{
 // to add your wanted code or use [super::*] or [crate::*]
 WaterController!{
     extra_code-> {},
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> ThirdOne,
     functions -> {
         GET => test_second => any_thing_you_want_name(context)async{
@@ -255,7 +255,7 @@ async fn main() {
     RunServer!(MainController::build());
 }
 WaterController! {
-    holder -> crate::_WaterContextDataHolder,
+    holder -> crate::_DataHolderOfWaterCapsuleController,
     name -> MainController,
       functions -> {
 

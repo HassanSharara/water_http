@@ -1,28 +1,49 @@
-mod cookies;
+/// if the request body was multipart-form-data
+/// then it would handle as [HttpMultiPartFormDataField]
 pub mod multipart_form;
+
+/// a struct for handling Content or the body of request
+/// when the requested body was a type of x-www-form data
+/// then it would be handled using [XWWWFormUrlEncoded] struct
+/// which hold data
 pub mod x_www_form_urlencoded;
 use std::collections::HashMap;
 use bytes::BytesMut;
 use tokio::io::AsyncReadExt;
 use crate::framework_http::{___SERVER_CONFIGURATIONS, SIZE_OF_READ_WRITE_CHUNK, WaterTcpStream};
+use crate::multipart_form::HttpMultiPartFormDataField;
+use crate::x_www_form_urlencoded::XWWWFormUrlEncoded;
 
+
+/// just a type of [`HashMap<String,Vec<Vec<String>>>`]
 pub type HttpHeadersMap = HashMap<String,Vec<Vec<String>>>;
 
- const IMPORTANT_HEADERS :[&str;7] = [
+
+/// # used for very light api
+const IMPORTANT_HEADERS :[&str;9] = [
     "Cookie",
     "Accept-Encoding",
     "Accept",
     "Connection",
     "Content-Length",
     "Content-Type",
-    "Range"
+    "Range",
+    "Host",
+    "Date",
 ];
+
+/// # for building income request struct and holding the important data
 #[derive(Debug)]
 pub struct Request {
+    /// # hold request type like (GET,POST) Requests
     pub method:String,
+    /// # hold requested path
     pub path:String,
+    /// # provide http version requested by clients
     pub http_version:String,
+    /// # hold headers keys and values
     pub headers_map:HttpHeadersMap,
+    /// # if request headers has a query then it would be serialized to headers_query
     pub headers_query:HashMap<String,String>,
 }
 
@@ -30,7 +51,7 @@ pub struct Request {
 impl Request {
 
 
-    pub fn parse_to_query_map(i:&str)->HashMap<String,String>{
+    pub (crate) fn parse_to_query_map(i:&str)->HashMap<String,String>{
         let mut result = HashMap::new();
         let values = i.split("&");
         for query in values {
@@ -40,6 +61,13 @@ impl Request {
         }
         result
     }
+
+    /// # for building [Request]
+    /// for parsing incoming request string in http1.1 to Request struct
+    /// also you have important headers
+    /// - if important headers is None then all the headers will be allocated at the whole request life
+    /// - if it`s  Some of vec but it`s empty then just the most important headers would be created and allocated
+    /// - if it`s has one or more values then just these values would be created and allocated in memory
     pub fn build_request(
         string_header:String,
         important_headers:Option<&Vec<String>>
@@ -103,7 +131,7 @@ impl Request {
     }
 }
 
-pub fn convert_string_value_to_vec_of_strings(slice:&str)->Vec<Vec<String>> {
+pub (crate) fn convert_string_value_to_vec_of_strings(slice:&str)->Vec<Vec<String>> {
     let mut values:Vec<Vec<String>> = vec![];
                 let internal_splitter = slice.split(";");
                 for lvi in internal_splitter {
@@ -117,7 +145,7 @@ pub fn convert_string_value_to_vec_of_strings(slice:&str)->Vec<Vec<String>> {
                 values
 }
 pub (crate) async fn build_headers(_peer:&mut WaterTcpStream)->Result<(Request,Vec<u8>), String> {
-    let mut req_headers : Option<&Vec<String>> =unsafe {___SERVER_CONFIGURATIONS.as_ref().unwrap()
+    let  req_headers : Option<&Vec<String>> =unsafe {___SERVER_CONFIGURATIONS.as_ref().unwrap()
         .headers_for_reading.as_ref()
     };
     let mut header_string = String::new();
@@ -194,7 +222,7 @@ pub (crate) async fn build_headers(_peer:&mut WaterTcpStream)->Result<(Request,V
                     }
                     let mut counter:u8 = 0 ;
                     let mut _i:Option<usize> = None;
-                    'a:for (index,byte) in buf.iter().enumerate() {
+                    for (index,byte) in buf.iter().enumerate() {
                         if let 0 = counter {
                             if *byte == 13 {
                                 counter += 1;

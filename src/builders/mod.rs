@@ -2,6 +2,12 @@
 #![allow(non_snake_case)]
 
 
+/// for building middleware inside each capsule with very easy implementation
+/// you could use this
+/// MiddlewareBuilder![ context async {} ]
+/// or MiddlewareBuilder![ (context) async {} ]
+/// or MiddlewareBuilder![ (context) => async {} ]
+/// or MiddlewareBuilder![ context => async {} ]
 #[macro_export]
 macro_rules! MiddlewareBuilder {
     [ $context:ident  $async:tt $bb:block ]=>{
@@ -17,6 +23,38 @@ macro_rules! MiddlewareBuilder {
             |$context : &mut ___CONTEXT| Box::pin( $async move $bb)
     };
 }
+
+
+/// it`s for building controllers
+/// , and you could use it with multi patterns
+/// like
+///   WaterController! {
+///    holder -> path_to_your_holder ,
+///    name -> name_of_your_controller,
+///    functions {
+///    and these could be
+///     path => any_fn_name(context) async {}
+///   or GET => path => any_fn_name(context) async {}
+///   or  "path" => any_fn_name(context) async {}
+///   or  GET => "path" => any_fn_name(context) async {}
+///   or #[route(GET,path)]
+///    pub async fn fn_name(context) {
+///    }
+
+///   or #[route(path)]
+///    pub async fn fn_name(context) {
+///    }
+///
+///  },
+///
+/// }
+///
+/// after function attribute we could provide prefix -> "any_prefix",
+/// or we could also provide middleware -> MiddlewareBuilder! ++
+/// or apply_parents_middlewares->true,
+/// # notice that this will create new mod with the name that you provide
+/// also if you want to use a code inside this mod
+/// you could give extra_code attribute before holder attribute
 #[macro_export]
 macro_rules! WaterController {
 
@@ -258,7 +296,7 @@ macro_rules! WaterController {
                use std::fmt::format;
                pub type ___CONTEXTHOLDER = $holder_type;
                pub type ___CONTEXT = water_http::framework_http::HttpContext<___CONTEXTHOLDER>;
-               pub type __HttpContextRController = water_http::structure::HttpContextRController<___CONTEXTHOLDER>;
+               pub type __WaterCapsuleController = water_http::WaterCapsuleController<___CONTEXTHOLDER>;
 
                $($code)*
 
@@ -269,12 +307,9 @@ macro_rules! WaterController {
                }
                )*
 
-               pub fn build() -> __HttpContextRController{
-                let controller = __HttpContextRController{
-                 $(
-                  $attributes:water_http::framework_att_setter!($attributes->$data),
-                 )*
-                 functions:vec![
+               pub fn build() -> __WaterCapsuleController{
+                let mut  controller = __WaterCapsuleController::new();
+                controller.functions = vec![
                      $(
                      (
                   stringify!($method).replace(" ","").replace('\"',""),
@@ -285,9 +320,10 @@ macro_rules! WaterController {
                       }
                   )
                  ),)*
-                 ],
-                 ..__HttpContextRController::new()
-              };
+                 ];
+                 $(
+                  controller.$attributes = water_http::framework_att_setter!($attributes->$data);
+                 )*
                  controller
             }
           }
@@ -298,6 +334,7 @@ macro_rules! WaterController {
 
 }
 
+/// for re assigning attributes given by [WaterController]
 #[macro_export]
 macro_rules! framework_att_setter {
     (prefix -> $data:expr) => {
@@ -313,6 +350,10 @@ macro_rules! framework_att_setter {
        $data
     };
 }
+
+/// for setting path from another macro
+/// it`s for another macros call so do not worry about it ,
+/// we just had to make it public for re calling it from another macros
 #[macro_export]
 macro_rules! path_setter {
     [$context_name:ident () {$path_item:tt} ]=>{

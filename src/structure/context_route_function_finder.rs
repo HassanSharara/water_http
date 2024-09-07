@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 use crate::framework_http::HttpContext;
-use crate::structure::{HttpContextRCFunction, HttpContextRController, MiddlewareResult};
+use crate::structure::{HttpContextRCFunction, WaterCapsuleController, MiddlewareResult};
 
-pub async fn find_function_from_controllers_and_execute<T:Send>(context:&mut HttpContext<T>,
-    controllers:&'static Vec<HttpContextRController<T>>
+pub (crate) async fn find_function_from_controllers_and_execute<T:Send>(context:&mut HttpContext<T>,
+    controllers:&'static Vec<WaterCapsuleController<T>>
     )->Result<(),String>{
      let mut url_path = context.get_route_path().to_string();
      let  url_method_type = context.get_method();
@@ -48,10 +48,10 @@ fn fill_vec_with_path_parts<'a>(v:&mut Vec<&'a str>,s:&'a str){
 }
 
  fn find_target_controller<T:Send>(url_parts:&[&str],
-                                   controller:&'static HttpContextRController<T>,
+                                   controller:&'static WaterCapsuleController<T>,
                                    url_method_type:&str,
                                    father_path:Option<&str>,)
-   ->Option<Result<(&'static HttpContextRCFunction<T>,&'static HttpContextRController<T>,HashMap<String,String>),String>>{
+   ->Option<Result<(&'static HttpContextRCFunction<T>,&'static WaterCapsuleController<T>,HashMap<String,String>),String>>{
     let prefix_option = controller.prefix.as_ref();
     let mut prefix = String::new();
     if let Some(father_path) = father_path {
@@ -88,8 +88,8 @@ fn fill_vec_with_path_parts<'a>(v:&mut Vec<&'a str>,s:&'a str){
                     continue;
                 }
 
-                if (function_slice.contains("{")
-                    && function_slice.contains("}") ) {
+                if function_slice.contains("{")
+                    && function_slice.contains("}")  {
                     founded = true;
                     path_injected_parameters.insert(
                         function_slice[1..(function_slice.len()-1)].to_string()

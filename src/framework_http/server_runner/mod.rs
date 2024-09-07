@@ -3,22 +3,23 @@
     use std::sync::Arc;
     use  crate::framework_http::*;
     use h2::server;
-    use nom::error::context;
-    use rustls::ServerConfig;
-    use tokio::io::{BufReader, ReadBuf};
     use  tokio::net::TcpListener;
     use tokio::net::TcpStream;
     use tokio::task::JoinHandle;
     use tokio_rustls::server::TlsStream;
     use tokio_rustls::TlsAcceptor;
     use crate::configurations::WaterIpAddressesRestriction;
-    use crate::structure::{HttpContextRController,context_route_function_finder};
+    use crate::structure::{WaterCapsuleController,context_route_function_finder};
 
 
 
+    /// running server and listen to given ports and
+    /// also initializing give controllers would
+    /// be done only by this function ,
+    /// and also it would be an auto used by our macros
     pub async fn start_server<DataHolderGeneric>(
         configurations:WaterServerConfigurations,
-        controllers:fn () -> &'static mut Vec<HttpContextRController<DataHolderGeneric>>
+        controllers:fn () -> &'static mut Vec<WaterCapsuleController<DataHolderGeneric>>
     )
 
         where DataHolderGeneric : Send{
@@ -72,7 +73,7 @@
 
     async fn tcp_connections_threads_generator<DataHolderGeneric>(
         (address,port):(&str,&u16),
-        controllers:&'static Vec<HttpContextRController<DataHolderGeneric>>,
+        controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>,
         tls_acceptor: Option<TlsAcceptor>,
         server_configurations:&WaterServerConfigurations
     )
@@ -87,13 +88,13 @@
                         match restriction {
                             WaterIpAddressesRestriction::OnlyAllowedIps(ips) => {
                                 if !ips.contains(&incoming_ip){
-                                    stream.shutdown().await;
+                                    let _ = stream.shutdown().await;
                                     continue;
                                 }
                             }
                             WaterIpAddressesRestriction::BlacklistIps(ips) => {
                                 if ips.contains(&incoming_ip){
-                                    stream.shutdown().await;
+                                    let _ = stream.shutdown().await;
                                     continue;
                                 }
                             }
@@ -102,8 +103,8 @@
                     if server_configurations.tls_ports.contains(port){
                         let acceptor = tls_acceptor.clone();
                         if let Some(tls_acceptor) = acceptor {
-                            tokio::spawn(async move {
-                                let mut acceptor = tls_acceptor.clone();
+                            let _ = tokio::spawn(async move {
+                                let  acceptor = tls_acceptor.clone();
                                 let stream =  acceptor.accept(stream).await;
                                 if let Ok(stream) = stream {
                                     _build_context_from_tls_stream::<DataHolderGeneric>(
@@ -133,7 +134,7 @@
 
     async fn _build_context_from_tls_stream<DataHolderGeneric:Send>
     (mut stream:TlsStream<TcpStream>,_address:SocketAddr,
-     controllers:&'static Vec<HttpContextRController<DataHolderGeneric>>
+     controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>
     ) {
         let ip: IpAddr = _address.ip();
         if let Some(preface) = stream.get_ref().1.alpn_protocol(){
@@ -141,7 +142,7 @@
                 let  h2 = server::handshake(&mut stream).await;
                 match h2 {
                     Ok(mut h2_protocol_connection) => {
-                        'requests_loop: while let Some(Ok((request,send_response))) =
+                        while let Some(Ok((request,send_response))) =
                             h2_protocol_connection.accept().await {
                             let context =
                                 HttpContext::<DataHolderGeneric>::from_http2_connection
@@ -157,7 +158,6 @@
                 return;
             }
         }
-        let init_state_of_headers = String::new();
         let context =
             HttpContext::<DataHolderGeneric>::from_http1_connection
                 (
@@ -174,7 +174,7 @@
     async fn _build_context_from_stream<DataHolderGeneric:Send>
     (mut stream:TcpStream,
      _address:SocketAddr,
-     controllers:&'static Vec<HttpContextRController<DataHolderGeneric>>
+     controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>
     )
     {
         let ip: IpAddr = _address.ip();
@@ -214,7 +214,7 @@
         }
     }
     async fn handle_context<DataHolderGeneric:Send>(_ip:IpAddr,mut _context:HttpContext<DataHolderGeneric>,
-                                                    controllers:&'static Vec<HttpContextRController<DataHolderGeneric>>
+                                                    controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>
     ){
         if let Some(_connection) = _context.get_from_headers_as_string("Connection") {
             let _connection = _connection.to_lowercase();
@@ -225,11 +225,11 @@
                 return;
             }
         }
-        context_framework_handler(&mut _context,controllers).await;
+        let _ = context_framework_handler(&mut _context,controllers).await;
     }
 
     async fn context_framework_handler<DataHolderGeneric:Send>(context: &mut HttpContext<DataHolderGeneric>,
-                                                               controllers:&'static Vec<HttpContextRController<DataHolderGeneric>>
+                                                               controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>
     )->Result<(),String>{
         let path = context.get_route_path();
         if path.starts_with("/favicon") {
@@ -242,14 +242,14 @@
         }
         let config = unsafe { ___SERVER_CONFIGURATIONS.as_ref().unwrap()};
         if ! config.do_not_even_check_public_resources {
-            let static_path = &(config.public_files_path).replace(".","");
+            let static_path = &config.public_files_path.replace(".","");
             if let Some(index) = path.find(static_path){
                 let path = &path[(index+static_path.len())..].to_string();
-                context.send_file_from_public_resources(&path).await;
+                let _ = context.send_file_from_public_resources(&path).await;
                 return Ok(());
             }
         }
-        context.serialized_body();
+        let _ = context.serialized_body();
         let _res = context_route_function_finder::find_function_from_controllers_and_execute(
             context,
             controllers
