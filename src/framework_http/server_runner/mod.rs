@@ -1,13 +1,14 @@
-    use std::net::IpAddr;
+    use std::net::{IpAddr, ToSocketAddrs};
     use std::net::SocketAddr;
+    use std::rc::Rc;
     use std::sync::Arc;
     use  crate::framework_http::*;
     use h2::server;
-    use  tokio::net::TcpListener;
     use tokio::net::TcpStream;
     use tokio::task::JoinHandle;
     use tokio_rustls::server::TlsStream;
     use tokio_rustls::TlsAcceptor;
+    use tokio_util::task::LocalPoolHandle;
     use crate::configurations::WaterIpAddressesRestriction;
     use crate::structure::{WaterCapsuleController,context_route_function_finder};
 
@@ -27,14 +28,13 @@
             crate::___ROUTERS = Some(HashMap::new());
             ___SERVER_CONFIGURATIONS = Some(configurations);
         }
-        let configurations = unsafe {
+        let configurations:&'static WaterServerConfigurations = unsafe {
             ___SERVER_CONFIGURATIONS.as_ref().unwrap()
         };
 
         for controller in controllers() {
             controller.____insure_binding();
         }
-
         unsafe {
           if let Some(_) = crate::___ROUTERS.as_ref() {
               for controller in controllers() {
@@ -52,18 +52,33 @@
         }
 
         let mut workers = Vec::<JoinHandle<()>>::new();
+        let local_set = LocalPoolHandle::new(configurations.addresses.len());
+        let acceptor = tls_acceptor.clone();
+        if configurations.addresses.len() == 1 {
+            let (address,port) = configurations.addresses.first().unwrap();
+            tcp_connections_threads_generator::<DataHolderGeneric>(
+                (address,port),
+                controllers(),
+                acceptor,
+                configurations
+            ).await;
+            return ;
+        }
         for (address,port) in &configurations.addresses {
-
             let acceptor = tls_acceptor.clone();
             workers.push(
-                tokio::spawn(async move {
-                    tcp_connections_threads_generator::<DataHolderGeneric>(
-                        (address,port),controllers(),
-                        acceptor,
-                        configurations
-                    ).await;
+                local_set.spawn_pinned( move || async move {
+                   let _ =  tokio::task::spawn_local(async move {
+                            tcp_connections_threads_generator::<DataHolderGeneric>(
+                            (address,port),
+                            controllers(),
+                            acceptor,
+                            configurations
+                        ).await;
+                    }).await;
                 })
             );
+
         }
 
         for worker in workers {
@@ -71,41 +86,66 @@
         }
     }
 
-    async fn tcp_connections_threads_generator<DataHolderGeneric>(
+
+     fn tcp_connections_threads_generator<DataHolderGeneric>(
         (address,port):(&str,&u16),
         controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>,
         tls_acceptor: Option<TlsAcceptor>,
-        server_configurations:&WaterServerConfigurations
+        server_configurations:&'static WaterServerConfigurations
     )
         where DataHolderGeneric : Send{
         let address = format!("{address}:{port}");
-        let listener = TcpListener::bind(address).await;
-        match listener {
-            Ok(listener) => {
-                while let Ok( (mut stream,socket)) = listener.accept().await {
+        let socket_address = (&address).to_socket_addrs()
+            .unwrap().next()
+            .expect("error while parsing address");
+
+        let socket = match &socket_address {
+            SocketAddr::V4(_) => { tokio::net::TcpSocket::new_v4()}
+            SocketAddr::V6(_) => {tokio::net::TcpSocket::new_v6()}
+        }.expect("can not create tcp socket from given address");
+        socket.set_reuseaddr(true).expect("can not set reuse address");
+        socket.set_nodelay(true).expect("");
+        socket.bind(socket_address).expect("can not bind to given address");
+        let listener = socket.listen(1028).expect("can not listen");
+
+
+        let containing_port = server_configurations.tls_ports.contains(port);
+
+         let accepting_streams_thread =
+         std::thread::Builder::new()
+             .name(address);
+
+         let new_connections_rt = tokio::runtime::Builder
+         ::new_multi_thread()
+             .worker_threads(1)
+             .build().unwrap();
+
+        loop {
+            let stream = listener.accept().await;
+            let acceptor = tls_acceptor.clone();
+            tokio::spawn(  async move   {
+                if let Ok((mut stream,socket)) = stream {
                     if let Some( ref restriction) = server_configurations.restricted_ips {
                         let incoming_ip = socket.ip().to_string();
                         match restriction {
                             WaterIpAddressesRestriction::OnlyAllowedIps(ips) => {
                                 if !ips.contains(&incoming_ip){
                                     let _ = stream.shutdown().await;
-                                    continue;
+                                    return;
                                 }
                             }
                             WaterIpAddressesRestriction::BlacklistIps(ips) => {
                                 if ips.contains(&incoming_ip){
                                     let _ = stream.shutdown().await;
-                                    continue;
+                                    return;
                                 }
                             }
                         }
                     }
-                    if server_configurations.tls_ports.contains(port){
-                        let acceptor = tls_acceptor.clone();
-                        if let Some(tls_acceptor) = acceptor {
+                    if containing_port{
+                        if let Some( tls_acceptor) = acceptor {
                             let _ = tokio::spawn(async move {
-                                let  acceptor = tls_acceptor.clone();
-                                let stream =  acceptor.accept(stream).await;
+                                let stream =  tls_acceptor.accept(stream).await;
                                 if let Ok(stream) = stream {
                                     _build_context_from_tls_stream::<DataHolderGeneric>(
                                         stream,
@@ -114,21 +154,230 @@
                                     ).await;
                                 }
                             }).await;
-                            continue;
+                            return;
                         }
                     }
-                    tokio::spawn(async move{
-                        _build_context_from_stream::<DataHolderGeneric>(
-                            stream,
-                            socket,
-                            controllers
-                        ).await;
-                        // on connection closed
+                    _build_context_from_stream::<DataHolderGeneric>(
+                        stream,
+                        socket,
+                        controllers
+                    ).await;
+                }  else {
+                    println!("stream accepting error");
+                }
+            });
+        }
+
+        let pool_size = 4;
+        let local_thread_pool = LocalPoolHandle::new(pool_size);
+        let stream_arc  = Arc::new(listener);
+        let mut workers = vec![];
+        for _worker in 0..pool_size {
+            let listener = stream_arc.clone();
+            let tls_acceptor = tls_acceptor.clone();
+            let worker =   local_thread_pool.spawn_pinned( move || async move  {
+                loop {
+                    let stream = listener.accept().await;
+                    let acceptor = tls_acceptor.clone();
+                    tokio::task::spawn_local( async move {
+                        let _ = tokio::spawn(async move {
+                            if let Ok((mut stream,socket)) = stream {
+                                if let Some( ref restriction) = server_configurations.restricted_ips {
+                                    let incoming_ip = socket.ip().to_string();
+                                    match restriction {
+                                        WaterIpAddressesRestriction::OnlyAllowedIps(ips) => {
+                                            if !ips.contains(&incoming_ip){
+                                                let _ = stream.shutdown().await;
+                                                return;
+                                            }
+                                        }
+                                        WaterIpAddressesRestriction::BlacklistIps(ips) => {
+                                            if ips.contains(&incoming_ip){
+                                                let _ = stream.shutdown().await;
+                                                return;
+                                            }
+                                        }
+                                    }
+                                }
+                                if containing_port{
+                                    if let Some( tls_acceptor) = acceptor {
+                                        let _ = tokio::spawn(async move {
+                                            let stream =  tls_acceptor.accept(stream).await;
+                                            if let Ok(stream) = stream {
+                                                _build_context_from_tls_stream::<DataHolderGeneric>(
+                                                    stream,
+                                                    socket,
+                                                    controllers
+                                                ).await;
+                                            }
+                                        }).await;
+                                        return;
+                                    }
+                                }
+                                _build_context_from_stream::<DataHolderGeneric>(
+                                    stream,
+                                    socket,
+                                    controllers
+                                ).await;
+                            }  else {
+                                println!("stream accepting error");
+                            }
+                        });
+
                     });
                 }
-            }
-           _=> {}
+            });
+            workers.push(worker);
         }
+        for worker in workers {
+            let _ = worker.await;
+        }
+        // let listener = listener_arc.clone();
+        // let tls_acceptor = tls_acceptor.clone();
+        // let output = local_thread_pool.spawn_pinned( move || {
+        //     async move {
+        //         tokio::task::spawn_local( async move {
+        //             loop {
+        //                 let stream = listener.accept().await;
+        //                 println!("accepting connection from {}",_w+1);
+        //
+        //             }
+        //         }).await
+        //     }
+        // });
+
+
+
+        // ----------------- worker start
+        // while let Ok( (mut stream,socket)) = listener.accept().await {
+        //
+        // }
+        // let arc_listener = Arc::new(listener);
+        // let mut threads_pool = vec![];
+        //
+        // for _i in 0..4 {
+        //     let stream_arc = arc_listener.clone();
+        //     let tls_acceptor = tls_acceptor.clone();
+        //     let join_handler = tokio::spawn(async move {
+        //         let stream = stream_arc;
+        //           println!("thread number {_i} start listening");
+        //             while let Ok( (mut stream,socket)) = stream.accept().await {
+        //
+        //                 if let Some( ref restriction) = server_configurations.restricted_ips {
+        //                     let incoming_ip = socket.ip().to_string();
+        //                     match restriction {
+        //                         WaterIpAddressesRestriction::OnlyAllowedIps(ips) => {
+        //                             if !ips.contains(&incoming_ip){
+        //                                 let _ = stream.shutdown().await;
+        //                                 continue;
+        //                             }
+        //                         }
+        //                         WaterIpAddressesRestriction::BlacklistIps(ips) => {
+        //                             if ips.contains(&incoming_ip){
+        //                                 let _ = stream.shutdown().await;
+        //                                 continue;
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //                 if containing_port{
+        //                     let acceptor = tls_acceptor.clone();
+        //                     if let Some(tls_acceptor) = acceptor {
+        //                         let _ = tokio::spawn(async move {
+        //                             let  acceptor = tls_acceptor.clone();
+        //                             let stream =  acceptor.accept(stream).await;
+        //                             if let Ok(stream) = stream {
+        //                                 _build_context_from_tls_stream::<DataHolderGeneric>(
+        //                                     stream,
+        //                                     socket,
+        //                                     controllers
+        //                                 ).await;
+        //                             }
+        //                         }).await;
+        //                         continue;
+        //                     }
+        //                 }
+        //                 tokio::spawn(async move{
+        //                     _build_context_from_stream::<DataHolderGeneric>(
+        //                         stream,
+        //                         socket,
+        //                         controllers
+        //                     ).await;
+        //                     // on connection closed
+        //                 });
+        //             }
+        //
+        //
+        //         ()
+        //     });
+        //     threads_pool.push(join_handler);
+        // }
+        // for thread in threads_pool {
+        //    let _ =  thread.await;
+        // }
+
+
+        //---------------------------------------->
+        // loop {
+        //     let stream = listener.accept().await;
+        //     println!("accept new connection");
+        //     unsafe {
+        //         COUNTER+=1;
+        //         NUMBER+=1;
+        //     }
+        //
+        //     let acceptor = tls_acceptor.clone();
+        //     tokio::task::spawn(  async move   {
+        //         let _ = tokio::task::spawn(async move {
+        //             if let Ok((mut stream,socket)) = stream {
+        //                 println!("the new socket is {socket}");
+        //                 println!("current connection is {} while total passed {}",unsafe{NUMBER},unsafe{COUNTER});
+        //                 if let Some( ref restriction) = server_configurations.restricted_ips {
+        //                     let incoming_ip = socket.ip().to_string();
+        //                     match restriction {
+        //                         WaterIpAddressesRestriction::OnlyAllowedIps(ips) => {
+        //                             if !ips.contains(&incoming_ip){
+        //                                 let _ = stream.shutdown().await;
+        //                                 return;
+        //                             }
+        //                         }
+        //                         WaterIpAddressesRestriction::BlacklistIps(ips) => {
+        //                             if ips.contains(&incoming_ip){
+        //                                 let _ = stream.shutdown().await;
+        //                                 return;
+        //                             }
+        //                         }
+        //                     }
+        //                 }
+        //                 if containing_port{
+        //                     if let Some( tls_acceptor) = acceptor {
+        //                         let _ = tokio::spawn(async move {
+        //                             let stream =  tls_acceptor.accept(stream).await;
+        //                             if let Ok(stream) = stream {
+        //                                 _build_context_from_tls_stream::<DataHolderGeneric>(
+        //                                     stream,
+        //                                     socket,
+        //                                     controllers
+        //                                 ).await;
+        //                             }
+        //                         }).await;
+        //                         return;
+        //                     }
+        //                 }
+        //                 _build_context_from_stream::<DataHolderGeneric>(
+        //                     stream,
+        //                     socket,
+        //                     controllers
+        //                 ).await;
+        //                 unsafe {
+        //                     NUMBER-=1;
+        //                 }
+        //                 println!("total connections after end {} ",socket);
+        //             }
+        //
+        //         }).await;
+        //     });
+        // }
     }
 
 
@@ -170,6 +419,7 @@
             _ => {}
         }
     }
+
 
     async fn _build_context_from_stream<DataHolderGeneric:Send>
     (mut stream:TcpStream,
@@ -213,6 +463,8 @@
             }
         }
     }
+
+
     async fn handle_context<DataHolderGeneric:Send>(_ip:IpAddr,mut _context:HttpContext<DataHolderGeneric>,
                                                     controllers:&'static Vec<WaterCapsuleController<DataHolderGeneric>>
     ){

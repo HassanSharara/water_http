@@ -2,7 +2,7 @@
 const http = require('http');
 const fs = require('fs');
 
-const servers_urls = [
+const servers_urls  = [
     'http://localhost:8084',
     'http://localhost:8080',
 ];

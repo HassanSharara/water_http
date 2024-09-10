@@ -196,9 +196,9 @@ impl ResponseHeadersBuilder {
     }
 
     /// generating the headers with custom body
-    pub fn with_body(&self,mut bytes:Vec<u8>)->Vec<u8>{
+    pub fn with_body(&self, bytes:&[u8])->Vec<u8>{
         let mut _bytes = self.to_bytes();
-        _bytes.append(&mut bytes);
+        _bytes.extend(bytes);
         _bytes
     }
 

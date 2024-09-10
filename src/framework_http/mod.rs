@@ -15,16 +15,15 @@ mod tls;
 pub mod util;
 use util::*;
 use h2::{server::SendResponse,SendStream, RecvStream};
-use http::{HeaderName, HeaderValue};
 use serde::Serialize;
 use std::{collections::HashMap, net::SocketAddr, str::FromStr, vec};
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{SeekFrom, Write};
+use std::io::{Read, SeekFrom, Write};
 use std::path::Path;
 use std::string::ToString;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
-use tokio::io::{AsyncSeekExt};
+use tokio::io::{AsyncSeekExt, AsyncWrite};
 use nom::AsBytes;
 use tokio_util::bytes::{Bytes, BytesMut};
 use crate::framework_http::multipart_form::{HttpMultiPartFormDataField,
@@ -37,9 +36,10 @@ use crate::framework_http::chose_encoding_algorithm::HttpEncodingAlgorithms;
 
 
 
+
 pub(crate) enum WaterTcpStream {
     Tls(tokio_rustls::server::TlsStream<TcpStream>),
-    Stream(TcpStream)
+    Stream(TcpStream),
 }
 type IncomeBody =Option<Option<HttpIncomeBody>>;
 static mut ___SERVER_CONFIGURATIONS : Option<WaterServerConfigurations> = None;
@@ -48,7 +48,7 @@ const SIZE_OF_FILES_WRITE_CHUNK:u64 = 100000;
 
 /// struct for handling http requests
 /// and responsible for caching connection and send response back to the client
-/// with many easy and helpful functions to serve the client for a best performance
+/// with many easy and helpful functions to serve the client for  best performance
 /// and provide stability and clear code for developer
 ///
 pub struct HttpContext<DataHolderGeneric:Send> {
@@ -342,9 +342,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                                 }
                                 WaterTcpStream::Stream(stream) => {
                                     while let Ok(_c) = stream.read_buf(&mut buf).await {
-
                                         total_bytes_received += _c;
-
                                         bytes_chunk(&buf[.._c]);
                                         if _c == 0 || total_bytes_received >= length  {
                                             break;
@@ -352,6 +350,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                                         buf.clear();
                                     }
                                 }
+
                             }
                         } else {
                             return Err("Can not Read Content Length from Http Request".to_string());
@@ -663,6 +662,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
     }
 
 
+
     /// Sends a string slice [&str] as a response.
     /// Note that the second parameter, `end_of_stream`, indicates whether this
     /// is the last response packet for the request.
@@ -673,6 +673,24 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
         return Ok(());
     }
 
+
+    pub (crate)async fn shutdown_connection(&mut self){
+        match &mut self.protocol {
+            Protocol::Http1(p1) => {
+                match &mut p1._peer.0 {
+                    WaterTcpStream::Tls(stream) => {
+                        let _ = stream.shutdown().await;
+                    }
+                    WaterTcpStream::Stream(stream) => {
+                        let _ = stream.shutdown().await;
+                    }
+                }
+            }
+            _ => {
+
+            }
+        }
+    }
 
     /// for sending json response that depends on [serde]
     /// for example each struct that derive [#[derive(Serialize,Deserialize)]]
@@ -862,6 +880,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                                 if let Err(_) = stream.flush().await {
                                     return Err("can not Flushing All The Data in The Stream".to_string());
                                 }
+
                             }
                             return Ok(());
                         } else {
@@ -890,7 +909,6 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                 return Err("cant send h2 response".to_owned());
             },
         }
-
         Err("Cant Write Data to Stream".to_owned())
     }
 
@@ -932,8 +950,8 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                 let _headers = response.headers_mut();
                 if let Some(h) = _headers {
                     for (k,v) in headers.headers.iter() {
-                        let key =HeaderName::from_str(k);
-                        let value =HeaderValue::from_str(v);
+                        let key =http::HeaderName::from_str(k);
+                        let value = http::HeaderValue::from_str(v);
                         if let Err(_) = key {
                             return Err(format!("Can not form header name with {}",k));
                         }
@@ -964,8 +982,10 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                            end_of_stream:bool)->Result<(),String>{
         let bytes_length = bytes.len();
         let mut encoded_data : Option<Vec<u8>> = None;
+
         match &mut self.protocol {
             Protocol::Http1(h1) => {
+
                 let mut  headers = ResponseHeadersBuilder::success();
                 if !h1._header_sent {
                     let threshold = unsafe {___SERVER_CONFIGURATIONS.as_ref().unwrap().threshold_for_encoding_response};
@@ -1021,9 +1041,11 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                             if end_of_stream {
                                 headers.set_header_key_value("Content-Length",bytes.len());
                             }
-                            headers.set_header_key_value("Date",chrono::Utc::now().to_rfc2822());
+                            headers.set_header_key_value("Date",__current_date_rfc2822());
+
                             self.send_headers(headers).await?;
                             if let Ok(_) = self.write_bytes(bytes, end_of_stream).await {
+
                                 self.bytes_sent += bytes_length;
                                 return  Ok(());
                             }
@@ -1032,7 +1054,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                             if end_of_stream {
                                 headers.set_header_key_value("Content-Length",bytes.len());
                             }
-                            headers.set_header_key_value("Date",chrono::Utc::now().to_rfc2822());
+                            headers.set_header_key_value("Date",__current_date_rfc2822());
                             let _ = self.send_headers(headers).await?;
                             if let Ok(_) = self.write_bytes(bytes, end_of_stream).await {
                                 self.bytes_sent += bytes_length;
@@ -1042,6 +1064,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                     }
                 } else {
                     if let Ok(_) = self.write_bytes(bytes, end_of_stream).await {
+                        println!("we are already sent {}",String::from_utf8_lossy(bytes));
                         self.bytes_sent += bytes_length;
                         return  Ok(());
                     }
@@ -1131,7 +1154,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                             }
                         }
                         headers.set_header_key_value(
-                            "Date",chrono::Utc::now().to_rfc2822()
+                            "Date",__current_date_rfc2822()
                         );
                         self.send_headers(headers).await?;
                         self.send_data(bytes,end_of_stream).await?;
@@ -1375,7 +1398,10 @@ pub struct SaveForMultipartResults {
     pub rest_fields:Vec<(HttpMultiPartFormDataField,Vec<u8>)>,
 }
 
-
+pub (crate) fn __current_date_rfc2822()->String{
+    let datetime = chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+    datetime
+}
 
 
 
