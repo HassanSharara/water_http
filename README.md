@@ -266,7 +266,6 @@ WaterController! {
         GET => test/newpath => tn(context) async {
             // redirecting to ---> our_new_path
             let _route_url = super::get_route_by_name("our_new_path",None);
-            println!("{:?}",_route_url);
             // if you want to directly redirect url by using route name
             let _ = context.redirect_by_route_name("our_new_path",None).await;
 

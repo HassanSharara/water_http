@@ -43,8 +43,9 @@ pub(crate) enum WaterTcpStream {
 }
 type IncomeBody =Option<Option<HttpIncomeBody>>;
 static mut ___SERVER_CONFIGURATIONS : Option<WaterServerConfigurations> = None;
-const SIZE_OF_READ_WRITE_CHUNK:usize = 100000;
-const SIZE_OF_FILES_WRITE_CHUNK:u64 = 100000;
+const SIZE_OF_READ_WRITE_CHUNK:usize = 4080*6;
+const SIZE_OF_NORMAL_WRITE_CHUNK:usize = 4080*8;
+const SIZE_OF_FILES_WRITE_CHUNK:u64 = 85000;
 
 /// struct for handling http requests
 /// and responsible for caching connection and send response back to the client
@@ -71,6 +72,7 @@ pub (crate) struct Http1 {
     pub request:Request,
     _extra_bytes_from_headers:Vec<u8>,
     _header_sent:bool,
+    response_holder:BytesMut
 }
 
 type  Http2Request = http::Request<RecvStream>;
@@ -168,6 +170,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                     _peer,
                     request,
                     _extra_bytes_from_headers:extra_body_bytes,
+                    response_holder:BytesMut::with_capacity(SIZE_OF_READ_WRITE_CHUNK)
                 }
             ),
             bytes_sent:0,
@@ -278,12 +281,12 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
     ///  if the headers key was expected to return single value
     /// then you could use this fn
     /// # return [Option<&String>]
-    pub fn get_from_headers_as_string(&mut self,key:&str)->Option<&String>{
+    pub fn get_from_headers_as_string_ref(&mut self,key:&str)->Option<&String>{
         if let Some(c) = self.get_from_headers(key) {
             if !c.is_empty() {
                 let first = c.first().unwrap().first();
-                if let Some(content_length_string) = first {
-                    return Some(content_length_string);
+                if let Some(getter) = first {
+                    return Some(getter);
                 }
             }
         }
@@ -295,7 +298,7 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
     /// or any other data that could be parsed from string
     /// you can use this generic function
     pub fn get_from_header_as<T:FromStr>(&mut self,key:&str)->Option<T>{
-        if let Some(value) = self.get_from_headers_as_string(key) {
+        if let Some(value) = self.get_from_headers_as_string_ref(key) {
             if let Ok ( v ) = value.parse::<T>() {
                 return Some(v);
             }
@@ -405,7 +408,6 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                     return Ok(None);
                 }
                 let mut buf = BytesMut::with_capacity(SIZE_OF_READ_WRITE_CHUNK);
-
                 match &mut p1._peer.0 {
                     WaterTcpStream::Tls(stream) => {
                         loop {
@@ -446,7 +448,6 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                         }
                     }
                 }
-
             }
             Protocol::Http2(_p2) => {
                 let _body =  _p2.request.body_mut().data().await;
@@ -936,7 +937,6 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                     return Ok(());
                 }
                 h1._header_sent = true;
-
                 let bytes =  headers.to_bytes();
                 self.write_bytes(&bytes,end_of_stream).await?;
                 return Ok(());
@@ -982,10 +982,8 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                            end_of_stream:bool)->Result<(),String>{
         let bytes_length = bytes.len();
         let mut encoded_data : Option<Vec<u8>> = None;
-
         match &mut self.protocol {
             Protocol::Http1(h1) => {
-
                 let mut  headers = ResponseHeadersBuilder::success();
                 if !h1._header_sent {
                     let threshold = unsafe {___SERVER_CONFIGURATIONS.as_ref().unwrap().threshold_for_encoding_response};
@@ -1042,7 +1040,6 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                                 headers.set_header_key_value("Content-Length",bytes.len());
                             }
                             headers.set_header_key_value("Date",__current_date_rfc2822());
-
                             self.send_headers(headers).await?;
                             if let Ok(_) = self.write_bytes(bytes, end_of_stream).await {
 
@@ -1064,14 +1061,12 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                     }
                 } else {
                     if let Ok(_) = self.write_bytes(bytes, end_of_stream).await {
-                        println!("we are already sent {}",String::from_utf8_lossy(bytes));
                         self.bytes_sent += bytes_length;
                         return  Ok(());
                     }
                 }
             },
             Protocol::Http2(h2) => {
-
                 match &mut h2.body_sender {
                     Some(sender) => {
                         let bytes = bytes.to_vec();
@@ -1161,7 +1156,6 @@ impl<DataHolderGeneric:Send> HttpContext<DataHolderGeneric> {
                         return  Ok(());
                     },
                 }
-
             },
         }
         Err("Cant Write Data to Stream".to_owned())
