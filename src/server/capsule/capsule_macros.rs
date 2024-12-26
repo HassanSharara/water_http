@@ -2,17 +2,16 @@
 #![allow(non_snake_case)]
 
 
-use crate::server::HttpContext;
 /// Initiating Controller Root is very important to detect the max important requirements for
 /// building controller struct
-/// you need to know that [headers_length] means that how many headers could the framework read
+/// you need to know that `headers_length` means that how many headers could the framework read
 /// at single request and the reason why we initiate something like that is to provide
 /// a good structure for framework and allocating memory in stack instead of heap
 /// to provide fast operation which is very importing when dealing with
 /// quit high load of traffic and also for security and protecting against
 /// headers  attackers
-/// and the [query_length] is also the same
-/// but it`s works on the incoming request path query and for example
+/// and the query_length is also the same
+/// but it`s works on the incoming request path query and for examples
 /// [.com/post?name=hello&description=desc]
 #[macro_export]
 macro_rules! InitControllerRoot {
@@ -45,7 +44,7 @@ macro_rules! InitControllerRoot {
 
 /// for running server in appropriate way,
 /// and it takes 3 arguments
-/// - the first one is config [`water_http::server::ServerConfigurations`]
+/// - the first one is config `ServerConfigurations`
 /// - the second one is Root which is a defining of holder of entry controller
 /// - the third one is the entry point of the server which is the start point controller
 /// # Note :
@@ -323,6 +322,23 @@ macro_rules! CheckExtraCode {
    ($key:tt -> $($tokens:tt)* ) => {
     };
 }
+
+/// for creating single water controller or capsule for encapsulating objects handlers and routes
+/// creating Water Controller is very easy
+/// default creating
+/// ```rust
+/// use water_http::WaterController;
+/// WaterController! {
+///  holder -> u8,
+///  name -> WebMainController,
+///  functions -> {
+///   GET => / => main(context){
+///    let mut sender = context.sender();
+///    sender.send_str("hello from server");
+///  }
+/// }
+/// }
+/// ```
 #[macro_export]
 macro_rules! WaterController {
     {
@@ -331,10 +347,12 @@ macro_rules! WaterController {
      functions -> {$($function_tokens:tt)*}
      $($key:tt -> ($($value:tt)*)),*
     } => {
+        #[allow(non_snake_case)]
         pub mod $name {
 
-            use water_http::http::HttpSenderTrait;
+            use water_http::http::{HttpSenderTrait,request::{HttpGetterTrait,IBodyChunks,IBody,ParsingBodyResults,ParsingBodyMechanism}};
             use  water_http::server::HttpContext;
+            use water_http::*;
             pub type Holder = $holder;
 
             water_http::FunctionsMacroBuilder!(

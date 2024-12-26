@@ -1,11 +1,12 @@
 use std::borrow::Cow;
-use bytes::{Buf, BytesMut};
+use std::future::Future;
+use bytes::Buf;
 use h2::RecvStream;
 use http::{ Request};
-use tokio::io::AsyncReadExt;
 use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller};
 use crate::http::request::MultipartStreamHolder::H1;
 use crate::http::status_code::HttpStatusCode;
+use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::HttpStream;
 use crate::util::split;
@@ -13,18 +14,19 @@ use crate::util::split;
 /// implementing get functions from incoming request
 pub  trait  HttpGetterTrait <'a>{
 
-    async fn get_body(&'a mut self)->ParsingBodyResults<'a>;
+     fn get_body(&'a mut self)->  impl Future<Output=ParsingBodyResults<'a>>;
 
-     async fn get_body_by_mechanism(&'a mut self,mechanism:ParsingBodyMechanism)->ParsingBodyResults<'a>;
+      fn get_body_by_mechanism(&'a mut self,mechanism:ParsingBodyMechanism)->
+        impl Future<Output=ParsingBodyResults<'a>>;
  }
 
 
-
-pub (crate) struct Http1Getter<'a,'request,
+/// for constructing get methods on http context
+pub  struct Http1Getter<'a,'request,
 const HEADER_SIZE:usize,
 const PATH_QUERY_COUNT:usize
 > {
-    pub(crate)body_reading_buffer:&'a mut BytesMut,
+    pub(crate)body_reading_buffer:&'a mut BodyReadingBuffer,
     pub(crate)left_bytes:&'a [u8],
     pub(crate)stream:&'a mut HttpStream,
     pub(crate)request:&'a IncomingRequest<'request,HEADER_SIZE,PATH_QUERY_COUNT>,
@@ -36,24 +38,11 @@ impl <'a:'request,'request
     const HEADER_SIZE:usize,
     const PATH_QUERY_COUNT:usize
 > Http1Getter<'a,'request,HEADER_SIZE,PATH_QUERY_COUNT> {
-    pub (crate) fn new(
-        body_reading_buffer:&'a mut BytesMut,
-        left_bytes:&'a [u8],
-        stream:&'a mut HttpStream,
-        request:&'a IncomingRequest<'a,HEADER_SIZE,PATH_QUERY_COUNT>
-    )->Http1Getter<'a,'request,HEADER_SIZE,PATH_QUERY_COUNT>{
-        Http1Getter {
-            body_reading_buffer,
-            left_bytes,
-            stream,
-            request,
-        }
-    }
 
 
-    #[inline]
-    pub (crate) async fn get_full_body_multipart_mechanism(&mut self,content_type:&[u8],content_length:&usize)
-    ->ParsingBodyResults<'a>{
+    /// getting full body if the body was using multipart form data content type during incoming request
+    pub  async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8],content_length:&usize)
+    -> Result<FormDataAll,WaterErrors>{
         let split = split(content_type,b"boundary=");
         if let Some(boundary) = split.last() {
             if !boundary.is_empty() {
@@ -78,30 +67,21 @@ impl <'a:'request,'request
                                 ,
                                 data
                             );
-                        Ok(())
+                        Ok(None)
                     }
                 ).await {
-                    return  ParsingBodyResults::FullBody(
-                        IBody::MultiPartFormData(
-                            fields
-                        )
-                    )
+                    return  Ok(fields)
                 }
-                return ParsingBodyResults::Err(
-                    WaterErrors::Http(
-                        HttpStatusCode::INTERNAL_SERVER_ERROR
-                    )
-                )
+                return Err(WaterErrors::Http(
+                    HttpStatusCode::INTERNAL_SERVER_ERROR
+                ))
 
             }
         }
 
-        return ParsingBodyResults::Err(
-            WaterErrors::Server(
-                ServerError
-                ::MULTIPARTFORMDATA_ERROR
-            )
-        )
+        return Err(WaterErrors::Http(
+            HttpStatusCode::BAD_REQUEST
+        ))
     }
 
 
@@ -113,7 +93,7 @@ impl <'a:'request,'request
                 let  data = MultipartData::new(
                     H1(H1StreamHolder {
                         stream:self.stream,
-                        left_bytes:&self.left_bytes[..*content_length]
+                        left_bytes:&self.left_bytes[..(*content_length).min(self.left_bytes.len())]
                     }),
                     self.body_reading_buffer,
                     String::from_utf8_lossy(boundary),
@@ -153,7 +133,7 @@ impl <'a:'request,'request
                 match mechanism {
                     ParsingBodyMechanism::Default => {
                         let content_type = self.request.headers
-                            .get_as_bytes(b"Content-Type");
+                            .get_as_bytes("Content-Type");
                         if let Some(content_type) = content_type {
                             match content_type {
                                 b"multipart/form-data" => {
@@ -188,7 +168,7 @@ impl <'a:'request,'request
                     }
                     ParsingBodyMechanism::FormData => {
                         let content_type = self.request.headers
-                            .get_as_bytes(b"Content-Type");
+                            .get_as_bytes("Content-Type");
                            if let Some(content_type) = content_type {
                             return self.get_chunked_body_multipart(
                                 content_type,
@@ -200,7 +180,7 @@ impl <'a:'request,'request
                         let  remaining = *content_length - self.left_bytes.len();
                         let mut rem = remaining;
                         while rem > 0 {
-                            match self.stream.read_buf(self.body_reading_buffer).await {
+                            match self.body_reading_buffer.read_buf(self.stream).await {
                                 Ok(s) => {
                                     rem -= rem.min(s);
                                 }
@@ -229,7 +209,7 @@ impl <'a:'request,'request
                 match mechanism {
                     ParsingBodyMechanism::Default => {
                         match self.request.headers
-                            .get_as_bytes(b"Content-Type") {
+                            .get_as_bytes("Content-Type") {
                             None => { return ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST))}
                             Some(content_type) => {
                                 let lower_case = String::from_utf8_lossy(content_type).to_lowercase();
@@ -265,7 +245,7 @@ impl <'a:'request,'request
                     }
                     ParsingBodyMechanism::FormData => {
                         let content_type = self.request.headers
-                            .get_as_bytes(b"Content-Type");
+                            .get_as_bytes("Content-Type");
                         if let Some(content_type) = content_type {
                             return self.get_chunked_body_multipart(
                                 content_type,
@@ -302,10 +282,10 @@ impl <'a:'request,'request
 
 
 
-pub (crate) struct Http2Getter<'a> {
+pub  struct Http2Getter<'a> {
     pub(crate)batch:&'a mut Request<RecvStream>,
     pub(crate)content_length:usize,
-    pub(crate)reading_buffer:&'a mut BytesMut,
+    pub(crate)reading_buffer:&'a mut BodyReadingBuffer,
 }
 impl<'a>   Http2Getter<'a> {
 
@@ -315,6 +295,7 @@ impl<'a>   Http2Getter<'a> {
     ->ParsingBodyResults<'a>
 
     {
+
         let data = MultipartData::<'a>::new(
             MultipartStreamHolder::H2(
                 H2StreamHolder {
@@ -328,6 +309,49 @@ impl<'a>   Http2Getter<'a> {
         ParsingBodyResults::Chunked(IBodyChunks::FormData(data))
     }
 
+
+    /// getting full body if the body was using multipart form data content type during incoming request
+    pub  async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8])
+                                                    -> Result<FormDataAll,WaterErrors>{
+        let split = split(content_type,b"boundary=");
+        if let Some(boundary) = split.last() {
+            if !boundary.is_empty() {
+                let mut data = MultipartData::new(
+                    MultipartStreamHolder::H2(
+                        H2StreamHolder {
+                           batch: self.batch
+                        }
+                    ),
+                    self.reading_buffer,
+
+                    String::from_utf8_lossy(boundary),
+                    self.content_length
+                );
+                let mut fields= FormDataAll::new();
+                if let Ok(_) = data.on_field_detected(
+                    |field,data|    {
+                        fields
+                            .push(
+                                field
+                                ,
+                                data
+                            );
+                        Ok(None)
+                    }
+                ).await {
+                    return  Ok(fields)
+                } else {}
+                return Err(WaterErrors::Http(
+                    HttpStatusCode::INTERNAL_SERVER_ERROR
+                ))
+
+            }
+        }
+
+        return Err(WaterErrors::Http(
+            HttpStatusCode::BAD_REQUEST
+        ))
+    }
 
     pub (crate) async fn get_body_as_bytes
     (&'a mut self)->ParsingBodyResults<'a>{
@@ -431,7 +455,6 @@ impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
                    }
                    self.get_body_as_bytes().await
                }
-
             ParsingBodyMechanism::JustBytes => {
                 return self.get_body_as_bytes().await;
             }
@@ -451,6 +474,7 @@ impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
                             }
                         }
                     };
+
                 return  self.get_body_as_multipart(
                     content_type.into()
                 ).await;
@@ -466,8 +490,8 @@ impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
 
 /// Http Getter for getting data from incoming request and request queries
 /// also headers values
-pub enum HttpGetter<'a,'request,const headers:usize,const qs:usize> {
-    H1(Http1Getter<'a,'request,headers,qs>),
+pub enum HttpGetter<'a,'request,const HEADERS:usize,const QS:usize> {
+    H1(Http1Getter<'a,'request,HEADERS,QS>),
     H2(Http2Getter<'a>)
 }
 

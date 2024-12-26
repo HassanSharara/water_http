@@ -1,7 +1,7 @@
-
 use std::net::SocketAddr;
+use std::ops::Deref;
 use bytes::{Buf, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
@@ -39,14 +39,14 @@ impl  ConnectionStream {
             info!("new connection from ip : {:?}",self.address);
         }
         match  self.io {
-            WaterStream::TLS( mut stream) => {
+            WaterStream::TLS( stream) => {
                 if let Some(alpn_preface) = stream.get_ref().1.alpn_protocol() {
                     if alpn_preface == b"h2" {
                         let handshake
                         = h2::server::handshake(stream).await;
                         if let Ok(mut connection) = handshake {
                             let mut reading_buffer =
-                            BytesMut::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
+                            BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
                             while let Some(
                                 Ok(batch))
                                 = connection.accept().await {
@@ -60,7 +60,8 @@ impl  ConnectionStream {
                                       &self.address
                                   );
                                 match  context.serve(controller).await {
-                                    ServingRequestResults::Stop => {return;}
+                                    ServingRequestResults::Stop => {
+                                        return;}
                                     ServingRequestResults::Done => {
                                         continue;
                                     }
@@ -84,7 +85,7 @@ impl  ConnectionStream {
                     if let Ok(mut connection) =  h2::server::handshake(stream).await {
                         while let Some(Ok(batch)) = connection.accept().await {
                             let mut reading_buffer =
-                                BytesMut::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
+                                BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
                             let mut context =
                                 HttpContext::new(
                                     Protocol::<'_,HS, QS>::from_http2_context(
@@ -124,23 +125,20 @@ impl  ConnectionStream {
     ){
 
         let mut each_request_body_reading_buffer =
-            BytesMut::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
+            BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
         let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
         let mut response_buffer = BytesMut::with_capacity(WRITING_BUF_LEN);
        'main_loop: loop {
            reserve_buf(&mut reading_buffer);
            // println!("reading from buffer {requests_count} {:?}",peer);
 
-           // handling body reading buffer
-           if !each_request_body_reading_buffer.is_empty() {
-               reading_buffer.clear();
-               reading_buffer.extend_from_slice(&each_request_body_reading_buffer);
-               each_request_body_reading_buffer.clear();
-           }
+
+
+
+
 
            if let Ok(read_size)
                = stream.read_buf(&mut reading_buffer).await {
-
                 // when connection is closed
                 if read_size == 0 {
                     return;
@@ -154,20 +152,19 @@ impl  ConnectionStream {
 
                     #[cfg(feature = "count_connection_parsing_speed")]
                     let t1 = std::time::SystemTime::now();
-                    let mut
-                        request =
+                    let request =
                             IncomingRequest::<HS,QS>::new(buf_bytes);
                     #[cfg(feature = "count_connection_parsing_speed")]
                     {
                         let t2 = std::time::SystemTime::now();
                         let dif = t2.duration_since(t1);
-                        println!("difference is {:?}",dif);
+                        println!("difference in parsing is  {:?}",dif);
 
                     }
 
                     match request {
                         FormingRequestResult::Success(request) => {
-                            let mut total_request_size = request.total_headers_bytes;
+                            let total_request_size = request.total_headers_bytes;
                             let left_bytes = &buf_bytes[total_request_size..];
                             let mut context =
                             HttpContext::new(
@@ -184,9 +181,20 @@ impl  ConnectionStream {
                             );
                             let content_length = context.content_length().copied();
 
+                            #[cfg( feature = "count_connection_parsing_speed")]
+                            let t1 = std::time::SystemTime::now();
+
+
                             _= match  context.serve(controller).await {
                                 ServingRequestResults::Stop => {return;}
                                 ServingRequestResults::Done => {
+                                    #[cfg( feature = "count_connection_parsing_speed")]
+                                    {
+                                        let end = std::time::SystemTime::now();
+                                        println!("difference in serving is {:?}",
+                                         end.duration_since(t1)
+                                        );
+                                    }
                                     match content_length {
                                         None => {
                                             let br = total_request_size >= buf_bytes.len();
@@ -198,18 +206,17 @@ impl  ConnectionStream {
                                         Some(content_length) => {
                                             reading_buffer.advance(total_request_size);
                                             let mut rem = content_length;
-                                            if !each_request_body_reading_buffer.is_empty() {
+                                            println!("content-length {rem}\n while consumed {}",each_request_body_reading_buffer.bytes_consumed);
+                                            if each_request_body_reading_buffer.bytes_consumed > 0 {
+                                                rem -= reading_buffer.len().min(rem);
                                                 reading_buffer.clear();
-                                                while rem > 0  {
-                                                    if each_request_body_reading_buffer.is_empty() { break; }
-                                                    let to_advance =   rem.min(each_request_body_reading_buffer.len());
-                                                    each_request_body_reading_buffer
-                                                        .advance(
-                                                            to_advance
-                                                        );
-                                                    rem -= to_advance;
+                                                rem -= each_request_body_reading_buffer.bytes_consumed.min(rem);
+                                                if !each_request_body_reading_buffer.is_empty() {
+                                                    reading_buffer.extend_from_slice(each_request_body_reading_buffer.chunk());
                                                 }
+                                                each_request_body_reading_buffer.reset();
                                             }
+
                                             while rem > 0  {
                                                 if reading_buffer.is_empty() {
                                                     if stream.read_buf(&mut reading_buffer).await.is_err() {
@@ -220,10 +227,9 @@ impl  ConnectionStream {
                                                 reading_buffer.advance(to_advance);
                                                 rem -= to_advance;
                                             }
-                                            if reading_buffer.is_empty() {
-                                                break;
-                                            }
-                                            continue;
+
+                                            if reading_buffer.is_empty() {break;}
+
                                         }
                                     }
 
@@ -237,13 +243,14 @@ impl  ConnectionStream {
                         FormingRequestResult::ReadMore => {
                             break;
                         }
-                        FormingRequestResult::Err(_) => {
+                        FormingRequestResult::Err => {
                             return;
                         }
                     }
                 }
 
                if !response_buffer.is_empty() {
+
                    if let Err(_) = handle_responding(&mut response_buffer,stream).await {
                        return;
                    }
@@ -262,6 +269,8 @@ impl  ConnectionStream {
     }
 
 }
+
+
 #[inline]
 pub (crate) async fn handle_responding<'e,Stream:AsyncWrite+Unpin>(response_buf:&mut BytesMut,
                                                           stream:&mut Stream)
@@ -282,6 +291,108 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
         buffer.reserve(READING_BUF_LEN - rem);
     }
 }
+
+
+
+pub (crate) struct BodyReadingBuffer {
+    buffer:BytesMut,
+    pub (crate ) bytes_consumed:usize,
+    pub (crate ) advanced_bytes:usize,
+}
+
+
+impl BodyReadingBuffer {
+
+
+
+    // #[inline]
+    // pub (crate) fn len(&self) -> usize {
+    //     self.buffer.len()
+    // }
+
+
+
+
+
+
+    #[inline]
+    pub (crate) fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
+    pub (crate) fn with_capacity(len:usize)->Self{
+        Self {
+            buffer:BytesMut::with_capacity(len),
+            bytes_consumed:0,
+            advanced_bytes:0,
+        }
+    }
+    pub (crate) fn clear(&mut self){
+        self.buffer.clear();
+    }
+
+    pub (crate) fn reset(&mut self){
+        self.bytes_consumed = 0;
+        self.advanced_bytes = 0;
+        self.clear();
+    }
+
+
+    pub (crate) fn extend_from_slice(&mut self,slice:&[u8]) {
+        self.buffer.extend_from_slice(slice);
+    }
+
+
+    //
+    // #[inline]
+    // pub (crate) fn as_str(&self)->Cow<str>{
+    //     String::from_utf8_lossy(self.chunk())
+    // }
+
+    pub (crate) async fn read_buf<Stream>(&mut self,stream:&mut Stream) ->  tokio::io::Result<usize>
+    where Stream:AsyncRead + Unpin {
+        let res =  stream.read_buf(&mut self.buffer).await;
+        if let Ok(s) = res {
+            self.bytes_consumed +=s;
+        }
+        return res;
+    }
+
+
+}
+
+
+impl AsRef<[u8]> for  BodyReadingBuffer {
+    fn as_ref(&self) -> &[u8] {
+        self.buffer.as_ref()
+    }
+}
+
+impl Deref for  BodyReadingBuffer {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+
+impl Buf for BodyReadingBuffer {
+    fn remaining(&self) -> usize {
+        self.buffer.remaining()
+    }
+
+    fn chunk(&self) -> &[u8] {
+        self.buffer.chunk()
+    }
+
+    fn advance(&mut self, cnt: usize) {
+        self.advanced_bytes +=cnt;
+        self.buffer.advance(cnt)
+    }
+}
+
+
 
 
 

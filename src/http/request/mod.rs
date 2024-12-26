@@ -1,3 +1,4 @@
+
 mod body;
 mod header;
 mod getter;
@@ -5,8 +6,6 @@ pub use getter::*;
 
 use std::borrow::Cow;
 use std::fmt::{Display,  Formatter};
-use std::future::Future;
-use byteorder::ReadBytesExt;
 pub use body::*;
 use crate::http::request::header::{KeyValueList};
 
@@ -21,18 +20,17 @@ use crate::http::request::header::{KeyValueList};
 
 /// a structr for holding references to
 /// buffer bytes with zero copy cost
-pub  struct IncomingRequest<'a,const headers_count:usize,const path_query_count:usize> {
+pub  struct IncomingRequest<'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize> {
     http_version:&'a [u8],
     method:&'a [u8],
     path:&'a [u8],
-    path_query:KeyValueList<'a,path_query_count>,
+    path_query:KeyValueList<'a,PATH_QUERY_COUNT>,
     content_length:Option<usize>,
-    pub (crate) headers:KeyValueList<'a,headers_count>,
+    pub (crate) headers:KeyValueList<'a,HEADERS_COUNT>,
     pub(crate) total_headers_bytes:usize,
-    pub(crate) total_body_consumed_bytes:usize,
 }
 
-impl<'a,const headers_count:usize,const path_query_count:usize> Display for  IncomingRequest<'a,headers_count,path_query_count> {
+impl<'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize> Display for  IncomingRequest<'a,HEADERS_COUNT,PATH_QUERY_COUNT> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut output = String::new();
         for i in self.headers.all_pairs() {
@@ -50,28 +48,30 @@ impl<'a,const headers_count:usize,const path_query_count:usize> Display for  Inc
     }
 }
 
-
+/// used for infra structure macros
  #[macro_export]
+#[doc(hidden)]
  macro_rules! inc_start_pointer {
     ($start:ident,$index:ident,$payload_length:ident) => {
          $start = $index+1;
          if $start >= $payload_length {
-                         $start-=1;
-                     }
+             $start-=1;
+         }
     };
 }
 pub (crate) use inc_start_pointer;
-impl <'a,const headers_count:usize,const path_query_count:usize>
-IncomingRequest<'a, headers_count,path_query_count>
+impl <'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize>
+IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
 
 {
+
 
     ///
     /// for creating new request from incoming bytes
     /// and returning back where the headers of this request
     /// is end or at what position
     /// # return [FormingRequestResult]
-    pub  fn new(payload:&'a[u8])->FormingRequestResult<'a,headers_count,path_query_count>{
+    pub  fn new(payload:&'a[u8])->FormingRequestResult<'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         let pk = payload.iter().enumerate();
         // for determining the end of each line and the end of the incoming request headers
         let mut end_founder_counter:u8 = 0;
@@ -104,15 +104,14 @@ IncomingRequest<'a, headers_count,path_query_count>
                         if let Some(key) = header_key {
                             let data = &payload[start..index];
 
-                            let this_is_content_length_header = unsafe {
-                                CONTENT_LENGTH_PATTERNS.contains(&key)
-                            };
+                            let this_is_content_length_header =
+                                CONTENT_LENGTH_PATTERNS.contains(&key);
                             if this_is_content_length_header {
                                 let cl = String::from_utf8_lossy(data).parse::<usize>();
                                 match cl {
                                     Ok(cl) => { content_length = Some(cl);}
                                     Err(_) => {
-                                        return FormingRequestResult::Err("can not parse content length");
+                                        return FormingRequestResult::Err;
                                     }
                                 }
                             } else
@@ -177,7 +176,7 @@ IncomingRequest<'a, headers_count,path_query_count>
                     end_founder_counter = 0;
                     if !first_line_read {
                         if index > 100000 {
-                            return FormingRequestResult::Err("request error : very high first line bytes")
+                            return FormingRequestResult::Err
                         }
                         match *byte {
                             b'?' =>{
@@ -214,6 +213,9 @@ IncomingRequest<'a, headers_count,path_query_count>
         }
 
         if let Some(success_end_of_request) = success_end_of_request {
+            if version.is_none() || method.is_none() || path.is_none() {
+                return FormingRequestResult::Err
+            }
             return FormingRequestResult::Success(
                     IncomingRequest {
                         http_version:version.unwrap(),
@@ -223,7 +225,6 @@ IncomingRequest<'a, headers_count,path_query_count>
                         path:path.unwrap(),
                         content_length,
                         total_headers_bytes:success_end_of_request+1,
-                        total_body_consumed_bytes:0
                     }
             )
         }
@@ -232,7 +233,7 @@ IncomingRequest<'a, headers_count,path_query_count>
 
     /// for getting the path of the incoming request
     ///
-    /// # return [Cow<str>] which 'a stands for the life of incoming request
+    /// # return [`Cow<str>`] which 'a stands for the life of incoming request
     pub fn path(&self)->Cow<str> {
         String::from_utf8_lossy(self.path)
     }
@@ -252,20 +253,32 @@ IncomingRequest<'a, headers_count,path_query_count>
         self.content_length.as_ref()
     }
 
-}
 
-
-pub (crate) enum FormingRequestResult<'a,const headers_count:usize,const path_query_count:usize> {
-    Success(IncomingRequest<'a,headers_count,path_query_count>),
-    ReadMore,
-    Err(&'a str),
-}
-
-impl <'a,const headers_count:usize,const path_query_count:usize> FormingRequestResult<'a,headers_count,path_query_count> {
-    pub (crate) fn is_ok(&self)->bool{
-        if let FormingRequestResult::Success(_) = self { return  true}
-        true
+    /// getting data from path query
+    /// for examples
+    /// - http:://examples.com/posts?id=1 the key is `id` and the value is `1`
+    /// - http:://examples.com/posts?year=2024 the key is `year` and the value is `2024`
+    pub fn get_from_path_query(&self,key:&str)->Option<Cow<str>>{
+        self.path_query.get_as_str(key)
     }
+
+}
+
+/// for creating context about handling forming http1 request by given bytes
+pub enum FormingRequestResult<'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize> {
+    /// if the request was formatted successfully
+    Success(IncomingRequest<'a,HEADERS_COUNT,PATH_QUERY_COUNT>),
+    /// if we need to read more from tcp connection stream to get fully request
+    ReadMore,
+    /// if the request has formatting error
+    Err,
+}
+
+impl <'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize> FormingRequestResult<'a,HEADERS_COUNT,PATH_QUERY_COUNT> {
+    // pub (crate) fn is_ok(&self)->bool{
+    //     if let FormingRequestResult::Success(_) = self { return  true}
+    //     true
+    // }
 }
 
 
@@ -311,9 +324,13 @@ mod test {
         //
 
             let request = IncomingRequest::<'_,16,16>::new(request_bytes);
-            if let FormingRequestResult::Success(mut request) = request {
+        match request {
+            FormingRequestResult::Success(mut request ) => {
                 let data = &request_bytes[request.total_headers_bytes..];
             }
+            _ =>  {}
+        }
+
 
 
         let inv2 = std::time::SystemTime::now();

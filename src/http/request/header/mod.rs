@@ -2,15 +2,15 @@ use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 
 
-pub (crate) struct KeyValueList<'a,const length:usize> {
-    data:[KeyValuePair<'a>;length],
+pub  struct KeyValueList<'a,const LENGTH:usize> {
+    data:[KeyValuePair<'a>;LENGTH],
     cursor:usize
 }
 
-impl <'a,const data_length:usize> KeyValueList<'a,data_length> {
-    pub (crate) fn empty()->KeyValueList<'a,data_length> {
+impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
+    pub (crate) fn empty()->KeyValueList<'a,DATA_LENGTH> {
         KeyValueList {
-            data:[KeyValuePair::empty();data_length],
+            data:[KeyValuePair::empty();DATA_LENGTH],
             cursor:0
         }
     }
@@ -35,9 +35,9 @@ impl <'a,const data_length:usize> KeyValueList<'a,data_length> {
 
 
     /// getting value as bytes from pair using key
-    pub fn get_as_bytes(&self,key:&[u8])->Option<&'a [u8]>{
+    pub fn get_as_bytes(&self,key:&str)->Option<&'a [u8]>{
         for ref i in self.data {
-            if i.key == key {
+            if i.key == key.as_bytes() {
                 return Some(i.value);
             }
         }
@@ -46,7 +46,7 @@ impl <'a,const data_length:usize> KeyValueList<'a,data_length> {
 
     /// getting value as [`Cow<str>`] from pair using key
     pub fn get_as_str(&self,key:&str)->Option<Cow<str>>{
-        if let Some(value) = self.get_as_bytes(key.as_bytes()){
+        if let Some(value) = self.get_as_bytes(key){
             return Some(String::from_utf8_lossy(value));
         }
         None

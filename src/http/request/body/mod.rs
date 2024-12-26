@@ -3,16 +3,19 @@ mod multipartformdata;
 mod multer;
 mod bytes_puller;
 mod stream_holders;
+
+use std::borrow::Cow;
+use std::collections::HashMap;
 pub (crate) use stream_holders::*;
 
 pub use multer::*;
 pub use bytes_puller::*;
 use std::future::Future;
 use std::pin::Pin;
-use tokio::io::{AsyncRead, AsyncWrite};
+use bytes::Bytes;
 pub use multipartformdata::MultiPartFormDataField;
 use crate::http::request::body::multipartformdata::ContentDispositionType;
-pub use crate::http::request::body::xwwwformurlencoded::XWWWFormUrlEncoded;
+pub use crate::http::request::body::xwwwformurlencoded::*;
 use crate::server::errors::WaterErrors;
 
 /// indicates the incoming body
@@ -28,7 +31,6 @@ pub enum IBody<'a> {
     XWWWFormUrlEncoded(XWWWFormUrlEncoded<'a>)
 }
 
-type HandlingBodyChunksWorker<M> = Pin<Box<dyn FnMut(Result<M,&str>)->dyn Future<Output=HandlingChunkResult>>>;
 /// if the incoming body need to be handled as chunks
 pub enum IBodyChunks<'a> {
     /// handling incoming body bytes as chunked
@@ -60,11 +62,11 @@ pub enum  ParsingBodyResults<'a> {
     /// handling the incoming body as chunks because of the size
     /// # why we need to handle body using chunks ?
     ///
-    /// well the incoming body could be very long data size for example ( 4GB )
+    /// well the incoming body could be very long data size for examples ( 4GB )
     /// and you are running your framework on a vps or low server resources
     /// so if your server ram size lower than the incoming data size you would face
     /// stack overflow error or your server would be panicked or encounter kill lag
-    /// or even facing hacking attacks ( example : if the hacker sent 4 request with 4gb on ram )
+    /// or even facing hacking attacks ( examples : if the hacker sent 4 request with 4gb on ram )
     /// this would make your server down
     ///
     /// so we need to handle data as chunks to load small chunks one the context reading buffer,
@@ -75,7 +77,7 @@ pub enum  ParsingBodyResults<'a> {
     /// handling the incoming data as full body bytes which is the common use case
     FullBody(IBody<'a>),
 
-    /// when request is get for example and it`s not having any payload
+    /// when request is get for examples and it`s not having any payload
     None,
     /// when could not handle body
     Err(WaterErrors<'a>)
@@ -88,7 +90,7 @@ impl <'a> ParsingBodyResults<'a> {
         payload:&'a[u8],
         mut on_detect: impl FnMut(
         Result<MultiPartFormDataField<'a>,&str>
-    ) -> Pin<Box<dyn Future<Output=HandlingFormDataResult>>>
+    ) -> Pin<Box<dyn Future<Output=HandlingFormDataResult> + Send>>
     )->Result<(),&str>{
         let mut index:usize = 0;
         loop {
@@ -173,6 +175,21 @@ impl  HeapFormField {
         self.data.as_ref()
     }
 
+
+
+    /// checking if incoming field is a file or not
+    /// by checking file name property
+    /// you could check also content-type manually by using [self.content_type]
+    pub fn is_file(&self)->bool{ self.file_name.is_some() }
+
+    /// for getting content type of field [MultiPartFormDataField]
+    pub fn content_type(&self)->Option<&[u8]>{
+        if let Some(f) = self.content_type.as_ref() {
+            return Some(f.as_bytes())
+        }
+        None
+    }
+
 }
 
 
@@ -184,14 +201,50 @@ impl  HeapFormField {
  }
 
 
+impl DynamicBodyMapTrait for FormDataAll {
+    fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
+        if let Some(field) = self.get_field(key) {
+            return Some(field.data.as_ref())
+        }
+        None
+    }
+
+    fn get(&self, key: &str) -> Option<Cow<str>> {
+        if let Some(data) = self.get_as_bytes(key){
+           return Some(String::from_utf8_lossy(data))
+        }
+        None
+    }
+
+    fn all(&self) -> HashMap<String, Bytes> {
+        let mut map = HashMap::new();
+        for field in &self.fields {
+           map.insert(field.name.to_string(),Bytes::copy_from_slice(field.data().as_ref()));
+        }
+        map
+    }
+}
 
 impl  FormDataAll {
     /// for getting specific field form incoming multipart data
-    pub fn get(&self,key:&str)->Option<&HeapFormField>{
-
+    pub fn get_field(&self,key:&str)->Option<&HeapFormField>{
         self.fields.iter().find(|c| {
             c.name == key
         })
+    }
+    /// for getting specific field form incoming multipart data
+    pub fn get_mut(&mut self,mut key:&str)->Option<&mut HeapFormField>{
+        if key.starts_with("\"") {
+            key = &key[1..];
+        }
+        if key.ends_with("\""){
+            key = &key[..key.len()-1];
+        }
+        let fields = &mut self.fields;
+        for field in fields  {
+            if field.name == key { return Some(field);}
+        }
+        None
     }
 
     /// initiating new [FormDataAll]
@@ -204,11 +257,11 @@ impl  FormDataAll {
 
 
 
-    pub (crate) fn push(& mut self,
-                                           field:&
-    MultiPartFormDataField,data:&[u8]){
-
-
+    pub (crate) fn push(& mut self,field:&MultiPartFormDataField,data:&[u8]){
+        if let Some( field) = self.get_mut(String::from_utf8_lossy(field.name).as_ref()) {
+            field.data.extend_from_slice(data);
+            return;
+        }
         self.fields.push(
             HeapFormField::from(field,data)
         );
@@ -228,3 +281,71 @@ pub enum  HandlingChunkResult<'a> {
     Consumed,
     Err(&'a str)
 }
+
+/// for creating dynamic memory safe body holder
+/// functionalities
+///
+/// # Note
+/// all of these function are to make some functionalities easy for you
+/// , if you want blazingly efficient way just use getter function on main context
+///  to get `HttpGetter`
+/// ```rust
+/// let context = todo!();
+/// let mut getter = context.getter();
+/// ```
+/// ignore defining context because it would be ready for you by the framework
+/// and this is the wright way to get `HttpGetter`
+pub enum  DynamicBodyMap{
+    /// form field
+    FormField(FormDataAll),
+    /// x-www form field
+    Xww(HeapXWWWFormUrlEncoded)
+}
+impl DynamicBodyMapTrait for DynamicBodyMap {
+    fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
+        match self {
+            DynamicBodyMap::FormField(data) => { data.get_as_bytes(key)}
+            DynamicBodyMap::Xww(data) => {data.get_as_bytes(key)}
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<Cow<str>> {
+        match self {
+            DynamicBodyMap::FormField(data) => { data.get(key)}
+            DynamicBodyMap::Xww(data) => {data.get(key)}
+        }
+    }
+
+    fn all(&self) -> HashMap<String, Bytes> {
+        match self {
+            DynamicBodyMap::FormField(data) => { data.all()}
+            DynamicBodyMap::Xww(data) => {data.all()}
+        }
+    }
+}
+
+/// for creating dynamic memory safe body holder
+/// functionalities
+///
+/// # Note
+/// all of these function are to make some functionalities easy for you
+/// , if you want blazingly efficient way just use getter function on main context
+///  to get `HttpGetter`
+/// ```rust
+/// let context = todo!();
+/// let mut getter = context.getter();
+/// ```
+/// ignore defining context because it would be ready for you by the framework
+/// and this is the wright way to get `HttpGetter`
+pub trait DynamicBodyMapTrait{
+
+    /// getting field or any data key value as bytes or [&[u8]]
+    fn get_as_bytes(&self,key:&str)-> Option<&[u8]>;
+
+    /// getting field or any data key value as [`Cow<str>`]
+    fn get (&self,key:&str)->Option<Cow<str>>;
+
+    /// getting all incoming keys and values as hashmap
+    fn all(&self)-> HashMap<String,Bytes>;
+}
+

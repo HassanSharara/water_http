@@ -8,12 +8,15 @@ use h2::RecvStream;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use h2::server::SendResponse;
 use http::Request;
+use serde::Deserialize;
+use serde::ser::Error;
 use tokio::net::{ TcpStream};
 use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest};
-use crate::http::request::{Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+use crate::http::request::{DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
-use crate::server::connection::handle_responding;
-use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, MiddlewareCallback, MiddlewareResult};
+use crate::server::{CapsuleWaterController, MiddlewareCallback, MiddlewareResult};
+use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
 
 pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
@@ -41,12 +44,12 @@ impl <'a,const HEADERS_COUNT:usize
 pub (crate) struct  Http2Context<'a> {
     pub request_batch:(Request<RecvStream>,SendResponse<Bytes>),
     content_length:Option<usize>,
-    reading_buffer:&'a mut BytesMut
+    reading_buffer:&'a mut BodyReadingBuffer
 }
 
 impl<'a> Http2Context<'a> {
 
-    pub (crate) fn new(request_batch:(Request<RecvStream>,SendResponse<Bytes>),reading_buffer:&'a mut BytesMut)->Self{
+    pub (crate) fn new(request_batch:(Request<RecvStream>,SendResponse<Bytes>),reading_buffer:&'a mut BodyReadingBuffer)->Self{
         Http2Context {request_batch,content_length:None,reading_buffer}
     }
 
@@ -98,24 +101,31 @@ pub struct HttpContext<
     const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>
 {
-    holder:Option<H>,
+    /// for holding data trough multiple middlewares and functions or handlers
+    pub holder:Option<H>,
     protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
     peer:&'a SocketAddr,
     /// saving generic parameters injected with requested path
     pub path_params_map:Option<HashMap<String,String>>,
+    body_bytes_holder:Option<Vec<u8>>
 }
 
 
 impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize> HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT> {
 
+    /// for getting connected socket Address
+    /// # return `&SocketAddr`
+    pub fn get_peer_socket(&self)->&SocketAddr {
+        self.peer
+    }
     pub (crate) fn new(
         protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
         socket:&'a SocketAddr
     )->
     HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
-        HttpContext {holder:None,protocol,peer:socket,path_params_map:None}
+        HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None}
     }
 
 
@@ -129,22 +139,32 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     }
 
 
+
     /// getting the full body bytes from stream
+    /// this function will make context allocate heap memory for holding bytes together
+    /// and not use the same buffer bytes because the buffer would be busy handling another request and
+    /// can not be interpreted by the current thread, and also we need to hold the body bytes for you
+    /// to the next use
     /// # Note :
     /// this function is generate body bytes in heap and it`s less efficient than using getter() function
+    /// but also using getter is much more code you need to write , and also you need to know what are you doing
+    /// to make it super efficient
     /// [HttpGetter]
     ///
     /// to use getter you can call
     /// ```shell
     /// context.getter()
     /// ```
-    pub async fn get_body_as_full_bytes<T:serde::Deserialize<'a>>(&mut self)->Result<Option<Bytes>,WaterErrors>{
+    pub async fn get_body_full_bytes(&mut self)->Result<Option<&Vec<u8>>,WaterErrors>{
+        if self.body_bytes_holder.is_some() {
+            return Ok(self.body_bytes_holder.as_ref())
+        }
         let mut getter = self.getter();
         let puller = getter.get_body_by_mechanism(
             ParsingBodyMechanism::JustBytes
         ).await;
         match puller {
-            ParsingBodyResults::Chunked(chunks) => {
+            Chunked(chunks) => {
                 if let IBodyChunks::Bytes(mut puller) = chunks {
                     let mut bytes = vec![];
                     if let Ok(()) = puller.on_chunk(
@@ -153,14 +173,16 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                             return Ok(())
                         }
                     ).await {
-                       return  Ok(Some(Bytes::copy_from_slice(&bytes)))
+                        self.body_bytes_holder = Some(bytes);
+                        return  Ok(self.body_bytes_holder.as_ref())
                     }
                 }
 
             }
-            ParsingBodyResults::FullBody(body) => {
+            FullBody(body) => {
                 if let IBody::Bytes(body_bytes) = body {
-                    return Ok(Some(Bytes::copy_from_slice(body_bytes)))
+                    self.body_bytes_holder = Some(body_bytes.to_vec());
+                    return  Ok(self.body_bytes_holder.as_ref())
                 }
                 return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST))
             }
@@ -174,6 +196,106 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         return Err( WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR))
     }
 
+
+    /// for getting the body parsed as [Deserialize] json struct
+    pub async fn get_body_as_json<'b,V:Deserialize<'b>>(&mut self)->Result<V,serde_json::Error>{
+        let body = self.get_body_full_bytes().await;
+        match body {
+            Ok(Some(data)) => {
+
+                let res = serde_json::from_slice(
+                    unsafe  {
+                        (data.as_ref() as *const [u8]).as_ref().unwrap()
+                    }
+                );
+                 return res
+            }
+            _ => {Err(serde_json::Error::custom("can not retrieve incoming body bytes"))}
+        }
+    }
+
+
+    /// getting body as multipart form data [FormDataAll]
+    pub async fn get_body_as_multipart(&mut self)->Result<FormDataAll,WaterErrors>{
+        let mut body = self.getter();
+        let  body = body.get_body_by_mechanism(
+            ParsingBodyMechanism::FormData
+        ).await;
+         match body {
+            Chunked(a)=>{
+                if let IBodyChunks::FormData( data) = a {
+                    if let Ok( data) = data.to_form_data_all().await {
+                        return  Ok(data)
+                    }
+                }
+            }
+            FullBody(f)=> {
+                if let IBody::MultiPartFormData(data) = f {
+                    return Ok(data)
+                }
+            }
+            _ => {}
+        };
+
+        return  Err(
+            WaterErrors::Http(HttpStatusCode::BAD_REQUEST)
+        )
+
+    }
+
+
+    /// returning dynamic trait that would be for getting values from body using
+    /// keys
+    pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors> {
+
+        let mut getter = self.getter();
+        match getter.get_body().await {
+            Chunked(bo) => {
+
+                match bo {
+                    IBodyChunks::FormData(mut multipart_form) => {
+                        let mut fu = FormDataAll::new();
+                        if multipart_form.on_field_detected(
+                            |field,data|{
+                                fu.push(field,data);
+                                Ok(None)
+                            }
+                        ).await .is_ok(){
+
+                        }
+                    }
+                    _ =>{}
+                }
+
+            }
+
+
+
+            FullBody(full_body) => {
+                match full_body {
+
+                    IBody::MultiPartFormData(data) => {
+                        return Ok(DynamicBodyMap::FormField(data))
+                    }
+                    IBody::XWWWFormUrlEncoded(data) => {
+                        return Ok(DynamicBodyMap::Xww(
+                            HeapXWWWFormUrlEncoded::new(
+                                &data
+                            )
+                        ))
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        };
+        Err::<DynamicBodyMap,WaterErrors<'a>>(
+            WaterErrors::Http(
+                HttpStatusCode::BAD_REQUEST
+            )
+        )
+    }
+
     /// this function return the original data on the request buffer on memory ,and
     /// it is very fast and memory safe function ,and it has zero allocation for data
     pub fn get_from_headers(&'a self,key:&str)->Option<&[u8]>{
@@ -182,14 +304,14 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                 return  h2.get_from_headers(key)
             }
             Protocol::Http1(h1) => {
-                h1.request.headers.get_as_bytes(key.as_bytes())
+                h1.request.headers.get_as_bytes(key)
             }
         }
     }
 
     /// this function just convert the bytes that come from [self.get_from_headers]
-    /// to Cow<str>
-    /// so it`s return [Cow<str>]
+    /// to `Cow<str>`
+    ///  return [`Cow<str>`]
     ///
     /// please note that rust could allocate new memory for holding [Cow] when it`s converted
     /// from clean bytes
@@ -226,6 +348,12 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     }
 
 
+    /// for sending [`&str`] values to the client
+    pub fn send_str(&mut self,value:&str){
+        let mut sender = self.sender();
+        sender.send_str(value);
+    }
+
 
     /// getter is for getting data from incoming request like body and request quires
     // pub fn  getter<'b>(&'b mut self) ->HttpGetter<'b,'a,Stream, HEADERS_COUNT, PATH_QUERY_COUNT> {
@@ -258,7 +386,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
     /// getting the path from incoming request
-    pub fn path(&'a self)->Cow<str>{
+    pub fn path(&self)->Cow<str>{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
@@ -271,7 +399,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     }
 
     /// getting incoming request method
-    pub fn method(&'a self)->Cow<str>{
+    pub fn method(&self)->Cow<str>{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
@@ -285,7 +413,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
     /// getting from path generic injected parameters
-    /// like [http://example.com/test/{id}]
+    /// like <http://example.com/test/{id}>
     /// here id is a generic parameter
     pub fn get_from_generic_path_params(&'a self,key:&str)->Option<&'a String>{
         if let Some(p) = &self.path_params_map {
@@ -302,8 +430,17 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ServingRequestResults
     {
 
-        let path = self.path();
+        let content_length = self.content_length().copied();
         let method = self.method();
+        if let Some(content_length )  = content_length {
+            if (content_length > 0) && ["GET","HEAD","DELETE","TRACE"].contains(&method.as_ref()) {
+                let mut sender = self.sender();
+                sender.send_status_code(HttpStatusCode::BAD_REQUEST);
+                _=sender.write_custom_bytes(&[]).await;
+                return  ServingRequestResults::Stop;
+            }
+        }
+        let path = self.path();
         let f = controller.find_function(path.as_ref(),method.as_ref());
         if let Some((controller,func,map)) = f {
             self.path_params_map = map;
@@ -323,10 +460,14 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         } else {
             let mut sender = self.sender();
             sender.send_status_code(HttpStatusCode::NOT_FOUND);
+            _=sender.write_custom_bytes(&[]).await;
+            return  ServingRequestResults::Stop;
         }
 
         ServingRequestResults::Done
     }
+
+
 
 
 
@@ -383,7 +524,7 @@ pub struct Http1Context<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize> {
   pub request: IncomingRequest<'a, HEADERS_COUNT, PATH_QUERY_COUNT>,
   pub (crate) stream:&'a mut HttpStream,
-  pub (crate) body_reading_buffer:&'a mut BytesMut,
+  pub (crate) body_reading_buffer:&'a mut BodyReadingBuffer,
   response_buffer:&'a mut BytesMut,
   pub (crate) left_bytes:&'a [u8],
 }
@@ -394,7 +535,7 @@ impl <'a,const HEADERS_COUNT:usize
     pub (crate) fn new(
                        stream:&'a mut HttpStream,
                        response_buffer:&'a mut BytesMut,
-                       body_reading_buffer:&'a mut BytesMut,
+                       body_reading_buffer:&'a mut BodyReadingBuffer,
                        left_bytes:&'a[u8],
                        request:IncomingRequest<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
 
@@ -413,18 +554,6 @@ impl <'a,const HEADERS_COUNT:usize
 
 
 
-    pub(crate) async fn flush_response_buffer(&mut self)->Result<(),&str>{
-        match self.stream {
-            HttpStream::AsyncSecure(stream) => {
-                handle_responding(self.response_buffer,stream).await
-
-            }
-            HttpStream::Async(s) => {
-                handle_responding(self.response_buffer,s).await
-
-            }
-        }
-    }
 
 
     /// getting content-length if the current request
@@ -446,52 +575,6 @@ impl <'a,const HEADERS_COUNT:usize
         }
     }
 
-    /// for getting the body of  incoming stream by default mechanism
-    /// [ParsingBodyMechanism::Default]
-    pub async fn get_body(&mut self)->ParsingBodyResults<'a>{
-        self.get_body_by_mechanism(ParsingBodyMechanism::Default).await
-    }
-
-    /// for getting the body of incoming request using custom mechanism
-    pub async fn get_body_by_mechanism(&mut self,mechanism:ParsingBodyMechanism)->ParsingBodyResults<'a>{
-        if let Some(content_length) = self.request.content_length() {
-
-
-
-            // let`s checks if request need to be handled alone
-            if *content_length >= EACH_REQUEST_BODY_READING_BUFFER {
-                if let Err(_) = self.flush_response_buffer().await {
-                    return ParsingBodyResults::Err(
-                        WaterErrors::Server(
-                            ServerError::FLUSH_DATA_TOSTREAM_ERROR
-                        )
-                    );
-                }
-                // borrowing body reader buffer
-                let body_buffer =&mut self.body_reading_buffer;
-
-
-                // making sure that body buffer is clean
-                if !body_buffer.is_empty() {body_buffer.clear();}
-                // let`s handle getting data by chunks
-
-            }
-
-
-
-            match mechanism {
-                ParsingBodyMechanism::Default => {}
-                ParsingBodyMechanism::JustBytes => {}
-                ParsingBodyMechanism::FormData => {}
-                ParsingBodyMechanism::XWWWFormData => {}
-            }
-        }
-        return ParsingBodyResults::Err(
-            WaterErrors::Server(
-                ServerError::HANDLING_INCOMING_BODY_ERROR
-            )
-        )
-    }
 
 }
 

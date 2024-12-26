@@ -5,6 +5,7 @@ use bytes::{Bytes, BytesMut};
 use h2::{RecvStream, SendStream};
 use h2::server::SendResponse;
 use http::{HeaderName, HeaderValue, Request, Response as H2Response, response::Builder as H2ResponseBuilder};
+use serde::Serialize;
 use tokio::io::{ AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use crate::http::{FileRSender, HeaderResponseBuilder, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode};
@@ -12,7 +13,8 @@ use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::HttpStream;
 
-
+/// for providing easy access and use for sends methods
+/// and providing infra structure for http protocols handling
 pub  trait HttpSenderTrait {
    /// for setting http status code for response
    fn send_status_code(&mut self,http_status: StatusCode);
@@ -26,6 +28,8 @@ pub  trait HttpSenderTrait {
     /// for setting header key value to response holder
 
    fn set_header<K:Display, V:Display>(&mut self,key:K,value:V);
+
+    fn send_json<JSON:Serialize>(&mut self,value:&JSON)->serde_json::Result<()>;
 
     /// to send [&str] as response to client
    fn send_str(&mut self,data:&str);
@@ -43,8 +47,8 @@ pub  trait HttpSenderTrait {
 }
 
 
-
-pub (crate) struct  Http2Sender<'a> {
+/// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 2 protocol to serve connections
+pub struct  Http2Sender<'a> {
     batch:&'a mut (Request<RecvStream>,SendResponse<Bytes>),
     send_stream: Option<SendStream<Bytes>>,
     response_builder:Option<H2ResponseBuilder>
@@ -118,6 +122,20 @@ impl<'a> HttpSenderTrait for Http2Sender<'a> {
             self.send_status_code(StatusCode::OK);
             self.set_header(key,value);
         }
+    }
+
+    fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
+        self.set_header("content-type","application/json");
+        return match serde_json::to_vec(&value) {
+            Ok(data) => {
+                self.send_data_as_final_response(ResponseData::Slice(
+                    data.as_ref()
+                ));
+                 Ok(())
+            }
+            Err(e) => {  Err(e)}
+        }
+
     }
 
     fn send_str(&mut self, data: &str) {
@@ -323,7 +341,14 @@ pub  enum HttpSender<'a> {
         }
     }
 
-    fn send_str(&mut self, data: &str) {
+     fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
+         match self {
+             HttpSender::H1(h1) => {h1.send_json(value)}
+             HttpSender::H2(h2) => {h2.send_json(value)}
+         }
+     }
+
+     fn send_str(&mut self, data: &str) {
         match self {
             HttpSender::H1(h1) => {
                 h1.send_str(data)
@@ -350,8 +375,9 @@ pub  enum HttpSender<'a> {
  }
 
 
+/// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 1 protocol to serve connections
 
-pub (crate) struct Http1Sender<'a,
+pub  struct Http1Sender<'a,
 > {
     pub buf:&'a mut BytesMut,
     stream:&'a mut HttpStream,
@@ -404,6 +430,18 @@ impl<'a> HttpSenderTrait for Http1Sender <'a>  {
     fn set_header<K:Display, V:Display>(&mut self, key: K, value: V) {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         self.buf.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
+    }
+
+    fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()> {
+        self.set_header("content-type","application/json");
+        match serde_json::to_vec(value) {
+            Ok(data) => {
+                self.send_data_as_final_response(ResponseData::Slice(data.as_ref()));
+                Ok(())
+            }
+            Err(e) => {return Err(e)}
+        }
+
     }
 
     fn send_str(&mut self,data: &str)  {

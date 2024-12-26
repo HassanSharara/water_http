@@ -16,10 +16,11 @@ pub struct HttpResponseBufferWriter<'a> {
  impl<'a> HttpResponseBufferWriter<'a> {
      /// for creating ok response with 200 status code
      #[inline]
-     pub (crate) fn success(buffer:&'a mut BytesMut)->HttpResponseBufferWriter<'a>{
+     pub  fn success(buffer:&'a mut BytesMut)->HttpResponseBufferWriter<'a>{
          Self::with_version_and_status(buffer,StatusCode::OK)
      }
 
+     /// for initiating new [HttpResponseBufferWriter] struct
      pub fn new(buffer:&'a mut BytesMut)->HttpResponseBufferWriter<'a>{
          HttpResponseBufferWriter{
              write_able_buffer:buffer

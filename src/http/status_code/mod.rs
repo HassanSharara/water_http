@@ -4,7 +4,7 @@ macro_rules! form_http_status_tree {
         impl<'a> HttpStatusCode<'a> {
             $(
         $(#[$docs])*
-         pub const $name:HttpStatusCode<'_> = HttpStatusCode::new(unsafe { NonZeroU16::new_unchecked($st)},$label);
+         pub const $name:HttpStatusCode<'static> = HttpStatusCode::new(unsafe { NonZeroU16::new_unchecked($st)},$label);
         )*
         }
     };

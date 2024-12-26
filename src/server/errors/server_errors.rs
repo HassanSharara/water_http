@@ -1,4 +1,4 @@
-
+#![allow(unused)]
 use crate::http::status_code::HttpStatusCode;
 
 
@@ -18,9 +18,7 @@ impl<'a> From<WaterErrors<'a>> for Result<(), WaterErrors<'a>> {
 /// specifying all server errors
 #[derive(Debug,Clone)]
 pub struct  ServerError<'a> {
-     /// error code so that would be easy to track errors in all community
      code:u16,
-     /// error message to make brief description about error
      msg:&'a str
 }
 
@@ -43,7 +41,7 @@ macro_rules! form_server_errors {
        impl <'a> ServerError<'a> {
            $(
             $(#[$docs])*
-            pub const $name:ServerError<'_> = ServerError::new($code,$msg);
+            pub const $name:ServerError<'static> = ServerError::new($code,$msg);
            )*
        }
     };

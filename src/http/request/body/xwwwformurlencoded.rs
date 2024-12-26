@@ -1,5 +1,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use bytes::Bytes;
+use crate::http::request::DynamicBodyMapTrait;
 
 
 /// when ever your incoming request have x-www-form-urlencoded data body type
@@ -14,13 +16,62 @@ pub struct XWWWFormUrlEncoded<'a> {
     data:HashMap<&'a[u8],&'a[u8]>
 }
 
+/// heap implementation data for x-www form url encoded data
+pub struct HeapXWWWFormUrlEncoded{
+    data:HashMap<String,Bytes>
+}
 
+impl HeapXWWWFormUrlEncoded {
+    /// creating new heap x-www-form-urlencoded data
+    pub fn new(data:&XWWWFormUrlEncoded)->Self{
+        let all = data.all();
+        Self {
+            data:all
+        }
+    }
+}
+impl  DynamicBodyMapTrait for HeapXWWWFormUrlEncoded {
+    fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
+        if let Some(data) = self.data.get(key){
+            return Some(data.as_ref())
+        }
+        None
+    }
 
+    fn get(&self, key: &str) -> Option<Cow<str>> {
+        if let Some(data) = self.data.get(key){
+            return Some(String::from_utf8_lossy(data.as_ref()))
+        }
+        None
+    }
+
+    fn all(&self) -> HashMap<String, Bytes> {
+       self.data.clone()
+    }
+}
+
+impl<'a> DynamicBodyMapTrait for XWWWFormUrlEncoded<'a> {
+    fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
+        self.get_as_bytes_ref(key)
+    }
+
+    fn get(&self, key: &str) -> Option<Cow<str>> {
+        self.get_as_str(key)
+    }
+
+    fn all(&self) -> HashMap<String, Bytes> {
+        let mut map = HashMap::new();
+        for (key,value) in &self.data {
+            map.insert(String::from_utf8_lossy(key).to_string(),Bytes::copy_from_slice(value));
+        }
+        map
+    }
+}
 /// crate self using implementations for framework
 impl <'a> XWWWFormUrlEncoded<'a> {
 
     /// for getting value based on its given key
-    pub fn get_as_bytes (&self,key:&str)->Option<&'a[u8]>{
+     fn get_as_bytes_ref(&self,key:&str)->Option<&'a[u8]>{
         if let Some(data) = self.data.get(key.as_bytes()) {
             return  Some(*data)
         }
@@ -28,14 +79,14 @@ impl <'a> XWWWFormUrlEncoded<'a> {
     }
 
     /// for getting value based on its given key as [&str]
-    pub fn get(&self,key:&str)->Option<Cow<'a,str>>{
+     fn get_as_str(&self,key:&str)->Option<Cow<str>>{
         if let Some(data) = self.get_as_bytes(key) {
             return String::from_utf8_lossy(data).into();
         }
         None
     }
     /// for getting all incoming data as HashMap of bytes
-    pub fn all(&self)->&HashMap<&'a[u8],&'a[u8]>{
+    pub fn all_ref(&self)->&HashMap<&'a[u8],&'a[u8]>{
         &self.data
     }
     pub (crate) fn new(payload:&'a[u8])->XWWWFormUrlEncoded<'a>{

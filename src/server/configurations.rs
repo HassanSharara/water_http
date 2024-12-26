@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use crate::server::MiddlewareCallback;
 
 pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 1024*4;
-pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
+// pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
 pub (crate) const READING_BUF_LEN:usize = 1024*8;
 pub (crate) const WRITING_BUF_LEN:usize = 1024*8;
 pub (crate) const WRITING_FILES_BUF_LEN:usize = 1024*80;
@@ -54,11 +55,11 @@ pub enum RestrictionRule {
 /// specify the tls ports and threshold of encoding data algorithm
 /// and also specify the important headers to retrieve for optimizing requests while
 /// handling a lot of them
-pub struct ServerConfigurations {
+pub struct ServerConfigurations<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize>{
     ///
     ///
     /// - set the address that your server need to bind
-    /// and also the ports with them for example [0.0.0.0:80]
+    /// and also the ports with them for examples [0.0.0.0:80]
     /// or [0.0.0.0:443] as tls port
     ///
     ///
@@ -72,7 +73,7 @@ pub struct ServerConfigurations {
     /// use [context.send_file_from_public_resources( --the path of your file inside the public resources-- )]
     /// and then the file will be detected and sent automatically
     ///
-    pub public_files_path:Option<String>,
+    pub public_files_path:Option<Vec<PublicResourcesOverConfig<H, HEADERS_COUNT, QUERY_COUNT>>>,
 
     /// - if you need your server to support tls or ssl encryption
     /// just provide the path of your [private.key] and [certificate.cer]
@@ -107,7 +108,7 @@ pub struct ServerConfigurations {
     // /// and those just the queries subjected by incoming request path
     // /// # For Example :
     // /// https://wwww.example.com/post?id=1&name=2
-    // /// as you see in this example we have just two queries count
+    // /// as you see in this examples we have just two queries count
     // pub max_http1_query_length:usize,
 }
 
@@ -123,11 +124,10 @@ pub struct TLSCertificate {
 
 
 /// - configurations methods
-impl ServerConfigurations {
+impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> ServerConfigurations<H,HEADERS_COUNT,QUERY_COUNT> {
 
     ///  returning default server configurations
     ///  - default port = 80
-    ///  - public_files_path = "./public"
     ///  - threshold_for_encoding_response = 4000000 -> for detecting when to call encoding large data when responding to clients
     ///  - tls_ports = vec![443]
     /// # return [ ServerConfigurations]
@@ -135,7 +135,7 @@ impl ServerConfigurations {
     pub fn default()->Self {
         ServerConfigurations{
             addresses:vec![("0.0.0.0".to_string(),80),],
-            public_files_path:"./public".to_string().into(),
+            public_files_path:None,
             tls_certificate:None,
             restricted_ips:None,
             threshold_for_encoding_response:4000000,
@@ -147,9 +147,25 @@ impl ServerConfigurations {
         }
     }
 
+
+    /// for pushing public files service
+    /// and this is means if you want your clients to download files or contents
+    /// you could use this service for that
+    pub fn add_public_service(&mut self,value:PublicResourcesOverConfig<H,HEADERS_COUNT,QUERY_COUNT>){
+       match self.public_files_path {
+            None => {
+                let  services = vec![value];
+                self.public_files_path = Some(services);
+            }
+            Some(ref mut data) => {
+                data.push(value)
+            }
+        };
+    }
+
     ///
     /// # setting role to connect the server
-    /// this role would be a type of [WaterIpAddressesRestriction]
+    /// this role would be a type of `WaterIpAddressesRestriction`
     ///
     pub fn set_restriction_to_ips(&mut self,roll:RestrictionRule){
         self.restricted_ips = Some(roll);
@@ -201,6 +217,30 @@ impl ServerConfigurations {
         ServerConfigurations {
             addresses:links,
             ..Self::default()
+        }
+    }
+}
+
+
+/// for providing configurations about public resources serving
+/// like what`s the path that would trigger public file serving
+/// and middlewares for files serving
+pub struct PublicResourcesOverConfig<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> {
+    /// the path that would trigger files serving
+    pub path:&'static str,
+    /// pointing to files located on the local server
+    /// to serve them back
+    pub secret_local_path:Option<&'static str>,
+
+    middleware:MiddlewareCallback<H,HEADERS_COUNT,QUERY_COUNT>
+}
+
+impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> PublicResourcesOverConfig<H,HEADERS_COUNT,QUERY_COUNT> {
+    /// creating new [PublicResourcesOverConfig]
+    pub fn new(path:&'static str)->MiddlewareCallback<H,HEADERS_COUNT,QUERY_COUNT>{
+        MiddlewareCallback {
+            path,
+            secret_local_path:Some(path)
         }
     }
 }

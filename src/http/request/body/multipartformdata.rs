@@ -16,35 +16,19 @@
 
 
 
-pub (crate) struct FieldCapsule <'a>{
-    bytes:Bytes,
-    data:&'a [u8],
-    pub
-    field:MultiPartFormDataField<'a>
-}
-
-impl<'a> FieldCapsule<'a> {
-    pub fn new(bytes:Bytes)->Option<FieldCapsule<'a>>{
-        let data:&'a [u8] = unsafe {(bytes.as_ref() as *const[u8]).as_ref().unwrap()};
-        let field = MultiPartFormDataField::new(data);
-        if let Some(field) = field {
-            return Some(FieldCapsule{
-                bytes,
-                data,
-                field
-            });
-        }
-        None
-    }
-
-    pub fn data(&self)->&'a [u8]{
-       &self.data[self.field.field_header_length..]
-    }
-
-}
 
 impl <'a> MultiPartFormDataField<'a> {
-    pub fn new(payload:&'a[u8])->Option<MultiPartFormDataField<'a>>{
+
+    /// checking if incoming field is a file or not
+    /// by checking file name property
+    /// you could check also content-type manually by using [self.content_type]
+    pub fn is_file(&self)->bool{ self.file_name.is_some() }
+
+    /// for getting content type of field [MultiPartFormDataField]
+    pub fn content_type(&self)->Option<&'a [u8]>{self.content_type}
+
+    #[allow(unused_assignments)]
+    pub (crate) fn new(payload:&'a[u8])->Option<MultiPartFormDataField<'a>>{
         let mut key:Option<&'a[u8]> = None;
         let mut disposition_key:Option<&'a[u8]> = None;
         let mut name = None;
@@ -102,7 +86,6 @@ impl <'a> MultiPartFormDataField<'a> {
                     end_counter = 0 ;
                     if disposition_indexes_start {
                         if let Some(key) = disposition_key {
-                            println!("ssssssssss {}",String::from_utf8_lossy(key));
                             match key {
                                 b"name"=>{ name = Some(&payload[start..index]);
                                     inc_start_pointer!(start,index,payload_length);
@@ -163,6 +146,7 @@ impl <'a> MultiPartFormDataField<'a> {
         None
     }
 
+    /// for cloning [MultiPartFormDataField]
     pub fn clone<'b>(& self,data:&'b mut Vec<u8>) -> MultiPartFormDataField<'b> {
         let index = data.len();
         data.extend_from_slice(self.name);
@@ -203,7 +187,6 @@ impl <'a> MultiPartFormDataField<'a> {
 }
 
 
-use bytes::Bytes;
 use crate::http::request::inc_start_pointer;
 
 

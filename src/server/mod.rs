@@ -12,7 +12,6 @@ pub use capsule::*;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug};
@@ -27,7 +26,7 @@ pub (crate) fn get_server_config()->&'static ServerConfigurations{
 
 /// running given server configurations with Controller Root
 pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const QS:usize,>(
-    config:ServerConfigurations,
+    config:ServerConfigurations<Holder, HS, QS>,
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
 ){
     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
@@ -139,7 +138,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
 
 async fn serve_connection<Holder:Send + 'static + std::fmt::Debug,
     const HS:usize,const QS:usize,>
-(mut connection:ConnectionStream,
+(connection:ConnectionStream,
  controller:&'static  CapsuleWaterController<Holder,HS,QS>
 ){
     connection.serve(controller).await;

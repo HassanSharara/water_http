@@ -1,5 +1,6 @@
-use std::path::Path;
 
+use std::path::Path;
+/// for finding custom bytes in custom buffer or data
 pub fn find(original:&[u8], patter:&[u8]) ->Option<usize>{
     twoway::find_bytes(original,patter)
 }
@@ -16,7 +17,8 @@ pub (crate) fn split<'bytes>(original:&'bytes [u8], patter:&[u8])->BytesSplit<'b
     return split
 }
 
-pub (crate) struct BytesSplit<'a> {
+/// for implementing splitting functions to custom data flow
+pub  struct BytesSplit<'a> {
     first:Option<&'a [u8]>,
     last:Option<&'a [u8]>
 }
@@ -28,9 +30,7 @@ impl <'a> BytesSplit<'a> {
         }
     }
 
-    pub (crate) fn is_none(&self)->bool {
-    self.last.is_none() && self.first.is_none()
-   }
+
     pub (crate) fn set_first(&mut self,bytes:&'a[u8]){
         self.first = Some(bytes);
     }
@@ -40,13 +40,16 @@ impl <'a> BytesSplit<'a> {
     }
 
 
+    /// getting the last element or bytes of split object
     pub fn last(&self)->Option<&'a[u8]> { self.last }
+    /// getting the first element or bytes of split object
     pub fn first(&self)->Option<&'a[u8]> { self.first }
+
 }
 
 
-
-pub (crate) fn bytes_to_usize(bytes:&[u8])->Option<usize>{
+/// for converting usize bytes to usize object in rust
+pub  fn bytes_to_usize(bytes:&[u8])->Option<usize>{
     const LEN:usize = size_of::<usize>();
     let  mut data =  [0u8;LEN];
     let res = &mut data;
@@ -112,7 +115,7 @@ pub (crate) fn content_type_from_file_path(path: &&Path) -> Option<&'static str>
 
 
 #[inline]
-pub (crate) fn found_boundary_in(mut data:&[u8],pattern:&[u8])->PatternExistResult{
+pub (crate) fn found_boundary_in(data:&[u8],pattern:&[u8])->PatternExistResult{
     let pattern_length = pattern.len();
 
     if data.len() < pattern_length {return PatternExistResult::None}
@@ -150,8 +153,10 @@ pub (crate) fn found_boundary_in(mut data:&[u8],pattern:&[u8])->PatternExistResu
     PatternExistResult::None
 }
 
+
+/// for extending data (bytes) to custom buffer or vector until we found some pattern or needle
 #[inline]
-pub (crate) fn extend_to_buffer_until(mut data:&[u8],pattern:&[u8])->PatternExistResult{
+pub  fn extend_to_buffer_until(data:&[u8],pattern:&[u8])->PatternExistResult{
     let pattern_length = pattern.len();
     if data.len() < pattern_length {return PatternExistResult::None}
     let mut find_counter = 0;
@@ -175,9 +180,15 @@ pub (crate) fn extend_to_buffer_until(mut data:&[u8],pattern:&[u8])->PatternExis
     PatternExistResult::None
 }
 
-pub (crate) enum PatternExistResult {
+/// designed to work with utils mod
+/// and specially the function that return if there is any possibilities that pattern may be existed in some bytes order
+pub  enum PatternExistResult {
+    /// if the pattern was existed
     Some(usize),
+    /// if there is a chance that pattern may be existed
+    /// to be aware handling that portion of data
     MaybeExistOnLastBytesFromLen(usize),
+    /// if the patter has no any possible way to be existed
     None
 }
 

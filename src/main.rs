@@ -1,4 +1,5 @@
 #![allow(non_snake_case)]
+
 use water_http::server::{ServerConfigurations};
 use water_http::{InitControllerRoot, WaterController};
 
@@ -7,7 +8,6 @@ InitControllerRoot!{
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }
-
 
 
 #[tokio::main]
@@ -22,6 +22,7 @@ async fn main() {
         _=tracing::subscriber::set_global_default(sub);
     }
     let config = ServerConfigurations::bind("127.0.0.1",8084);
+
     water_http::RunServer!(
         config,
         MAIN_ROOT,
@@ -38,7 +39,7 @@ WaterController! {
     functions -> {
         GET => / => a(context) async {
             let mut sender = context.sender();
-            sender.send_str("main host");
+            sender.send_str("hello world");
         },
 
         GET => ali => mm(_c) async {
@@ -46,23 +47,7 @@ WaterController! {
         GET => ali/test => ssss(_c) async {
         }
     }
-
-    apply_parents_middlewares->(false),
-    children -> ([hassan2])
+    apply_parents_middlewares->(false)
 }
 
-WaterController! {
-    holder -> crate::MainHolderType,
-    name -> hassan2 ,
-    functions -> {
-        GET_Hello => check/{id} => send(context) async {
-            println!("called id {id}");
-            let mut sender = context.sender();
-            sender.send_str("success");
-        }
-    }
-    prefix ->( "prefix") ,
-    apply_parents_middlewares->(false),
 
-    children -> ([])
-}

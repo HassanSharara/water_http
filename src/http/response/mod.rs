@@ -107,7 +107,7 @@ impl HeaderResponseBuilder {
         headers
     }
 
-    /// Creating [ResponseHeadersBuilder] with requiring http2 to be the used protocol
+    /// Creating `ResponseHeadersBuilder` with requiring http2 to be the used protocol
     pub fn required_h2()->Self {
         let mut headers = Self::required_h2_protocol_headers();
         headers.set_header_key_value("connection","Upgrade");
@@ -209,7 +209,7 @@ impl HttpVersion {
         }
     }
 }
-/// for provide status code and status label for [ResponseHeadersBuilder]
+/// for provide status code and status label for `ResponseHeadersBuilder`
 pub struct HttpStatus {
     pub code:u16,
     pub value:String

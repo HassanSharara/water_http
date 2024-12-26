@@ -1,11 +1,15 @@
 use std::borrow::Cow;
-use bytes::{Buf, BytesMut};
+use std::future::Future;
+use std::pin::Pin;
+use bytes::{Buf};
 
-use tokio::io::AsyncReadExt;
+use twoway::find_bytes;
 use crate::http::request::MultiPartFormDataField;
+use crate::server::connection::BodyReadingBuffer;
 use crate::util::{found_boundary_in, PatternExistResult};
 
 use super::{H1StreamHolder,H2StreamHolder};
+use super::FormDataAll;
 
 
 
@@ -34,25 +38,28 @@ pub (crate) enum  MultipartStreamHolder<'a> {
 /// for handling multipart from data in both protocols http1 and http2
 pub struct MultipartData<'a> {
      stream_holder:MultipartStreamHolder<'a>,
-     reading_buffer:&'a mut BytesMut,
+     reading_buffer:&'a mut BodyReadingBuffer,
      boundary:Cow<'a,str>,
      content_length:usize,
-     remaining:usize,
+     // remaining:usize,
  }
 
 
-type FieldCallBackResult = Result<(),()>;
+type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output = Result<(),()>>+Send>>>,()>;
 // type FieldCallBackResult = Pin<Box<dyn Future<Output=Result<(), ()>>>>;
  impl <'a>  MultipartData<'a> {
 
      /// for creating new Multipart parser
-     pub fn new(
+     pub (crate) fn new(
      stream_holder:MultipartStreamHolder<'a>,
-     reading_buffer:&'a mut BytesMut,
+     reading_buffer:&'a mut BodyReadingBuffer,
      boundary:Cow<'a,str>,
      content_length:usize,
      )->MultipartData<'a>{
-         MultipartData { stream_holder,reading_buffer,boundary,content_length,remaining:content_length}
+         MultipartData { stream_holder,
+             reading_buffer,boundary,
+             content_length,
+         }
      }
 
 
@@ -65,16 +72,19 @@ type FieldCallBackResult = Result<(),()>;
 
         match &mut self.stream_holder {
             MultipartStreamHolder::H1(h1) => {
+                let left_bytes_len = h1.left_bytes.len();
+                if left_bytes_len < self.content_length {
+                    self.reading_buffer.bytes_consumed+=left_bytes_len;
+                }
                 let boundary = self.boundary.as_bytes();
                 loop {
-                    if self.remaining < 8 {
-                        return Ok(())
-                    }
-
                     // when left bytes is not empty
                     if h1.left_bytes.is_empty()
                     {
-                        return  self.read_using_local_buffer(field,callback).await;
+
+                        let res =   self.read_using_local_buffer(field,callback).await;
+
+                        return  res;
                     }
                     else
                     // when left bytes from incoming request is not empty
@@ -83,7 +93,8 @@ type FieldCallBackResult = Result<(),()>;
                             None => {
                                 if let Some(f_field) = MultiPartFormDataField::new(h1.left_bytes) {
                                     h1.left_bytes=& h1. left_bytes[f_field.field_header_length..];
-                                    self.remaining -= f_field.field_header_length;
+                                    // self.remaining -= f_field.field_header_length;
+
                                     field = Some(f_field);
                                 } else {
                                     self.reading_buffer.extend_from_slice( h1.left_bytes);
@@ -94,35 +105,36 @@ type FieldCallBackResult = Result<(),()>;
                             Some(f_field) => {
                                 match found_boundary_in( h1.left_bytes,boundary) {
                                     PatternExistResult::Some(index) => {
-                                        if  callback(f_field,& h1.left_bytes[..index]).is_err() {
-                                            return Err(())
-                                        }
+
+                                        if Self::handle_callback(
+                                            f_field,
+                                            & h1.left_bytes[..index],
+                                            &mut callback
+                                        ).await.is_err() { return Err(())}
 
                                         let len = index + boundary.len() + 4;
                                         h1.left_bytes = & h1.left_bytes[len..];
-                                        self.remaining-=len;
+                                        // self.remaining-=len;
                                         field = None;
                                         continue;
                                     }
                                     PatternExistResult::MaybeExistOnLastBytesFromLen(index) => {
                                         let to_send = & h1.left_bytes[..index];
-                                        if callback(&f_field,to_send).is_err() {
-                                            return Err(())
-                                        }
-                                        self.remaining-=to_send.len();
+                                        if Self::handle_callback(&f_field,to_send,&mut callback).await
+                                            .is_err() { return  Err(())}
+                                        // self.remaining-=to_send.len();
                                         self.reading_buffer.clear();
                                         self.reading_buffer.extend_from_slice(& h1.left_bytes[index..]);
                                         h1.left_bytes =&[];
-                                        if  h1.stream.read_buf(self.reading_buffer).await.is_err() {
+                                        if  self.reading_buffer.read_buf(h1.stream).await.is_err() {
                                             return Err(())
                                         }
                                         continue;
                                     }
                                     PatternExistResult::None => {
-                                        if callback(&f_field, h1.left_bytes).is_err() {
-                                            return Err(())
-                                        }
-                                        self.remaining-= h1.left_bytes.len().min(self.remaining);
+                                        if Self::handle_callback(&f_field, h1.left_bytes,&mut callback).await
+                                            .is_err() { return Err(())}
+                                        // self.remaining-= h1.left_bytes.len().min(self.remaining);
                                         h1.left_bytes=&[];
                                         continue;
 
@@ -142,6 +154,24 @@ type FieldCallBackResult = Result<(),()>;
         }
     }
 
+    #[inline]
+    async fn handle_callback(field:&'_ MultiPartFormDataField<'_>,data:&[u8],
+                                  callback:&mut impl FnMut (&'_ MultiPartFormDataField<'_> ,&'_[u8])
+                                     ->FieldCallBackResult
+    )->Result<(),()>{
+        match callback(field,data) {
+            Ok(future) => {
+                if let Some(future) = future {
+                    if future.await.is_err() { return Err(())}
+                }
+            }
+            Err(_) => {
+                return Err(())
+            }
+        };
+        Ok(())
+    }
+
 
      #[inline]
       async fn read_using_local_buffer(
@@ -156,34 +186,28 @@ type FieldCallBackResult = Result<(),()>;
               MultipartStreamHolder::H1(h1) => {h1}
               MultipartStreamHolder::H2(_) => {return  Err(())}
           };
-          loop {
-              // checking if the data is already close to end
-              if self.remaining < 4 {
-                  if   self.reading_buffer.len()>= 3 {
-                      self.reading_buffer.advance(self.remaining);
-                  } else {
-                      if self.remaining > 0 && h1.stream.read_buf(self.reading_buffer).await.is_err() {
-                          return Err(())
+          let mut end_reading_trigger = 0_u8;
+          loop { // checking if the data is already close to end
+
+              if self.reading_buffer.bytes_consumed >= self.content_length {
+                  if end_reading_trigger >= 8 { return Ok(())}
+                  let chunk = self.reading_buffer.chunk();
+                  if chunk.len() <= boundary_length+2  {
+                      if let Some(index) = find_bytes(chunk,b"--\r\n") {
+                          self.reading_buffer.advance(index + 4);
+                          return Ok(())
                       }
-                      continue;
                   }
-                  return Ok(())
+                  end_reading_trigger+=1;
+              } else if self.reading_buffer.read_buf(h1.stream).await.is_err() {
+                  return Err(())
               }
-              // checking if we need to read more
-              else if  self.remaining > boundary_length + 2 {
-                  if h1.stream.read_buf(self.reading_buffer).await.is_err() {
-                      return Err(())
-                  }
-              }
-
-
               match &field {
                   None => {
                       let chunk = self.reading_buffer.chunk();
                       if let Some(r_field) = MultiPartFormDataField::new(chunk) {
                           field_bytes.clear();
                           field_bytes.extend_from_slice(&chunk[..r_field.field_header_length]);
-                          self.remaining -= field_bytes.len();
                           field = Some(MultiPartFormDataField::new(&field_bytes).unwrap());
                           self.reading_buffer.advance(field_bytes.len());
                           continue;
@@ -195,32 +219,29 @@ type FieldCallBackResult = Result<(),()>;
                       match found_boundary_in(chunk,boundary) {
                           PatternExistResult::Some(index) => {
                               let data =&chunk[..index];
-                              if callback(r_field,data).is_err() {
-                                  return Err(())
-                              }
+                              if Self::handle_callback(r_field,chunk,&mut callback).await
+                                  .is_err() { return  Err(())}
                               let consumed = data.len() + boundary_length;
-                              self.remaining-=consumed;
+                              // self.remaining-=consumed;
                               self.reading_buffer.advance(consumed);
                               field = None;
                               continue;
                           }
                           PatternExistResult::MaybeExistOnLastBytesFromLen(index) => {
                               let data =&chunk[..index];
-                              if callback(r_field,data).is_err() {
-                                  return Err(())
-                              }
+                              if Self::handle_callback(r_field,chunk,&mut callback).await
+                                  .is_err() { return  Err(())}
                               let consumed = data.len() ;
-                              self.remaining-=consumed;
+                              // self.remaining-=consumed;
                               self.reading_buffer.advance(consumed);
                               field = None;
                               continue;
                           }
                           PatternExistResult::None => {
-                              if callback(r_field,chunk).is_err() {
-                                  return Err(())
-                              }
+                              if Self::handle_callback(r_field,chunk,&mut callback).await
+                                  .is_err() { return  Err(())}
                               let consumed = chunk.len() ;
-                              self.remaining-=consumed;
+                              // self.remaining-=consumed;
                               self.reading_buffer.advance(consumed);
                               continue;
                           }
@@ -231,6 +252,19 @@ type FieldCallBackResult = Result<(),()>;
           }
      }
 
+
+
+
+    // if self.reading_buffer.bytes_consumed >= self.content_length {
+    // if last_read_trigger >= 4 { return Ok(())}
+    // let chunk = self.reading_buffer.chunk();
+    // if chunk.len() <= boundary_length + 2  {
+    // if chunk.ends_with(b"--"){ return Ok(())}
+    // }
+    // last_read_trigger+=1;
+    // } else if self.reading_buffer.read_buf(h1.stream).await.is_err() {
+    // return Err(())
+    // }
 
     #[inline]
     async fn read_using_local_buffer_for_h2(
@@ -252,14 +286,14 @@ type FieldCallBackResult = Result<(),()>;
         loop {
 
 
-            if self.remaining < boundary_length {
+            if self.reading_buffer.bytes_consumed < boundary_length {
                 if self.reading_buffer.chunk().ends_with(b"--\r\n") {
                     return Ok(())
                 }
             }
 
             // checking if the data is already close to end
-            if self.remaining > 0  {
+            if self.reading_buffer.bytes_consumed < self.content_length  {
                 body_reading_checker!(body_mut,self.reading_buffer);
             }
 
@@ -271,7 +305,7 @@ type FieldCallBackResult = Result<(),()>;
                     if let Some(r_field) = MultiPartFormDataField::new(chunk) {
                         field_bytes.clear();
                         field_bytes.extend_from_slice(&chunk[..r_field.field_header_length]);
-                        self.remaining -= field_bytes.len();
+                        // self.remaining -= field_bytes.len();
                         field = Some(MultiPartFormDataField::new(&field_bytes).unwrap());
                         self.reading_buffer.advance(field_bytes.len());
                         continue;
@@ -283,32 +317,29 @@ type FieldCallBackResult = Result<(),()>;
                     match found_boundary_in(chunk,boundary) {
                         PatternExistResult::Some(index) => {
                             let data =&chunk[..index];
-                            if callback(r_field,data).is_err() {
-                                return Err(())
-                            }
+                            if Self::handle_callback(r_field,chunk,&mut callback).await
+                                .is_err() { return  Err(())}
                             let consumed = data.len() + boundary_length;
-                            self.remaining-=consumed;
+                            // self.remaining-=consumed;
                             self.reading_buffer.advance(consumed);
                             field = None;
                             continue;
                         }
                         PatternExistResult::MaybeExistOnLastBytesFromLen(index) => {
                             let data =&chunk[..index];
-                            if callback(r_field,data).is_err() {
-                                return Err(())
-                            }
+                            if Self::handle_callback(r_field,chunk,&mut callback).await
+                                .is_err() { return  Err(())}
                             let consumed = data.len() ;
-                            self.remaining-=consumed;
+                            // self.remaining-=consumed;
                             self.reading_buffer.advance(consumed);
                             field = None;
                             continue;
                         }
                         PatternExistResult::None => {
-                            if callback(r_field,chunk).is_err() {
-                                return Err(())
-                            }
+                            if Self::handle_callback(r_field,chunk,&mut callback).await
+                                .is_err() { return  Err(())}
                             let consumed = chunk.len() ;
-                            self.remaining-=consumed;
+                            // self.remaining-=consumed;
                             self.reading_buffer.advance(consumed);
                             continue;
                         }
@@ -319,7 +350,34 @@ type FieldCallBackResult = Result<(),()>;
 
         }
     }
+    /// converting buffer bytes into [FormDataAll]
+    /// # Note:
+    /// - this action will cause heap memory allocation
+    /// so if your data is small and required to be handled like this you can go with that
+    /// but the better approach is to use the default struct handler [MultipartData]
+    pub async fn take(mut self)->Result<FormDataAll,()>{
+        let mut data = FormDataAll::new();
+
+        if (&mut self).on_field_detected(|field,parsed_data|{
+            data.push(field,parsed_data);
+            return Ok(None)
+        }).await.is_err() {
+            return  Err(())
+        }
+        return Ok(data)
+    }
+
+
+    /// a shortcut for [self.take]
+    /// # return [FormDataAll]
+    pub async fn to_form_data_all(self)->Result<FormDataAll,()> { self.take().await }
+
+
+
  }
+
+
+
 
 
 

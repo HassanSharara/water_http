@@ -1,8 +1,8 @@
 
-use bytes::{Buf, BytesMut};
+use bytes::Buf;
 use h2::RecvStream;
 use http::Request;
-use tokio::io::AsyncReadExt;
+use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::HttpStream;
 
@@ -13,7 +13,7 @@ pub (crate) enum StreamBytesPuller<'a> {
 }
 pub (crate) struct H1BytesPuller<'a> {
     pub(crate)stream:&'a mut HttpStream,
-    pub(crate)reading_buffer:&'a mut BytesMut,
+    pub(crate)reading_buffer:&'a mut BodyReadingBuffer,
     pub(crate) left_bytes:&'a [u8]
 }
 
@@ -69,7 +69,8 @@ impl <'a> BytesPuller <'a> {
                         if remaining < 1 {
                             return  Ok(())
                         }
-                        if h1.stream.read_buf(h1.reading_buffer).await.is_err() { return  err}
+                        if h1.reading_buffer.read_buf(h1.stream).await.is_err() { return  err}
+
                         let data = h1.reading_buffer.chunk();
                         let to_index = remaining.min(data.len());
                         if callback(&data[..to_index]).is_err() { return  err}
