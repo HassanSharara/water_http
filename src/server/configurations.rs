@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use crate::server::MiddlewareCallback;
 
 pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 1024*4;
 // pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
@@ -55,7 +54,7 @@ pub enum RestrictionRule {
 /// specify the tls ports and threshold of encoding data algorithm
 /// and also specify the important headers to retrieve for optimizing requests while
 /// handling a lot of them
-pub struct ServerConfigurations<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize>{
+pub struct ServerConfigurations {
     ///
     ///
     /// - set the address that your server need to bind
@@ -68,12 +67,6 @@ pub struct ServerConfigurations<H,const HEADERS_COUNT:usize,const QUERY_COUNT:us
     /// - specifying which ip to accept connection and which not
     pub restricted_ips:Option<RestrictionRule>,
 
-    ///
-    /// - specify where the public resources exist so that you could
-    /// use [context.send_file_from_public_resources( --the path of your file inside the public resources-- )]
-    /// and then the file will be detected and sent automatically
-    ///
-    pub public_files_path:Option<Vec<PublicResourcesOverConfig<H, HEADERS_COUNT, QUERY_COUNT>>>,
 
     /// - if you need your server to support tls or ssl encryption
     /// just provide the path of your [private.key] and [certificate.cer]
@@ -108,7 +101,7 @@ pub struct ServerConfigurations<H,const HEADERS_COUNT:usize,const QUERY_COUNT:us
     // /// and those just the queries subjected by incoming request path
     // /// # For Example :
     // /// https://wwww.example.com/post?id=1&name=2
-    // /// as you see in this examples we have just two queries count
+    // /// as you see in these examples we have just two queries count
     // pub max_http1_query_length:usize,
 }
 
@@ -124,7 +117,7 @@ pub struct TLSCertificate {
 
 
 /// - configurations methods
-impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> ServerConfigurations<H,HEADERS_COUNT,QUERY_COUNT> {
+impl ServerConfigurations {
 
     ///  returning default server configurations
     ///  - default port = 80
@@ -135,7 +128,6 @@ impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> ServerConfigurations<H
     pub fn default()->Self {
         ServerConfigurations{
             addresses:vec![("0.0.0.0".to_string(),80),],
-            public_files_path:None,
             tls_certificate:None,
             restricted_ips:None,
             threshold_for_encoding_response:4000000,
@@ -147,21 +139,6 @@ impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> ServerConfigurations<H
         }
     }
 
-
-    /// for pushing public files service
-    /// and this is means if you want your clients to download files or contents
-    /// you could use this service for that
-    pub fn add_public_service(&mut self,value:PublicResourcesOverConfig<H,HEADERS_COUNT,QUERY_COUNT>){
-       match self.public_files_path {
-            None => {
-                let  services = vec![value];
-                self.public_files_path = Some(services);
-            }
-            Some(ref mut data) => {
-                data.push(value)
-            }
-        };
-    }
 
     ///
     /// # setting role to connect the server
@@ -222,25 +199,6 @@ impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> ServerConfigurations<H
 }
 
 
-/// for providing configurations about public resources serving
-/// like what`s the path that would trigger public file serving
-/// and middlewares for files serving
-pub struct PublicResourcesOverConfig<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> {
-    /// the path that would trigger files serving
-    pub path:&'static str,
-    /// pointing to files located on the local server
-    /// to serve them back
-    pub secret_local_path:Option<&'static str>,
 
-    middleware:MiddlewareCallback<H,HEADERS_COUNT,QUERY_COUNT>
-}
 
-impl<H,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> PublicResourcesOverConfig<H,HEADERS_COUNT,QUERY_COUNT> {
-    /// creating new [PublicResourcesOverConfig]
-    pub fn new(path:&'static str)->MiddlewareCallback<H,HEADERS_COUNT,QUERY_COUNT>{
-        MiddlewareCallback {
-            path,
-            secret_local_path:Some(path)
-        }
-    }
-}
+

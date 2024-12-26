@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
-use tracing::info;
+use tracing::debug;
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, HttpStream, READING_BUF_LEN, WRITING_BUF_LEN};
 use crate::server::sr_context::{Http1Context, Http2Context, HttpContext, Protocol, ServingRequestResults};
@@ -36,10 +36,14 @@ impl  ConnectionStream {
     ){
         #[cfg(feature = "debugging")]
         {
-            info!("new connection from ip : {:?}",self.address);
+             debug!("new connection from  : {:?}",self.address);
         }
         match  self.io {
             WaterStream::TLS( stream) => {
+                #[cfg(feature = "debugging")]
+                {
+                    debug!("{:?} connected by tls layer",self.address);
+                }
                 if let Some(alpn_preface) = stream.get_ref().1.alpn_protocol() {
                     if alpn_preface == b"h2" {
                         let handshake
@@ -61,7 +65,8 @@ impl  ConnectionStream {
                                   );
                                 match  context.serve(controller).await {
                                     ServingRequestResults::Stop => {
-                                        return;}
+                                        return;
+                                    }
                                     ServingRequestResults::Done => {
                                         continue;
                                     }
@@ -79,9 +84,17 @@ impl  ConnectionStream {
                 }
             }
             WaterStream::TOStream(stream) => {
+                #[cfg(feature = "debugging")]
+                {
+                    debug!("{:?} connected without secure layer (tls)",self.address);
+                }
                 let mut preface :[u8;3]=[0;3];
                 _=stream.peek(&mut preface).await;
                 if preface == *b"PRI" {
+                    #[cfg(feature = "debugging")]
+                    {
+                        debug!("{:?} connection is using http2 protocol",self.address);
+                    }
                     if let Ok(mut connection) =  h2::server::handshake(stream).await {
                         while let Some(Ok(batch)) = connection.accept().await {
                             let mut reading_buffer =
@@ -108,10 +121,18 @@ impl  ConnectionStream {
                     }
                     return;
                 }
+                {
+                    debug!("{:?} connection is using http1 protocol",self.address);
+                }
                 Self::handle_h1_connections(
                     &mut HttpStream::Async(stream),&self.address,controller).await;
             }
         };
+
+        #[cfg(feature = "debugging")]
+        {
+            debug!("connection {:?} has been closed",self.address);
+        }
     }
 
 
@@ -123,20 +144,12 @@ impl  ConnectionStream {
      controller:&'static  CapsuleWaterController<Holder,HS,QS>
 
     ){
-
         let mut each_request_body_reading_buffer =
             BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
         let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
         let mut response_buffer = BytesMut::with_capacity(WRITING_BUF_LEN);
        'main_loop: loop {
            reserve_buf(&mut reading_buffer);
-           // println!("reading from buffer {requests_count} {:?}",peer);
-
-
-
-
-
-
            if let Ok(read_size)
                = stream.read_buf(&mut reading_buffer).await {
                 // when connection is closed
@@ -158,7 +171,7 @@ impl  ConnectionStream {
                     {
                         let t2 = std::time::SystemTime::now();
                         let dif = t2.duration_since(t1);
-                        println!("difference in parsing is  {:?}",dif);
+                        println!("request from {:?}  parsed in  {:?}",peer,dif);
 
                     }
 
@@ -191,7 +204,8 @@ impl  ConnectionStream {
                                     #[cfg( feature = "count_connection_parsing_speed")]
                                     {
                                         let end = std::time::SystemTime::now();
-                                        println!("difference in serving is {:?}",
+                                        println!("request from {:?}  served in {:?}",
+                                          peer,
                                          end.duration_since(t1)
                                         );
                                     }

@@ -95,8 +95,15 @@ type FFinderResult<H,const HEADER_SIZE:usize,const QUERY_SIZE:usize> =
                  None => { break; }
                  Some(controller) => {
                      match controller.middleware.as_ref() {
-                         None => {         if !controller.apply_parents_middlewares {break;}
-                             continue }
+                         None => {
+                             if controller.apply_parents_middlewares {
+                                 match controller.get_father_controller() {
+                                     None => {break}
+                                     Some(con) => {oc = Some(con);continue;}
+                                 }
+                             }
+                             break
+                         }
                          Some(middleware) => {
                              vec.push(middleware);
                              if !controller.apply_parents_middlewares {
@@ -177,7 +184,26 @@ type FFinderResult<H,const HEADER_SIZE:usize,const QUERY_SIZE:usize> =
 
 
 
+     pub (crate) const fn all_rest_path_braces()->&'static str{
+         "{allRestPath}"
+     }
+     pub (crate) const fn all_rest_path()->&'static str{
+         "allRestPath"
+     }
      pub (crate) fn check_if_paths_are_equals(incoming_path:&str,cp:&str)->(bool,Option<HashMap<String,String>>){
+
+         let _s_pattern = Self::all_rest_path_braces();
+         if let Some(index) = cp.find(_s_pattern) {
+             let first = Self::shave_path(&cp[..index]);
+             if incoming_path.starts_with(first) {
+                 let mut map:HashMap<String,String> = HashMap::new();
+                 map.insert(Self::all_rest_path().to_string(),(
+                     &incoming_path[first.len()..]
+                     ).to_string());
+                 return (true,Some(map))
+             }
+         }
+
          let inc_splitter:Vec<&str> = incoming_path.split("/").collect();
          let cp_splitter:Vec<&str> = cp.split("/").collect();
          const  ERR:(bool,Option<HashMap<String,String>>) = (false,None);

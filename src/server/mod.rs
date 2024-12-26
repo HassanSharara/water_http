@@ -7,6 +7,8 @@ mod sr_context;
 pub  use sr_context::*;
 pub mod errors;
 mod capsule;
+mod encoding;
+
 pub use capsule::*;
 
 use std::io;
@@ -14,7 +16,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
-use tracing::{info,debug};
+use tracing::{debug};
 pub use configurations::*;
 use crate::server::connection::{ConnectionStream, WaterStream};
 
@@ -26,7 +28,7 @@ pub (crate) fn get_server_config()->&'static ServerConfigurations{
 
 /// running given server configurations with Controller Root
 pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const QS:usize,>(
-    config:ServerConfigurations<Holder, HS, QS>,
+    config:ServerConfigurations,
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
 ){
     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
@@ -38,9 +40,8 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
     let conf = get_server_config();
     let mut workers = vec![];
     #[cfg(feature = "debugging")]
-    {
-        let mut workers_count = 0_usize;
-    }
+    let mut workers_count = 0_usize;
+
 
 
 
@@ -48,15 +49,13 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
         workers.push(tokio::spawn(async move {
             #[cfg(feature = "debugging")]
             {
-                info!("listening on ip: {} while port : {}",address.0,address.1);
+                debug!("listening on ip: {} port: {}",address.0,address.1);
                 workers_count +=1;
+                debug!("count of running workers {workers_count}");
             }
+
             let _ = run_server_with_address(address,controller).await;
         }));
-    }
-    #[cfg(feature = "debugging")]
-    {
-        debug!("count of listening address and workers {workers_count}");
     }
     for worker in workers {
         let _ = worker.await;

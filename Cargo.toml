@@ -21,7 +21,6 @@ twoway = "0.2.2"
 
 
 [features]
-default = []
 debugging = ["tracing","tracing-subscriber"]
 count_connection_parsing_speed = ["tracing","tracing-subscriber"]
 

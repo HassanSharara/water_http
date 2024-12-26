@@ -361,7 +361,9 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     // }
 
 
-    pub async fn send_file(&mut self,mut file:FileRSender<'a>){
+    /// for sending files
+    /// this function auto support for sending videos
+    pub async fn send_file(&mut self,mut file:FileRSender<'_>)->Result<(),String>{
         let range = self.get_from_headers_as_str("Range");
         if let Some(range) = range {
             let mut range = range.split("=").last().unwrap_or("").split("-");
@@ -380,8 +382,10 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             file.set_bytes_range(start,end);
         }
         let mut  sender = self.sender();
-
-        _= sender.send_file(file).await;
+        match sender.send_file(file).await {
+            Ok(_) => {Ok(())}
+            Err(e) => {Err(e.to_owned())}
+        }
     }
 
 
@@ -445,6 +449,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         if let Some((controller,func,map)) = f {
             self.path_params_map = map;
             let mut middlewares:Vec<&'static MiddlewareCallback<H,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
+
             controller.push_all_ancestors_middlewares(&mut middlewares);
             for m in middlewares {
                match  m(self).await {

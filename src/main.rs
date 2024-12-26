@@ -17,7 +17,7 @@ async fn main() {
     {
         let sub = tracing_subscriber::FmtSubscriber::builder()
             .with_level(true)
-            .with_max_level(tracing::Level::WARN)
+            .with_max_level(tracing::Level::DEBUG)
             .finish();
         _=tracing::subscriber::set_global_default(sub);
     }
@@ -38,8 +38,7 @@ WaterController! {
     name -> hassan,
     functions -> {
         GET => / => a(context) async {
-            let mut sender = context.sender();
-            sender.send_str("hello world");
+            context.send_str("hello world");
         },
 
         GET => ali => mm(_c) async {
@@ -47,7 +46,8 @@ WaterController! {
         GET => ali/test => ssss(_c) async {
         }
     }
-    apply_parents_middlewares->(false)
 }
+
+
 
 

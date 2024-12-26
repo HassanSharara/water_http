@@ -12,9 +12,9 @@ use crate::server::WRITING_FILES_BUF_LEN;
 impl <'a> FileRSender<'a> {
 
     /// creating new file response config
-    pub fn custom(path:&'a Path,
+    pub fn custom(path:&Path,
                buffer_size_for_reading_from_file_and_writing_to_stream:usize,
-    )->FileRSender<'a>{
+    )->FileRSender{
         FileRSender {
             path,
             buffer_size_for_reading_from_file_and_writing_to_stream,
@@ -22,7 +22,7 @@ impl <'a> FileRSender<'a> {
         }
     }
     /// creating new file response with only path
-    pub fn new(path:&'a str)->FileRSender<'a>{
+    pub fn new(path:&str)->FileRSender{
         Self::custom(Path::new(path),WRITING_FILES_BUF_LEN)
     }
 
