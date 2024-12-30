@@ -4,6 +4,7 @@ mod file_response;
 pub use file_response::*;
 pub use writer::*;
 pub use sender::*;
+#[doc(hidden)]
 pub struct HeaderResponseBuilder {
       first_line: FirstLine,
       data:Vec<u8>,
@@ -235,6 +236,7 @@ impl FirstLine {
         bytes
     }
 }
+#[doc(hidden)]
 pub struct BodyResponseBuilder<'a> {
     mechanism:HandlingResponseMechanism<'a>,
 }
@@ -245,11 +247,16 @@ impl <'a> BodyResponseBuilder<'a> {
         }
     }
 }
+
+#[doc(hidden)]
 pub enum HandlingResponseMechanism<'a> {
     File(&'a[&'a str]),
     NormalResponse(&'a[u8]),
     None
 }
+
+/// for creating custom response
+#[doc(hidden)]
 pub struct ResponseBuilder<'a>{
 
     pub headers:HeaderResponseBuilder,

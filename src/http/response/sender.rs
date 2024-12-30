@@ -428,6 +428,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
 
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 1 protocol to serve connections
 
+#[doc(hidden)]
 pub  struct Http1Sender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize
 > {
     pub context:&'a mut Http1Context<'context,HEADERS_COUNT,QUERY_COUNT>,

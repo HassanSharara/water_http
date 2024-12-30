@@ -62,29 +62,6 @@ macro_rules! route {
 
 
 
-/// for redirecting users to some route
-#[macro_export]
-macro_rules! redirect {
-    ($context:ident,$route:expr) => {
-        let route = water_http::route!($route);
-        if let Some(r) = route {
-        _= context.redirect(r).await;
-        }else {
-            _= context.redirect($route).await;
-        }
-    };
-
-    ($context:ident,$route:expr,[$($k:expr => $value:expr),*]) => {
-        let route = water_http::route!($route,[
-            $($k=>$value),*
-        ]);
-        if let Some(r) = route {
-        _= context.redirect(r).await;
-        }else {
-            _= context.redirect($route).await;
-        }
-    };
-}
 
 
 /// for running server in appropriate way,
@@ -117,6 +94,7 @@ macro_rules! RunServer {
 
 
 /// constructing functions builder
+#[doc(hidden)]
 #[macro_export]
 macro_rules! FunctionsMacroBuilder {
       (
@@ -330,6 +308,7 @@ macro_rules! FunctionsMacroBuilder {
 }
 
 /// generating internal needed code
+#[doc(hidden)]
 #[macro_export]
 macro_rules! CheckupAutoGenerator {
     ( $controller:path >> prefix->$value:expr) => {
@@ -358,6 +337,7 @@ macro_rules! CheckupAutoGenerator {
 
 }
 /// for checking if extra code need to be build
+#[doc(hidden)]
 #[macro_export]
 macro_rules! CheckExtraCode {
 
@@ -432,6 +412,8 @@ macro_rules! WaterController {
 /// for setting path from another macro
 /// it`s for another macros call so do not worry about it ,
 /// we just had to make it public for re calling it from another macros
+
+#[doc(hidden)]
 #[macro_export]
 macro_rules! path_setter {
     [$context_name:ident () {$path_item:tt} ]=>{

@@ -281,7 +281,7 @@ impl <'a:'request,'request
 
 
 
-
+/// 	for constructing get methods on http context by h2 protocol
 pub  struct Http2Getter<'a> {
     pub(crate)batch:&'a mut Request<RecvStream>,
     pub(crate)content_length:usize,
@@ -310,8 +310,9 @@ impl<'a>   Http2Getter<'a> {
     }
 
 
+
     /// getting full body if the body was using multipart form data content type during incoming request
-    pub  async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8])
+    pub   async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8])
                                                     -> Result<FormDataAll,WaterErrors>{
         let split = split(content_type,b"boundary=");
         if let Some(boundary) = split.last() {
@@ -413,10 +414,13 @@ impl<'a>   Http2Getter<'a> {
     }
 }
 impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
+
+    /// getting body by default mechanism
     async fn get_body(&'a mut self) ->ParsingBodyResults<'a>{
         self.get_body_by_mechanism(ParsingBodyMechanism::Default).await
     }
 
+    /// getting body by custom mechanism
     async fn get_body_by_mechanism(&'a mut self,mechanism: ParsingBodyMechanism)->ParsingBodyResults<'a> {
 
         let request_err = ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
