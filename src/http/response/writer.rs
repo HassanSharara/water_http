@@ -67,7 +67,7 @@ pub struct HttpResponseBufferWriter<'a> {
 
  /// for specifying response data
  pub enum ResponseData<'a> {
-     Str(&'a str),
+     Str(&'static str),
      Slice(&'a [u8]),
      String(String),
  }
@@ -81,6 +81,9 @@ impl<'a> ResponseData<'a> {
             ResponseData::String(s) => {s.as_bytes()}
         }
     }
+}
+unsafe impl<'a>  Send for ResponseData<'a> {
+
 }
 #[cfg(test)]
 mod test_buffer {

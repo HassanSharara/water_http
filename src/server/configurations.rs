@@ -1,4 +1,7 @@
 use std::collections::HashMap;
+#[cfg(feature = "debugging")]
+use tracing::error;
+use crate::server::encoding::{EncodingConfigurations};
 
 pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 1024*4;
 // pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
@@ -7,8 +10,67 @@ pub (crate) const WRITING_BUF_LEN:usize = 1024*8;
 pub (crate) const WRITING_FILES_BUF_LEN:usize = 1024*80;
 
 
+
 /// for saving all  named Routes
 pub (crate) static mut ___ALL_ROUTES:Option<HashMap<String,String>> = None;
+
+/// for retrieving named routes like
+/// GET_categories_post => / => XX(context) async {
+/// }
+///
+///in this example ("categories_post") is the name of this route , so we could call
+/// our function [get_from_all_routes] and parse "categories_post" as our parameter
+pub fn ___get_from_all_routes(key:&str,mut params:Option<HashMap<&str,&str>>)->Option<String>{
+   unsafe {
+       match ___ALL_ROUTES.as_ref() {
+           None => {}
+           Some(___a) => {
+               if let Some(route) = ___a.get(key) {
+                   let mut route = route.to_string();
+                   loop {
+                       if let Some(f_index) = route.find("{") {
+                           if let Some(s_index) = (&route[f_index..]).find("}") {
+                               let param = &route[f_index+1..s_index];
+                               match params {
+                                   None => {
+                                       #[cfg(feature = "debugging")]
+                                       error!("you should provide {param} with your given route {key}");
+                                       return None
+                                   }
+                                   Some(ref mut all_params) => {
+                                       if let Some(k) = all_params.get(param) {
+                                           let param = param.to_string();
+                                           route = route.replace(&format!("{}{}{}","{",param,"}"),*k);
+                                           all_params.remove(param.as_str());
+                                           continue;
+                                       } else {
+                                           return None;
+                                       }
+                                   }
+                               }
+                           } else {break;}
+                       } else {break;}
+
+                   }
+                   match params {
+                       None => {}
+                       Some( p) => {
+                           for (index,(key,value)) in p.iter().enumerate() {
+                               if index==0 {route.push_str("?");}
+                               else { route.push_str("&"); }
+                               route.push_str(&format!("{key}="));
+                               route.push_str(value);
+                           }
+                       }
+                   }
+                   return Some(route)
+               }
+           }
+       }
+
+   }
+    None
+}
 
 pub (crate) fn push_named_route(name:String,route:String){
     unsafe  {
@@ -67,6 +129,11 @@ pub struct ServerConfigurations {
     /// - specifying which ip to accept connection and which not
     pub restricted_ips:Option<RestrictionRule>,
 
+    /// http encoding configurations ,
+    /// which takes [EncodingConfigurations] struct
+    /// # Note :
+    /// the default value for encoding logic [`EncodingLogic::None`]
+    pub (crate) responding_encoding_configurations:EncodingConfigurations,
 
     /// - if you need your server to support tls or ssl encryption
     /// just provide the path of your [private.key] and [certificate.cer]
@@ -79,15 +146,7 @@ pub struct ServerConfigurations {
     /// the default value is ['443']
     pub tls_ports:Vec<u16>,
 
-    /// - this framework support encoding with all encoding algorithms
-    /// ['zstd,Gzip,Deflate,Brotli'] so the response will be compressed with one of these
-    /// algorithms depending on the threshold of the data you need to send
-    /// so the default value is 4000000 which is approximately [4 MB ]
-    /// so if your server is very close to your clients leave this value as default but
-    /// if your server is a little far from your client then try to decrease this threshold
-    /// to get the best response latency
-    /// also notice that when you send a custom headers you should implement this encoding manually
-    pub threshold_for_encoding_response:u64,
+
     ///backlog defines the maximum number of pending connections are queued by the operating system at any given time. Connection are removed from the queue with accepting connection from tcp listener When the queue is full, the operating-system will start rejecting connections.
     pub backlog:u32,
     /// defining the max size for handling single request
@@ -130,13 +189,26 @@ impl ServerConfigurations {
             addresses:vec![("0.0.0.0".to_string(),80),],
             tls_certificate:None,
             restricted_ips:None,
-            threshold_for_encoding_response:4000000,
+            responding_encoding_configurations:EncodingConfigurations::default(),
             tls_ports:vec![443],
             backlog:1028,
             max_request_size:10000,
-            // max_http1_headers_length:16,
-            // max_http1_query_length:16
         }
+    }
+
+
+
+    /// set config encoding configurations
+    /// when framework responding to client
+    ///
+    /// if the client sent that`s he is accepting some encoding algorithms like  gzip,deflate,brotli,zstd
+    /// example : inside headers "Accept-Encoding": deflate,brotli
+    ///
+    /// the server then may would encode the response
+    /// and this decision depends on your configuration
+    /// ,so you need to set [EncodingConfigurations]
+    pub fn set_response_encoding_configuration(&mut self,conf:EncodingConfigurations){
+        self.responding_encoding_configurations = conf;
     }
 
 

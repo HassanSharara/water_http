@@ -8,6 +8,7 @@ pub  use sr_context::*;
 pub mod errors;
 mod capsule;
 mod encoding;
+pub use encoding::*;
 
 pub use capsule::*;
 

@@ -6,8 +6,10 @@ pub use getter::*;
 
 use std::borrow::Cow;
 use std::fmt::{Display,  Formatter};
+#[cfg(feature = "debugging")]
+use tracing::info;
 pub use body::*;
-use crate::http::request::header::{KeyValueList};
+pub use crate::http::request::header::{KeyValueList};
 
 
 
@@ -103,7 +105,6 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
                     if !headers_fully_filled {
                         if let Some(key) = header_key {
                             let data = &payload[start..index];
-
                             let this_is_content_length_header =
                                 CONTENT_LENGTH_PATTERNS.contains(&key);
                             if this_is_content_length_header {
@@ -192,6 +193,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
                                 if let Some(key) = query_key {
                                     _=queries.push(key,&payload[start..index]);
                                     query_key = None;
+                                    inc_start_pointer!(start,index,payload_length);
                                 }
                             }
                             _ => {continue}
@@ -215,6 +217,20 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
         if let Some(success_end_of_request) = success_end_of_request {
             if version.is_none() || method.is_none() || path.is_none() {
                 return FormingRequestResult::Err
+            }
+
+            #[cfg(feature = "debugging")]
+            {
+                info!("incoming path queries {:?}",queries);
+
+                for key in queries.all_pairs() {
+                    let value = key.value;
+                    let key = key.key;
+                    info!("path query key {:?} while value {:?}",
+                     String::from_utf8_lossy(key),
+                     String::from_utf8_lossy(value),
+                    )
+                }
             }
             return FormingRequestResult::Success(
                     IncomingRequest {

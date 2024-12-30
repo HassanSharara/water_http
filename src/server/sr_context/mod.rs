@@ -11,8 +11,9 @@ use http::Request;
 use serde::Deserialize;
 use serde::ser::Error;
 use tokio::net::{ TcpStream};
-use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest};
-use crate::http::request::{DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
+use crate::http::request::{DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks
+                           ,ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
 use crate::server::{CapsuleWaterController, MiddlewareCallback, MiddlewareResult};
@@ -44,13 +45,48 @@ impl <'a,const HEADERS_COUNT:usize
 pub (crate) struct  Http2Context<'a> {
     pub request_batch:(Request<RecvStream>,SendResponse<Bytes>),
     content_length:Option<usize>,
-    reading_buffer:&'a mut BodyReadingBuffer
+    reading_buffer:&'a mut BodyReadingBuffer,
+    path_query:Option<HashMap<String,String>>
 }
 
+ fn parse_query_string_to_map(query:Option<&str>,map:&mut Option<HashMap<String,String>>){
+     let mut query = match query {
+         None => { return }
+         Some(q) => {q}
+     };
+     if query.starts_with("?") {
+         if query.len() > 2 {
+             query = &query[1..];
+         }
+     }
+     println!("invoked {query}");
+     let splitter = query.split("&");
+     for q in splitter {
+         let s :Vec<&str> = q.split("=").collect();
+         if s.len() != 2 {continue}
+         match map {
+             None => {
+                 let mut m = HashMap::new();
+                 m.insert(s.first().unwrap().to_string(),s.last().unwrap().to_string());
+                 *map = Some(m);
+             }
+             Some(m) => {
+                 m.insert(s.first().unwrap().to_string(),s.last().unwrap().to_string());
+             }
+         }
+     }
+ }
 impl<'a> Http2Context<'a> {
 
     pub (crate) fn new(request_batch:(Request<RecvStream>,SendResponse<Bytes>),reading_buffer:&'a mut BodyReadingBuffer)->Self{
-        Http2Context {request_batch,content_length:None,reading_buffer}
+        let mut path_query = None;
+        parse_query_string_to_map(request_batch.0.uri().query(),&mut path_query);
+        Http2Context {
+            request_batch,
+            content_length:None,
+            reading_buffer,
+            path_query
+        }
     }
 
     pub (crate) fn get_from_headers(&self,key:&str)->Option<&[u8]>{
@@ -298,7 +334,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
     /// this function return the original data on the request buffer on memory ,and
     /// it is very fast and memory safe function ,and it has zero allocation for data
-    pub fn get_from_headers(&'a self,key:&str)->Option<&[u8]>{
+    pub fn get_from_headers_as_bytes(&'a self,key:&str)->Option<&[u8]>{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 return  h2.get_from_headers(key)
@@ -315,8 +351,8 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ///
     /// please note that rust could allocate new memory for holding [Cow] when it`s converted
     /// from clean bytes
-    pub fn get_from_headers_as_str(&'a self,key:&str)->Option<Cow<str>>{
-        if let Some(data) = self.get_from_headers(key) {
+    pub fn get_from_headers(&'a self,key:&str)->Option<Cow<str>>{
+        if let Some(data) = self.get_from_headers_as_bytes(key) {
             return Some(String::from_utf8_lossy(data))
         }
         None
@@ -336,22 +372,41 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         }
     }
     /// getting sender for sending all types of data to client
-    pub fn sender(&mut self)->HttpSender<'_>{
+    pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         return match &mut self.protocol {
             Protocol::Http2(h2) => {
-                HttpSender::H2(Http2Sender::new(&mut h2.request_batch))
+                HttpSender::H2(Http2Sender::new(h2))
             }
             Protocol::Http1(h1) => {
-               HttpSender::H1( Http1Sender::new(&mut h1.response_buffer,h1.stream))
+               HttpSender::H1( Http1Sender::new(h1))
             }
         }
     }
 
 
     /// for sending [`&str`] values to the client
-    pub fn send_str(&mut self,value:&str){
+    pub async fn send_str(&mut self,value:&'static str)->Result<(),()>{
         let mut sender = self.sender();
-        sender.send_str(value);
+        sender.send_str(value).await
+    }
+
+
+    /// for sending normal str data without static lifetime
+    pub async fn send_string_slice(&mut self,value:&str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
+        sender.send_data_as_final_response(
+            ResponseData::Slice(value.as_bytes())
+        ).await
+    }
+
+
+    /// for returning redirect response to the client
+    pub async fn redirect(&mut self,url:&str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::TEMPORARY_REDIRECT);
+        sender.set_header("Location",url);
+        sender.send_data_as_final_response(ResponseData::Slice(&[])).await
     }
 
 
@@ -364,7 +419,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// for sending files
     /// this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->Result<(),String>{
-        let range = self.get_from_headers_as_str("Range");
+        let range = self.get_from_headers("Range");
         if let Some(range) = range {
             let mut range = range.split("=").last().unwrap_or("").split("-");
             let mut start = None;
@@ -419,11 +474,29 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// getting from path generic injected parameters
     /// like <http://example.com/test/{id}>
     /// here id is a generic parameter
-    pub fn get_from_generic_path_params(&'a self,key:&str)->Option<&'a String>{
+    pub fn ____get_from_generic_path_params(&'a self,key:&str)->Option<&'a String>{
         if let Some(p) = &self.path_params_map {
             return p.get(key)
         }
         None
+    }
+
+
+    /// getting data from path query
+    pub  fn get_from_path_query(&self,key:&str)->Option<Cow<str>>{
+        match &self.protocol {
+            Protocol::Http2(h2) => {
+                if let Some(pq)  = h2.path_query.as_ref() {
+                    if let Some(v) = pq.get(key){
+                        return Some(Cow::from(v.to_string()));
+                    }
+                }
+                None
+            }
+            Protocol::Http1(h1) => {
+                h1.request.get_from_path_query(key)
+            }
+        }
     }
 
     pub (crate) async fn serve(
@@ -530,7 +603,7 @@ pub struct Http1Context<'a,const HEADERS_COUNT:usize
   pub request: IncomingRequest<'a, HEADERS_COUNT, PATH_QUERY_COUNT>,
   pub (crate) stream:&'a mut HttpStream,
   pub (crate) body_reading_buffer:&'a mut BodyReadingBuffer,
-  response_buffer:&'a mut BytesMut,
+  pub(crate) response_buffer:&'a mut BytesMut,
   pub (crate) left_bytes:&'a [u8],
 }
 

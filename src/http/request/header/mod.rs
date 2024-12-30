@@ -2,6 +2,8 @@ use std::borrow::Cow;
 use std::fmt::{Display, Formatter};
 
 
+/// organizing keys and values with simple and fast structure
+#[derive(Debug)]
 pub  struct KeyValueList<'a,const LENGTH:usize> {
     data:[KeyValuePair<'a>;LENGTH],
     cursor:usize

@@ -134,12 +134,11 @@ type FFinderResult<H,const HEADER_SIZE:usize,const QUERY_SIZE:usize> =
              father_prefixes = father_prefixes.replace("//","/");
          }
          for (method,path,__) in &mut self.functions {
-             if method.contains("_") {
-                 let splitter = method.split("_").collect::<Vec<&str>>();
-                 let name = splitter.last().unwrap_or(&"");
+             if let Some(index) = method.find("_") {
+                 let name = &method[index+1..];
                  if name.is_empty() {continue;}
                  push_named_route(name.to_string(),format!("{father_prefixes}/{path}").replace("//","/"));
-                 *method = splitter.first().unwrap().to_string();
+                 *method = (&method[..index]).to_uppercase();
              }
          }
 

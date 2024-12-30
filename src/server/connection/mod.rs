@@ -121,6 +121,7 @@ impl  ConnectionStream {
                     }
                     return;
                 }
+                #[cfg(feature = "debugging")]
                 {
                     debug!("{:?} connection is using http1 protocol",self.address);
                 }
@@ -151,7 +152,8 @@ impl  ConnectionStream {
        'main_loop: loop {
            reserve_buf(&mut reading_buffer);
            if let Ok(read_size)
-               = stream.read_buf(&mut reading_buffer).await {
+               = stream.read_buf(&mut reading_buffer).await
+               {
                 // when connection is closed
                 if read_size == 0 {
                     return;
@@ -220,7 +222,6 @@ impl  ConnectionStream {
                                         Some(content_length) => {
                                             reading_buffer.advance(total_request_size);
                                             let mut rem = content_length;
-                                            println!("content-length {rem}\n while consumed {}",each_request_body_reading_buffer.bytes_consumed);
                                             if each_request_body_reading_buffer.bytes_consumed > 0 {
                                                 rem -= reading_buffer.len().min(rem);
                                                 reading_buffer.clear();
@@ -255,6 +256,9 @@ impl  ConnectionStream {
 
                         }
                         FormingRequestResult::ReadMore => {
+                            if reading_buffer.len() > 250 {
+                                return
+                            }
                             break;
                         }
                         FormingRequestResult::Err => {

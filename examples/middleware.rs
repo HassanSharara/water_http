@@ -28,6 +28,16 @@ WaterController! {
             _= context.send_str("hello world").await;
         }
     }
+    middleware -> (context {
+       let header = context.get_from_headers("X-srf-Token");
+        if let Some(header_value) = header {
+            if header_value == "test" {
+                return server::MiddlewareResult::Pass
+            }
+        }
+          _=context.send_str("you are not authorised").await;
+            return server::MiddlewareResult::Stop
+    })
 
 }
 

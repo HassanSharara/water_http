@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use water_http::{InitControllerRoot, WaterController};
+use water_http::{InitControllersRoot, WaterController};
 use water_http::server::ServerConfigurations;
 type MainHolderType = HashMap<String,String>;
-InitControllerRoot!{
+InitControllersRoot!{
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }

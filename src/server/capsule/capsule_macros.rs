@@ -14,18 +14,18 @@
 /// but it`s works on the incoming request path query and for examples
 /// [.com/post?name=hello&description=desc]
 #[macro_export]
-macro_rules! InitControllerRoot {
+macro_rules! InitControllersRoot {
 
     {
     /// defining the name of static Controller Root and it`s should be uppercase
     name: $name:ident ,
     holder_type:$holder:ty,
      } => {
-       InitControllerRoot! {
+       InitControllersRoot! {
            name:$name,
            holder_type:$holder,
            headers_length:16,
-           query_length:16
+           queries_length:16
        }
     };
     {
@@ -33,13 +33,58 @@ macro_rules! InitControllerRoot {
     name: $name:ident ,
     holder_type:$holder:ty,
     headers_length:$hl:literal,
-    query_length:$ql:literal
+    queries_length:$ql:literal
      } => {
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
 
     };
 }
 
+
+
+/// for creating route from given names of each route
+/// and also matching provided keys and values given
+#[macro_export]
+macro_rules! route {
+    ($key:expr) => {
+        {
+           water_http::server::___get_from_all_routes($key,None)
+        }
+    };
+    ($key:expr,[$($k:expr => $value:expr),*]) => {
+        {
+            let mut map:std::collections::HashMap<&str,&str> = std::collections::HashMap::new();
+            $(map.insert($k,$value);)*
+            water_http::server::___get_from_all_routes($key,Some(map))
+        }
+    };
+}
+
+
+
+/// for redirecting users to some route
+#[macro_export]
+macro_rules! redirect {
+    ($context:ident,$route:expr) => {
+        let route = water_http::route!($route);
+        if let Some(r) = route {
+        _= context.redirect(r).await;
+        }else {
+            _= context.redirect($route).await;
+        }
+    };
+
+    ($context:ident,$route:expr,[$($k:expr => $value:expr),*]) => {
+        let route = water_http::route!($route,[
+            $($k=>$value),*
+        ]);
+        if let Some(r) = route {
+        _= context.redirect(r).await;
+        }else {
+            _= context.redirect($route).await;
+        }
+    };
+}
 
 
 /// for running server in appropriate way,
@@ -268,7 +313,7 @@ macro_rules! FunctionsMacroBuilder {
             $(
              controller.push_handler(
                  (
-                     stringify!($method).replace('"',"").replace(" ","").to_uppercase(),
+                     stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
                      | context | Box::pin( async move {
                          $fn_name(context).await;
@@ -334,7 +379,9 @@ macro_rules! CheckExtraCode {
 ///  functions -> {
 ///   GET => / => main(context){
 ///    let mut sender = context.sender();
-///    sender.send_str("hello from server");
+///    if let Ok(_) = sender.send_str("hello from server").await {
+///
+///   }
 ///  }
 /// }
 /// }
@@ -388,7 +435,7 @@ macro_rules! WaterController {
 #[macro_export]
 macro_rules! path_setter {
     [$context_name:ident () {$path_item:tt} ]=>{
-        let $path_item = &$context_name.get_from_generic_path_params(stringify!($path_item)).unwrap();
+        let $path_item = &$context_name.____get_from_generic_path_params(stringify!($path_item)).unwrap();
     };
      [$context_name:ident () $path_item:tt]=>{
     };

@@ -1,17 +1,23 @@
+#![allow(async_fn_in_trait)]
+
 use std::fmt::Display;
+use std::future::Future;
 use std::io::SeekFrom;
 use std::os::windows::fs::MetadataExt;
-use bytes::{Bytes, BytesMut};
-use h2::{RecvStream, SendStream};
-use h2::server::SendResponse;
-use http::{HeaderName, HeaderValue, Request, Response as H2Response, response::Builder as H2ResponseBuilder};
+use bytes::Bytes;
+use h2::SendStream;
+use http::{HeaderName, HeaderValue, Response as H2Response, response::Builder as H2ResponseBuilder};
+use serde::de::Error;
 use serde::Serialize;
 use tokio::io::{ AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use crate::http::{FileRSender, HeaderResponseBuilder, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode};
 use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
-use crate::server::HttpStream;
+use crate::server::{get_server_config, Http1Context, Http2Context};
+
+
+
 
 /// for providing easy access and use for sends methods
 /// and providing infra structure for http protocols handling
@@ -23,50 +29,56 @@ pub  trait HttpSenderTrait {
    fn send_data_partial(&mut self,data:ResponseData);
 
     /// send final response or full response
-   fn send_data_as_final_response(&mut self,data:ResponseData);
+   fn send_data_as_final_response(&mut self,data:ResponseData)->impl Future<Output=Result<(),()>>;
 
     /// for setting header key value to response holder
 
    fn set_header<K:Display, V:Display>(&mut self,key:K,value:V);
 
-    fn send_json<JSON:Serialize>(&mut self,value:&JSON)->serde_json::Result<()>;
+    fn send_json<JSON:Serialize>(&mut self,value:&JSON)->
+    impl Future<Output=serde_json::Result<()>>;
 
     /// to send [&str] as response to client
-   fn send_str(&mut self,data:&str);
+   fn send_str(&mut self,data:&'static str)
+    -> impl Future<Output=Result<(),()>>;
 
    /// to send files as response to client ,
    ///and it takes [FileRSender]
    fn send_file(&mut self,path:FileRSender<'_>)->
-                                                     impl std::future::Future<
+                                                     impl Future<
                                                          Output = Result<(),&str>> + Send;
+
+
+    /// for flushing response stream into route connection
+    async fn flush(&mut self)->Result<(),()>;
 
     /// for writing custom bytes to the stream
     fn write_custom_bytes(&mut self,bytes:&[u8])->
-     impl std::future::Future<
+     impl Future<
      Output = Result<(),WaterErrors>> + Send;
 }
 
 
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 2 protocol to serve connections
-pub struct  Http2Sender<'a> {
-    batch:&'a mut (Request<RecvStream>,SendResponse<Bytes>),
+pub struct  Http2Sender<'a,'b> {
+    context:&'a mut Http2Context<'b>,
     send_stream: Option<SendStream<Bytes>>,
     response_builder:Option<H2ResponseBuilder>
 }
 
-impl <'a> Http2Sender<'a>{
+impl <'a,'b> Http2Sender<'a,'b>{
     pub (crate) fn new(
-        batch:&'a mut (Request<RecvStream>,SendResponse<Bytes>),
-    )->Http2Sender<'a> {
+        context:&'a mut Http2Context<'b>,
+    )->Http2Sender<'a,'b> {
         Http2Sender {
-            batch,
+            context,
             send_stream: None,
             response_builder:None
         }
     }
 }
 
-impl<'a> HttpSenderTrait for Http2Sender<'a> {
+impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
     fn send_status_code(&mut self, http_status: StatusCode) {
         if self.response_builder.is_some() {return;}
         let   response = H2Response::
@@ -81,28 +93,43 @@ impl<'a> HttpSenderTrait for Http2Sender<'a> {
             _=stream.send_data(Bytes::from(data),false);
             return;
         } else if let Some( response_builder) = self.response_builder.take() {
-            let   sender = &mut self.batch.1;
+            let   sender = &mut self.context.request_batch.1;
             if let Ok(mut stream) = sender.send_response(response_builder.body(()).unwrap(),false) {
                 _=stream.send_data(Bytes::from(data),false);
             }
         }
     }
 
-    fn send_data_as_final_response(&mut self, data: ResponseData) {
+    async fn send_data_as_final_response(&mut self, data: ResponseData<'_>)->Result<(),()> {
 
-        if let Some(ref mut stream) = self.send_stream {
+        return if let Some(ref mut stream) = self.send_stream {
             let data = data.as_bytes().to_vec();
             _=stream.send_data(Bytes::from(data),true);
-            return;
+             Ok(())
         } else if let Some( response_builder) = self.response_builder.take() {
             let data = data.as_bytes().to_vec();
-            let   sender = &mut self.batch.1;
-            if let Ok(mut stream) = sender.send_response(response_builder.body(()).unwrap(),false) {
-                _=stream.send_data(Bytes::from(data),true);
+            let   sender = &mut self.context.request_batch.1;
+            if let Ok( bb ) = response_builder.body(()) {
+                if let Ok(mut stream) = sender.send_response(bb,false) {
+                    _=stream.send_data(Bytes::from(data),true);
+                    return Ok(())
+                }
             }
+
+             Err(())
         } else {
             self.send_status_code(StatusCode::OK);
-            self.send_data_as_final_response(data);
+            if let Some( response_builder) = self.response_builder.take() {
+                let data = data.as_bytes().to_vec();
+                let   sender = &mut self.context.request_batch.1;
+                if let Ok( bb ) = response_builder.body(()) {
+                    if let Ok(mut stream) = sender.send_response(bb,false) {
+                        _=stream.send_data(Bytes::from(data),true);
+                        return Ok(())
+                    }
+                }
+            }
+             Err(())
         }
     }
 
@@ -124,22 +151,22 @@ impl<'a> HttpSenderTrait for Http2Sender<'a> {
         }
     }
 
-    fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
+    async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
         self.set_header("content-type","application/json");
         return match serde_json::to_vec(&value) {
             Ok(data) => {
-                self.send_data_as_final_response(ResponseData::Slice(
+                _=self.send_data_as_final_response(ResponseData::Slice(
                     data.as_ref()
-                ));
-                 Ok(())
+                )).await;
+                Ok(())
             }
             Err(e) => {  Err(e)}
         }
 
     }
 
-    fn send_str(&mut self, data: &str) {
-        self.send_data_as_final_response(ResponseData::Str(data));
+    async fn send_str(&mut self, data: &'static str)->Result<(),()> {
+        self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
     async fn send_file(&mut self, pc: FileRSender<'_>) -> Result<(),&str> {
@@ -227,7 +254,7 @@ impl<'a> HttpSenderTrait for Http2Sender<'a> {
 
 
 
-            let   sender = &mut self.batch.1;
+            let   sender = &mut self.context.request_batch.1;
             let mut sender =
             match sender.send_response(h2_res_builder.body(()).unwrap(),false) {
                 Ok(sender) => {sender}
@@ -273,6 +300,21 @@ impl<'a> HttpSenderTrait for Http2Sender<'a> {
 
     }
 
+    async fn flush(&mut self) -> Result<(), ()> {
+        if self.send_stream.is_none() {
+            if let Some(response_builder) = self.response_builder.take() {
+                if let Ok( bb ) = response_builder.body(()) {
+                    let   sender = &mut self.context.request_batch.1;
+                    if let Ok(stream) = sender.send_response(bb,true) {
+                        self.send_stream = Some(stream);
+                        return Ok(())
+                    }
+                }
+            }
+        }
+        return Err(())
+    }
+
     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors> {
         if let Some(send_stream) = &mut self.send_stream {
             if let Ok(_) = send_stream.send_data(Bytes::copy_from_slice(bytes),false) {
@@ -291,12 +333,14 @@ impl<'a> HttpSenderTrait for Http2Sender<'a> {
 
 
 /// for sending http response to all supported protocols by the crate
-pub  enum HttpSender<'a> {
-    H1(Http1Sender<'a>),
-    H2(Http2Sender<'a>),
+pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> {
+    H1(Http1Sender<'a,'context,HEADERS_COUNT,QUERY_COUNT>),
+    H2(Http2Sender<'a,'context>),
 }
 
- impl<'a> HttpSenderTrait for HttpSender<'a> {
+ impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait
+ for HttpSender<'a,'context,HEADERS_COUNT,QUERY_COUNT>
+ {
     fn send_status_code(&mut self, http_status: StatusCode) {
         match self {
             HttpSender::H1(h1) => {
@@ -319,13 +363,13 @@ pub  enum HttpSender<'a> {
         }
     }
 
-    fn send_data_as_final_response(&mut self, data: ResponseData) {
+   async fn send_data_as_final_response(&mut self, data: ResponseData<'_>)->Result<(),()> {
         match self {
             HttpSender::H1(h1) => {
-                h1.send_data_as_final_response(data)
+                h1.send_data_as_final_response(data).await
             }
             HttpSender::H2(h2) => {
-                h2.send_data_as_final_response(data)
+                h2.send_data_as_final_response(data).await
             }
         }
     }
@@ -341,20 +385,20 @@ pub  enum HttpSender<'a> {
         }
     }
 
-     fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
+     async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
          match self {
-             HttpSender::H1(h1) => {h1.send_json(value)}
-             HttpSender::H2(h2) => {h2.send_json(value)}
+             HttpSender::H1(h1) => {h1.send_json(value).await}
+             HttpSender::H2(h2) => {h2.send_json(value).await}
          }
      }
 
-     fn send_str(&mut self, data: &str) {
+     async fn send_str(&mut self, data: &'static str)->Result<(),()> {
         match self {
             HttpSender::H1(h1) => {
-                h1.send_str(data)
+                h1.send_str(data).await
             }
             HttpSender::H2(h2) => {
-                h2.send_str(data)
+                h2.send_str(data).await
             }
         }
     }
@@ -365,6 +409,13 @@ pub  enum HttpSender<'a> {
             HttpSender::H2(h2) => {h2.send_file(pc).await}
         }
     }
+
+     async fn flush(&mut self) -> Result<(), ()> {
+         match self {
+             HttpSender::H1(h1) => {h1.flush().await}
+             HttpSender::H2(h2) => {h2.flush().await}
+         }
+     }
 
      async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors> {
          match self {
@@ -377,36 +428,36 @@ pub  enum HttpSender<'a> {
 
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 1 protocol to serve connections
 
-pub  struct Http1Sender<'a,
+pub  struct Http1Sender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize
 > {
-    pub buf:&'a mut BytesMut,
-    stream:&'a mut HttpStream,
+    pub context:&'a mut Http1Context<'context,HEADERS_COUNT,QUERY_COUNT>,
     is_status_written:bool,
 }
 
-impl <'a> Http1Sender<'a> {
+impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender<'a,'context,
+  HEADERS_COUNT,QUERY_COUNT
+> {
     pub (crate) fn new(
-       buf:&'a mut BytesMut,
-       stream:&'a mut HttpStream
-    )->Http1Sender<'a>{
+       context: &'a mut Http1Context<'context,HEADERS_COUNT,QUERY_COUNT>,
+    )->Http1Sender<'a,'context,HEADERS_COUNT,QUERY_COUNT>{
         Http1Sender {
-            buf,
+            context,
             is_status_written:false,
-            stream
         }
     }
 
 
     pub (crate) async fn write_bytes(&mut self,bytes:&[u8])->Result<(),()>{
-        match self.stream.write_all(bytes).await {
+        match self.context.stream.write_all(bytes).await {
             Ok(_) => {Ok(())}
             Err(_) => {Err(())}
         }
     }
 }
-impl<'a> HttpSenderTrait for Http1Sender <'a>  {
+impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait for
+Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     fn send_status_code(&mut self, http_status: StatusCode) {
-        self.buf.extend_from_slice(format!("HTTP/1.1 {} {}\r\n",
+        self.context.response_buffer.extend_from_slice(format!("HTTP/1.1 {} {}\r\n",
          http_status.status,
          http_status.label
         ).as_bytes());
@@ -416,37 +467,63 @@ impl<'a> HttpSenderTrait for Http1Sender <'a>  {
     #[inline]
     fn send_data_partial(&mut self, data: ResponseData) {
         let bytes = data.as_bytes();
-        self.buf.extend_from_slice(b"\r\n");
-        self.buf.extend_from_slice(bytes);
+        self.context.response_buffer.extend_from_slice(b"\r\n");
+        self.context.response_buffer.extend_from_slice(bytes);
     }
 
     #[inline]
-    fn send_data_as_final_response(&mut self, data: ResponseData) {
+    async fn send_data_as_final_response(&mut self, data: ResponseData<'_>) -> Result<(),()> {
+
+        let ref en_configurations = get_server_config().responding_encoding_configurations;
+
         let data = data.as_bytes();
-        self.buf.extend_from_slice(format!("Content-Length: {}\r\n\r\n",data.len()).as_bytes());
-        self.buf.extend_from_slice(data);
+
+        if data.len() >= en_configurations.threshold_for_encoding_response &&  en_configurations.is_not_none() {
+            let accept_encoding = self.context
+                .request.headers.get_as_str("Accept-Encoding");
+            if let Some(accept_encoding ) = accept_encoding {
+                let encoder = en_configurations.encode(
+                    accept_encoding,
+                    data
+                ).await;
+                if let Some(encoder )  = encoder {
+                    self.set_header("Content-Encoding",encoder.logic);
+                    let data = encoder.data;
+                    self.context.response_buffer.extend_from_slice(format!("Content-Length: {}\r\n\r\n",data.len()).as_bytes());
+                    self.context.response_buffer.extend_from_slice(data.as_ref());
+                    return Ok(())
+                }
+            }
+
+        }
+
+        self.context.response_buffer.extend_from_slice(format!("Content-Length: {}\r\n\r\n",data.len()).as_bytes());
+        self.context.response_buffer.extend_from_slice(data);
+        Ok(())
     }
 
     fn set_header<K:Display, V:Display>(&mut self, key: K, value: V) {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
-        self.buf.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
+        self.context.response_buffer.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
     }
 
-    fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()> {
+    async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()> {
         self.set_header("content-type","application/json");
         match serde_json::to_vec(value) {
             Ok(data) => {
-                self.send_data_as_final_response(ResponseData::Slice(data.as_ref()));
-                Ok(())
+                if self.send_data_as_final_response(ResponseData::Slice(data.as_ref())).await.is_ok() {
+                    return Ok(())
+                }
+                Err(serde_json::Error::custom("fail"))
             }
             Err(e) => {return Err(e)}
         }
 
     }
 
-    fn send_str(&mut self,data: &str)  {
+    async fn send_str(&mut self,data: &'static str) -> Result<(),()> {
         self.send_status_code(StatusCode::OK);
-        self.send_data_as_final_response(ResponseData::Str(data));
+        self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
     async fn send_file(&mut self,pc: FileRSender<'_>)->Result<(),&str>{
@@ -572,9 +649,16 @@ impl<'a> HttpSenderTrait for Http1Sender <'a>  {
         Err("file dose not exist")
     }
 
+     async fn flush(&mut self) -> Result<(),()>{
+         if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
+             return Err(())
+         }
+         Ok(())
+    }
+
     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors> {
-        self.buf.extend_from_slice(bytes);
-        if handle_responding(self.buf,self.stream).await.is_err() {
+        self.context.response_buffer.extend_from_slice(bytes);
+        if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
             return Err(WaterErrors::Server(ServerError::WRITING_TO_STREAM_ERROR))
         }
         Ok(())

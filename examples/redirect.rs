@@ -25,10 +25,13 @@ WaterController! {
     name -> MainController,
     functions -> {
         GET => / => main(context) async {
-            _= context.send_str("hello world").await;
+           let route =  route!("create_posts").expect("can not fount route name");
+           _= context.redirect(route.as_ref()).await;
+        },
+        GET_create_posts => create/posts => create(context)async {
+            _= context.send_str("hello from create posts route").await;
         }
     }
-
 }
 
 

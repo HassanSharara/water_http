@@ -4,20 +4,26 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+brotli = "7.0.0"
 byteorder = "1.5.0"
 bytes = "1.7.2"
+bzip2 = "0.5.0"
+flate2 = "1.0.35"
 h2 = "0.4.6"
 http = "1.1.0"
 httparse = "1.9.5"
+lz4 = "1.28.0"
 rustls = "0.23.13"
 rustls-pemfile = "2.2.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
+snap = "1.1.1"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-rustls = "0.26.0"
 tracing = {version = "0.1.40",optional = true}
 tracing-subscriber = {version = "0.3.18",optional = true}
 twoway = "0.2.2"
+zstd = "0.13.2"
 
 
 [features]
