@@ -1,7 +1,11 @@
 [package]
+readme = "README.md"
 name = "water_http"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2021"
+authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
+license = "MIT"
+description = "fast web http framework that support http 1 and http 2 with very easy use"
 
 [dependencies]
 brotli = "7.0.0"
