@@ -21,6 +21,23 @@ WaterController! {
     holder -> crate::MainHolderType,
     name -> MainController,
     functions -> {
+         GET => public/{allRestPath} => public_serving(context) async {
+
+            let downloading_path = format!("./public/{allRestPath}");
+            _=context.send_file(
+                http::FileRSender::new(
+                  downloading_path.as_str()
+                )
+            ).await;
+        },
+
+        GET => "favicon.ico" => favicon_serving(context) async {
+            _=context.send_file(
+                http::FileRSender::new(
+                  "./public/favicon.ico"
+                )
+            ).await;
+        },
         GET => / => main(context) async {
             let html_page = MainPage;
             if let Ok(html_page) = html_page.render() {

@@ -19,7 +19,7 @@ WaterController! {
     name -> MainController,
     functions -> {
         GET => / => main(context) async {
-            _= context.send_html_text("<h4>hello </h4><br></br><h1> hello</h1>").await;
+            _= context.send_str("hello world").await;
         }
     }
 

@@ -1,8 +1,9 @@
 #![allow(async_fn_in_trait)]
 
+use std::ffi::OsStr;
 use std::fmt::Display;
 use std::future::Future;
-use std::io::SeekFrom;
+use std::io:: SeekFrom;
 use std::os::windows::fs::MetadataExt;
 use bytes::Bytes;
 use h2::SendStream;
@@ -10,11 +11,11 @@ use http::{HeaderName, HeaderValue, Response as H2Response, response::Builder as
 use serde::de::Error;
 use serde::Serialize;
 use tokio::io::{ AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use crate::http::{FileRSender, HeaderResponseBuilder, ResponseData};
-use crate::http::status_code::{HttpStatusCode as StatusCode};
+use crate::http::{FileRSender, ResponseData};
+use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
 use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
-use crate::server::{get_server_config, Http1Context, Http2Context};
+use crate::server::{get_server_config, Http1Context, Http2Context, WRITING_FILES_BUF_LEN};
 
 
 
@@ -46,7 +47,7 @@ pub  trait HttpSenderTrait {
    ///and it takes [FileRSender]
    fn send_file(&mut self,path:FileRSender<'_>)->
                                                      impl Future<
-                                                         Output = Result<(),&str>> + Send;
+                                                         Output = SendingFileResults> + Send;
 
 
     /// for flushing response stream into route connection
@@ -57,6 +58,8 @@ pub  trait HttpSenderTrait {
      impl Future<
      Output = Result<(),WaterErrors>> + Send;
 }
+
+
 
 
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 2 protocol to serve connections
@@ -76,6 +79,34 @@ impl <'a,'b> Http2Sender<'a,'b>{
             send_stream: None,
             response_builder:None
         }
+    }
+
+    fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr){
+        match file_content_type {
+            None => {
+                self.set_header("Content-Type","Application/octet-stream");
+                self.set_header("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
+            }
+            Some(content_type) => {
+                self.set_header("Content-Type",content_type);
+            }
+        }
+    }
+
+
+    async fn write_headers_and_get_ready(&mut self) -> Result<(), ()> {
+        if self.send_stream.is_none() {
+            if let Some(response_builder) = self.response_builder.take() {
+                if let Ok( bb ) = response_builder.body(()) {
+                    let   sender = &mut self.context.request_batch.1;
+                    if let Ok(stream) = sender.send_response(bb,false) {
+                        self.send_stream = Some(stream);
+                        return Ok(())
+                    }
+                }
+            }
+        }else {return  Ok(())}
+        return Err(())
     }
 }
 
@@ -170,136 +201,88 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
-    async fn send_file(&mut self, pc: FileRSender<'_>) -> Result<(),&str> {
-        let ref path = pc.path;
-        let file_name = match path.file_name() {
-            Some(f_n) => f_n,
-            None => return Err("the path is not valid")
+    async fn send_file(&mut self,pc: FileRSender<'_>)-> SendingFileResults {
+
+
+        // preparing file
+        let mut file = match tokio::fs::File::open(pc.path).await {
+            Ok(f) => {f}
+            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
         };
-        let file = tokio::fs::File::open(path).await;
-        if let Ok( mut file ) = file {
-            let meta_data = match file.metadata().await {
-                Ok(m) => { m}
-                Err(_) => {
-                    return Err("an error with metadata of the given file")
-                }
-            };
-            let file_size = meta_data.file_size() as usize;
-            let file_content_type = crate::util::content_type_from_file_path(path);
-            let mut h2_res_builder = H2Response::builder()
-                .status(200);
-            // check the content type from file name
-            match file_content_type {
-                None => {
-                    // start sending file as octet-stream content
-                    h2_res_builder = h2_res_builder.header("Content-Type","Application/octet-stream");
-                    h2_res_builder = h2_res_builder.header("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
-                }
-                Some(content_type) => {
-                    h2_res_builder = h2_res_builder.header("Content-Type",content_type);
-                }
+        let meta = match file.metadata().await {
+            Ok(m) => {m}
+            Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+        let file_size = meta.file_size() as usize;
+        let file_name = match pc.path.file_name() {
+            None => { return SendingFileResults::FileNotFound}
+            Some(f) => {f}
+        };
+        let file_content_type = crate::util::content_type_from_file_path(&pc.path);
+        let mut start = 0_usize;
+        let mut end = file_size;
+
+        // check if we need to send the whole file or just range of it
+        match pc.range {
+            None => {
+                self.send_status_code(HttpStatusCode::OK);
             }
-            h2_res_builder = h2_res_builder.header("Accept-Ranges","bytes");
-
-            let last_index = if file_size > pc.buffer_size_for_reading_from_file_and_writing_to_stream {
-                pc.buffer_size_for_reading_from_file_and_writing_to_stream
-            }  else {
-                file_size
-            };
-            let mut start:usize = 0;
-            let mut end:usize =
-                start
-                    + last_index;
-            let mut content_length:usize = (end - start)   +1  ;
-            // start handle ranges
-            if let Some(range) = &pc.range {
-                start = range.0.unwrap_or(start);
-                if let Some(e) = range.1 {
-                    if e <= file_size {
-                        end = e;
-                    }
-                }
-                if end < start {
-                    end = start + last_index;
-                }
-                if end >= file_size {
-                    end = file_size;
-                }
-                content_length = (end - start)   +1 ;
-
-                h2_res_builder = h2_res_builder.header("Content-Range",format!("bytes {start}-{end}/{}",file_size-1));
-            }
-
-
-            h2_res_builder = h2_res_builder.status(206);
-
-
-            // checking range validity
-            if start == end || start > end || end > file_size  {
-                return Err("Ranges Not Satisfiable");
-            }
-
-            // initiating buffer with the appropriate buffer size
-            let buffer_size = if content_length >
-                pc.buffer_size_for_reading_from_file_and_writing_to_stream {
-                pc.buffer_size_for_reading_from_file_and_writing_to_stream
-            } else {content_length };
-
-
-            // specifying content-length
-            h2_res_builder = h2_res_builder.header("Content-Length",content_length);
-            h2_res_builder = h2_res_builder.header("Access-Control-Allow-Origin","*");
-
-            // sending headers firstly to make sure that connection stream is a live
-            // and also for acknowledge the client that we ready to sent back what`s he need
-
-
-
-            let   sender = &mut self.context.request_batch.1;
-            let mut sender =
-            match sender.send_response(h2_res_builder.body(()).unwrap(),false) {
-                Ok(sender) => {sender}
-                Err(_) => { return Err("can not send response")}
-            };
-
-
-            // allocate memory for reading file from disk
-            let mut buffer= Vec::<u8>::with_capacity(buffer_size);
-
-            // specifying the remaining or not sent data
-            let mut remaining = content_length;
-
-            // seeking to the start of range bytes
-            if let Err(_) = file.seek(SeekFrom::Start(start as u64)).await {
-                return Err("can not seek to the given bytes")
-            }
-
-            // sending back all the wanted data
-            while remaining > 0 {
-                if let Ok( size) = file.read_buf(&mut buffer).await  {
-                    let to_send = size.min(remaining);
-                    match sender.send_data(Bytes::copy_from_slice(&buffer[..to_send]), false) {
-                        Ok(_) => {
-                            remaining-=to_send;
-                            if remaining < 1  {
-                                break;
-                            }
-                            buffer.clear();
-                        }
-                        Err(_) => {
-                            return Err("can not write bytes to stream")
-
-                        }
-                    }
-
+            Some(ranges) => {
+                start = ranges.0.unwrap_or(0);
+                end = ranges.1.unwrap_or({
+                    (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream)
+                        .min(file_size)
+                });
+                if (end - start)  == file_size {
+                    self.send_status_code(HttpStatusCode::OK);
                 } else {
-                    return Err("can not read file successfully")
+                    self.send_status_code(HttpStatusCode::PARTIAL_CONTENT);
                 }
             }
         }
-        return Ok(())
+        self.handle_content_type_while_sending_file(&file_content_type,file_name);
+        if end >= file_size { end = file_size;}
+        if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size)}
+        if  start == end || start > end || end > file_size {
+            return SendingFileResults::RangesNotSatisfied
+        }
+        let mut to_send = end - start  ;
+        if to_send != file_size {
+            self.set_header("Content-Range",format!("bytes {start}-{}/{}",{end-1},file_size));
+        }
+        self.set_header("Content-Length",to_send);
+        if file.seek(SeekFrom::Start(start as u64)).await.is_err() {return SendingFileResults::RangesNotSatisfied}
+        let mut buffer = Vec::with_capacity(
+            WRITING_FILES_BUF_LEN.min(
+                to_send
+            )
+        );
+        if self.write_headers_and_get_ready().await.is_err() {
+            return SendingFileResults::ErrorWhileSendingBytesToClient;
+        }
+        while to_send > 0 {
+            buffer.clear();
+            match file.read_buf(&mut buffer).await {
+                Ok(size) => {
+                    let index = to_send.min(size);
+                    if self.write_custom_bytes(&buffer[..index]).await.is_err() {
+                        return SendingFileResults::ErrorWhileSendingBytesToClient
+                    }
+                    to_send -= index;
+                    continue;
+                }
+                Err(_) => {
+                    return  SendingFileResults::ReadingFileBytesError
+                }
+            }
 
+        }
+        return SendingFileResults::Success
     }
+
+
+
+
 
     async fn flush(&mut self) -> Result<(), ()> {
         if self.send_stream.is_none() {
@@ -404,7 +387,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
         }
     }
 
-    async fn send_file(&mut self, pc: FileRSender<'_>) -> Result<(), &str> {
+    async fn send_file(&mut self, pc: FileRSender<'_>) ->SendingFileResults {
         match self {
             HttpSender::H1(h1) => {h1.send_file(pc).await}
             HttpSender::H2(h2) => {h2.send_file(pc).await}
@@ -453,6 +436,18 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
         match self.context.stream.write_all(bytes).await {
             Ok(_) => {Ok(())}
             Err(_) => {Err(())}
+        }
+    }
+
+    fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr){
+        match file_content_type {
+            None => {
+                self.set_header("Content-Type","Application/octet-stream");
+                self.set_header("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
+            }
+            Some(content_type) => {
+                self.set_header("Content-Type",content_type);
+            }
         }
     }
 }
@@ -528,128 +523,91 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
-    async fn send_file(&mut self,pc: FileRSender<'_>)->Result<(),&str>{
-        let ref path = pc.path;
-        let file_name = match path.file_name() {
-            Some(f_n) => f_n,
-            None => return Err("the path is not valid")
+
+    async fn send_file(&mut self,pc: FileRSender<'_>)-> SendingFileResults {
+
+
+        // preparing file
+        let mut file = match tokio::fs::File::open(pc.path).await {
+            Ok(f) => {f}
+            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
         };
-        let file = tokio::fs::File::open(path).await;
-        if let Ok( mut file ) = file {
-            let meta_data = match file.metadata().await {
-                Ok(m) => { m}
-                Err(_) => {
-                    return Err("an error with metadata of the given file")
-                }
-            };
-            let file_size = meta_data.file_size() as usize;
-            let file_content_type = crate::util::content_type_from_file_path(path);
-            let mut headers_builder = HeaderResponseBuilder::success();
+        let meta = match file.metadata().await {
+            Ok(m) => {m}
+            Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+        let file_size = meta.file_size() as usize;
+        let file_name = match pc.path.file_name() {
+            None => { return SendingFileResults::FileNotFound}
+            Some(f) => {f}
+        };
+        let file_content_type = crate::util::content_type_from_file_path(&pc.path);
+        let mut start = 0_usize;
+        let mut end = file_size;
 
-            // check the content type from file name
-            match file_content_type {
-                None => {
-                    // start sending file as octet-stream content
-                    headers_builder.set_header_key_value("Content-Type","Application/octet-stream");
-                    headers_builder.set_header_key_value("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
-                }
-                Some(content_type) => {
-                    headers_builder.set_header_key_value("Content-Type",content_type);
-                }
+        // check if we need to send the whole file or just range of it
+        match pc.range {
+            None => {
+                self.send_status_code(HttpStatusCode::OK);
             }
-            headers_builder.set_header_key_value("Accept-Ranges","bytes");
-
-            let last_index = if file_size > pc.buffer_size_for_reading_from_file_and_writing_to_stream {
-                pc.buffer_size_for_reading_from_file_and_writing_to_stream
-            }  else {
-                file_size
-            };
-            let mut start:usize = 0;
-            let mut end:usize =
-             start
-            + last_index;
-            let mut content_length:usize = (end - start)   +1  ;
-            // start handle ranges
-            if let Some(range) = &pc.range {
-                start = range.0.unwrap_or(start);
-                if let Some(e) = range.1 {
-                    if e <= file_size {
-                        end = e;
-                    }
-                }
-                if end < start {
-                    end = start + last_index;
-                }
-                if end >= file_size {
-                    end = file_size;
-                }
-                content_length = (end - start)   +1 ;
-
-                headers_builder.set_header_key_value("Content-Range",format!("bytes {start}-{end}/{}",file_size-1));
-            }
-
-
-
-            headers_builder.change_first_line_to_partial_content();
-
-            // checking range validity
-            if start == end || start > end || end > file_size  {
-                return Err("Ranges Not Satisfiable");
-            }
-
-            // initiating buffer with the appropriate buffer size
-            let buffer_size = if content_length> pc.buffer_size_for_reading_from_file_and_writing_to_stream {
-                pc.buffer_size_for_reading_from_file_and_writing_to_stream
-            } else {content_length };
-
-
-            // specifying content-length
-            headers_builder.set_header_key_value("Content-Length",content_length);
-            headers_builder.set_header_key_value("Access-Control-Allow-Origin","*");
-
-            // sending headers firstly to make sure that connection stream is a live
-            // and also for acknowledge the client that we ready to sent back what`s he need
-            if let Err(_) = self.write_bytes(&headers_builder.to_bytes()).await {
-                return Err("can not send write headers to connection peer")
-            }
-
-            // allocate memory for reading file from disk
-            let mut buffer= Vec::<u8>::with_capacity(buffer_size);
-
-            // specifying the remaining or not sent data
-            let mut remaining = content_length;
-
-            // seeking to the start of range bytes
-            if let Err(_) = file.seek(SeekFrom::Start(start as u64)).await {
-                return Err("can not seek to the given bytes")
-            }
-
-            // sending back all the wanted data
-            while remaining > 0 {
-                if let Ok( size) = file.read_buf(&mut buffer).await  {
-                    let to_send = size.min(remaining);
-                    match self.write_bytes(&buffer[..to_send]).await {
-                        Ok(_) => {
-                            remaining-=to_send;
-                            if remaining < 1  {
-                                break;
-                            }
-                            buffer.clear();
-                        }
-                        Err(_) => {
-                            return Err("can not write bytes to stream")
-                        }
-                    }
+            Some(ranges) => {
+                start = ranges.0.unwrap_or(0);
+                end = ranges.1.unwrap_or({
+                    (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream)
+                        .min(file_size)
+                });
+                if (end - start)  == file_size {
+                    self.send_status_code(HttpStatusCode::OK);
                 } else {
-                    return Err("can not read file successfully")
+                    self.send_status_code(HttpStatusCode::PARTIAL_CONTENT);
                 }
             }
+        }
 
-            return Ok(())
+        self.handle_content_type_while_sending_file(&file_content_type,file_name);
+
+
+        if end >= file_size { end = file_size;}
+        if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size)}
+
+        if  start == end || start > end || end > file_size {
+            return SendingFileResults::RangesNotSatisfied
+        }
+        let mut to_send = end - start  ;
+
+        if to_send != file_size {
+            self.set_header("Content-Range",format!("bytes {start}-{}/{}",{end-1},file_size));
+        }
+
+        self.set_header("Content-Length",to_send);
+        if file.seek(SeekFrom::Start(start as u64)).await.is_err() {return SendingFileResults::RangesNotSatisfied}
+        let mut buffer = Vec::with_capacity(
+            WRITING_FILES_BUF_LEN.min(
+                to_send
+            )
+        );
+        if self.flush().await.is_err() || self.write_bytes(b"\r\n").await.is_err() { return  SendingFileResults::ErrorWhileSendingBytesToClient}
+
+        while to_send > 0 {
+            buffer.clear();
+           match file.read_buf(&mut buffer).await {
+               Ok(size) => {
+                   let index = to_send.min(size);
+                   if self.write_bytes(&buffer[..index]).await.is_err() {
+                       return SendingFileResults::ErrorWhileSendingBytesToClient
+                   }
+                   to_send -= index;
+                   continue;
+               }
+               Err(_) => {
+                   return  SendingFileResults::ReadingFileBytesError
+               }
+           }
 
         }
-        Err("file dose not exist")
+        return SendingFileResults::Success
     }
+
 
      async fn flush(&mut self) -> Result<(),()>{
          if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
@@ -666,6 +624,29 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         Ok(())
     }
 }
+
+
+
+/// defining sending file behavior
+#[derive(Debug)]
+pub enum SendingFileResults {
+    FileNotFound,
+    ReadingFileBytesError,
+    ErrorWhileOpeningTheFile,
+    ErrorWhileSendingBytesToClient,
+    RangesNotSatisfied,
+    Success
+}
+
+impl SendingFileResults {
+
+    /// when sending file completed successfully
+    pub fn is_success(&self)->bool{
+        if let SendingFileResults::Success = self { return true}
+        false
+    }
+}
+
 
 
 

@@ -11,7 +11,7 @@ use http::Request;
 use serde::Deserialize;
 use serde::ser::Error;
 use tokio::net::{ TcpStream};
-use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
+use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
 use crate::http::request::{DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks
                            ,ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
@@ -428,7 +428,8 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
     /// for sending files
     /// this function auto support for sending videos
-    pub async fn send_file(&mut self,mut file:FileRSender<'_>)->Result<(),String>{
+    pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
+        if !file.path.exists() { return SendingFileResults::FileNotFound}
         let range = self.get_from_headers("Range");
         if let Some(range) = range {
             let mut range = range.split("=").last().unwrap_or("").split("-");
@@ -447,10 +448,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             file.set_bytes_range(start,end);
         }
         let mut  sender = self.sender();
-        match sender.send_file(file).await {
-            Ok(_) => {Ok(())}
-            Err(e) => {Err(e.to_owned())}
-        }
+         sender.send_file(file).await
     }
 
 

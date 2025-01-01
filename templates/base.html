@@ -1,0 +1,18 @@
+<html lang="ar">
+
+{% macro assets(name) -%}
+public/themes/main/{{ name }}
+{%- endmacro -%}
+
+<header>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1, maximum-scale=1, shrink-to-fit=no" name="viewport">
+    <link rel="stylesheet" href='{% call assets("assets/css/app.min.css")%}'>
+    <link rel="stylesheet" href='{% call assets("assets/css/style.css")%}'>
+    <link rel="stylesheet" href='{% call assets("assets/css/components.css")%}'>
+    <link rel="stylesheet" href= '{% call assets("assets/css/custom.css")%}'>
+    <link rel='shortcut icon' type='image/x-icon' href="favicon.ico" />
+
+</header>
+{% include "layouts/main/main_structure.html" %}
+</html>

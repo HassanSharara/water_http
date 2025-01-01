@@ -2,5 +2,6 @@
 /ssl
 .idea/
 /templates
+/public
 .templates/
 
