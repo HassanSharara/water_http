@@ -25,7 +25,7 @@ impl EncodingConfigurations {
 
     /// creating new [EncodingConfigurations] with default values
     /// logic : [EncodingLogic::None]
-    /// threshold: [4_000_000]
+    /// threshold: 4_000_000
     pub fn default()->Self{
         EncodingConfigurations {
             logic:EncodingLogic::None,
@@ -281,7 +281,7 @@ impl EncodingConfigurations {
 pub enum EncodingLogic{
     /// to support all encoding algorithms
     All,
-    /// works as well as [`EncodingConfigurations::All`] option
+    /// works as well as [`EncodingLogic::All`] option
     Default,
     /// for providing zstd encoding only
     Zstd,

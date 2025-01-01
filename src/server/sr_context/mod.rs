@@ -391,6 +391,16 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     }
 
 
+    /// for sending html text
+    /// this function is basically set the content type of http response to text/html
+    /// to let the browsers or the client knows what is coming
+    pub async fn send_html_text(&mut self,value:&str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.set_header("Content-Type","Text/html");
+        sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
+    }
+
+
     /// for sending normal str data without static lifetime
     pub async fn send_string_slice(&mut self,value:&str)->Result<(),()>{
         let mut sender = self.sender();
@@ -598,6 +608,8 @@ impl AsyncRead for HttpStream {
     }
 }
 
+/// defining http1 implementations for request context
+#[doc(hidden)]
 pub struct Http1Context<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize> {
   pub request: IncomingRequest<'a, HEADERS_COUNT, PATH_QUERY_COUNT>,

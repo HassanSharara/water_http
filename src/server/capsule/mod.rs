@@ -1,3 +1,5 @@
+
+/// defining all the used and imported macros for building your app structr
 pub mod capsule_macros;
 
 use std::collections::HashMap;

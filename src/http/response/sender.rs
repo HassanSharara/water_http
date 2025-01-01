@@ -60,6 +60,7 @@ pub  trait HttpSenderTrait {
 
 
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 2 protocol to serve connections
+#[doc(hidden)]
 pub struct  Http2Sender<'a,'b> {
     context:&'a mut Http2Context<'b>,
     send_stream: Option<SendStream<Bytes>>,

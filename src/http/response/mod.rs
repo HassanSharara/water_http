@@ -4,6 +4,7 @@ mod file_response;
 pub use file_response::*;
 pub use writer::*;
 pub use sender::*;
+
 #[doc(hidden)]
 pub struct HeaderResponseBuilder {
       first_line: FirstLine,
@@ -215,6 +216,9 @@ pub struct HttpStatus {
     pub code:u16,
     pub value:String
 }
+
+
+
 
 /// wrapper struct for [HttpVersion] and [HttpStatus]
 pub struct FirstLine {

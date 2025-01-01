@@ -1,4 +1,6 @@
 /target
 /ssl
 .idea/
+/templates
+.templates/
 
