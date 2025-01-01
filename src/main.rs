@@ -1,7 +1,5 @@
-
 use water_http::server:: ServerConfigurations;
 use water_http::{InitControllersRoot, WaterController};
-
 type MainHolderType = u8;
 InitControllersRoot!{
     name:MAIN_ROOT,
@@ -16,17 +14,12 @@ async fn main() {
         MainController
     );
 }
-
-
-
-
 WaterController! {
     holder -> crate::MainHolderType,
     name -> MainController,
     functions -> {
-        GET => post/{id} => main(context) async {
-           let res = format!("we are getting {id} by you");
-            _= context.send_string_slice(res.as_str()).await;
+        GET => / => main(context) async {
+            _= context.send_html_text("<h4>hello </h4><br></br><h1> hello</h1>").await;
         }
     }
 
