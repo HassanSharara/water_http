@@ -36,7 +36,6 @@ macro_rules! InitControllersRoot {
     queries_length:$ql:literal
      } => {
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
-
     };
 }
 

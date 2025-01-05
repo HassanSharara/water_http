@@ -260,5 +260,30 @@ WaterController! {
  so the cons is that using memory management is complex ,and sometimes it
  leads to system block
  - you may need to install [cmake](https://cmake.org/download/) and [clang](https://clang.llvm.org/) compiler for compiling
-
+ - if you want to create fn which take context as parameter
  
+  you would need to parse parameters as following
+ ```rust
+ use water_http::server::HttpContext;
+ type MainHolderType = crate::MainHolderType;
+ async fn handle_context<'context>(
+     context:&mut HttpContext<'context,MainHolderType,16,16>){
+     // Main Holder type it`s what you defined when InitControllersRoot
+     // 16 and 16 is the headers and query length ,and they are the default values
+     // if you need to change them then you need to chane the MainRoot defined lengths or
+ }
+```
+ or you could use also
+ ```rust
+ use water_http::server::HttpContext;
+ type MainHolderType = crate::MainHolderType;
+ async fn handle_context<'context,
+  const HL:usize,
+  const QL:usize   
+ >(
+     context:&mut HttpContext<'context,
+         MainHolderType,HL,QL>){
+ }
+``` 
+
+All the best
