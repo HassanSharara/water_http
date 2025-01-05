@@ -1,12 +1,16 @@
 [package]
 readme = "README.md"
 name = "water_http"
-version = "2.0.2"
+version = "2.0.4"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http/tree/main_water"
 license = "MIT"
 description = "fast web http framework that support http 1 and http 2 with very easy use"
+categories = ["network-programming", "web-programming::http-server" ]
+keywords = ["http", "water_http", "water-http","water-server"]
+
+
 
 [dependencies]
 brotli = "7.0.0"
@@ -26,7 +30,7 @@ snap = "1.1.1"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-rustls = "0.26.0"
 tracing = {version = "0.1.40",optional = true}
-tracing-subscriber = {version = "0.3.18",optional = true}
+tracing-subscriber = {version = "0.3.18",optional = true,features = ["env-filter"]}
 twoway = "0.2.2"
 zstd = "0.13.2"
 

@@ -7,6 +7,16 @@ InitControllersRoot!{
 }
 #[tokio::main]
 async fn main() {
+    #[cfg(feature = "debugging")]
+    {
+        let subscriber  = tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_env_filter(tracing_subscriber::EnvFilter::new("debug"))
+            .finish()
+            ;
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("no thing");
+    }
     let  config = ServerConfigurations::bind("127.0.0.1",8084);
     water_http::RunServer!(
         config,

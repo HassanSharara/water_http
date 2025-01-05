@@ -550,6 +550,11 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             return  ServingRequestResults::Stop;
         }
 
+        #[cfg(feature = "debugging")]
+        {
+            use tracing::info;
+            info!("request has been served {:?}",self.peer);
+        }
         ServingRequestResults::Done
     }
 
