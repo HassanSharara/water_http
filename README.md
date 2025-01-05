@@ -254,8 +254,11 @@ WaterController! {
 
 
 # Notes :
- water_http use tokio runtime for multithreading tasks
+ - water_http use tokio runtime for multithreading tasks
  and there is a version that use coroutines which handle 
  more requests and more efficiently but every thing comes with pay
- so the cons is that using memory management is complex and sometimes it
+ so the cons is that using memory management is complex ,and sometimes it
  leads to system block
+ - you may need to install [cmake](https://cmake.org/download/) and [clang](https://clang.llvm.org/) compiler for compiling
+
+ 
