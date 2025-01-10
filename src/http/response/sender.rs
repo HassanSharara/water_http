@@ -556,9 +556,10 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             use std::os::windows::fs::MetadataExt;
             file_size = meta.file_size() as usize;
         }
+
         #[cfg(target_os = "linux")]
         {
-            use std::os::aix::fs::MetadataExt;
+            use std::os::unix::fs::MetadataExt;
             file_size = meta.file_size() as usize;
         }
         #[cfg(target_os = "macos")]
