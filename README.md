@@ -260,6 +260,11 @@ WaterController! {
  so the cons is that using memory management is complex ,and sometimes it
  leads to system block
  - you may need to install [cmake](https://cmake.org/download/) and [clang](https://clang.llvm.org/) compiler for compiling
+ - in linux make sure to have build-essential and cmake and you sometime gcc 
+  to do install any of them 
+```shell
+sudo apt-get install build-essential cmake 
+```
  - if you want to create fn which take context as parameter
  
   you would need to parse parameters as following

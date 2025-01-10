@@ -4,7 +4,6 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::future::Future;
 use std::io:: SeekFrom;
-use std::os::windows::fs::MetadataExt;
 use bytes::Bytes;
 use h2::SendStream;
 use http::{HeaderName, HeaderValue, Response as H2Response, response::Builder as H2ResponseBuilder};
@@ -213,7 +212,22 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
             Ok(m) => {m}
             Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
         };
-        let file_size = meta.file_size() as usize;
+        let  file_size ;
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::fs::MetadataExt;
+            file_size = meta.file_size() as usize;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::aix::fs::MetadataExt;
+            file_size = meta.file_size() as usize;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::macos::fs::MetadataExt;
+            file_size = meta.file_size() as usize;
+        }
         let file_name = match pc.path.file_name() {
             None => { return SendingFileResults::FileNotFound}
             Some(f) => {f}
@@ -536,7 +550,23 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             Ok(m) => {m}
             Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
         };
-        let file_size = meta.file_size() as usize;
+        let  file_size  ;
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::fs::MetadataExt;
+            file_size = meta.file_size() as usize;
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::aix::fs::MetadataExt;
+            file_size = meta.file_size() as usize;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::macos::fs::MetadataExt;
+            file_size = meta.file_size() as usize;
+        }
+
         let file_name = match pc.path.file_name() {
             None => { return SendingFileResults::FileNotFound}
             Some(f) => {f}
