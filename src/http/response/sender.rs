@@ -212,23 +212,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
             Ok(m) => {m}
             Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
         };
-        let  file_size ;
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::fs::MetadataExt;
-            file_size = meta.file_size() as usize;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::fs::MetadataExt;
-            file_size = meta.file_size() as usize;
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use std::os::macos::fs::MetadataExt;
-            file_size = meta.file_size() as usize;
-        }
+        let  file_size  = meta.len() as usize;
         let file_name = match pc.path.file_name() {
             None => { return SendingFileResults::FileNotFound}
             Some(f) => {f}
@@ -551,23 +535,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             Ok(m) => {m}
             Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
         };
-        let  file_size  ;
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::fs::MetadataExt;
-            file_size = meta.file_size() as usize;
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            use std::os::unix::fs::MetadataExt;
-            file_size = meta.file_size() as usize;
-        }
-        #[cfg(target_os = "macos")]
-        {
-            use std::os::macos::fs::MetadataExt;
-            file_size = meta.file_size() as usize;
-        }
+        let  file_size   = meta.len() as usize;
 
         let file_name = match pc.path.file_name() {
             None => { return SendingFileResults::FileNotFound}
