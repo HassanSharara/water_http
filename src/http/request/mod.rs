@@ -13,10 +13,11 @@ pub use crate::http::request::header::{KeyValueList};
 
 
 
- const CONTENT_LENGTH_PATTERNS:[&[u8];4] = [b"Content-Length",
+ const CONTENT_LENGTH_PATTERNS:[&[u8];5] = [b"Content-Length",
      b"Content-length",
      b"content-length",
-     b"content-length"];
+     b"content-Length",
+     b"CONTENT-LENGTH"];
 
 
 
@@ -341,7 +342,7 @@ mod test {
 
             let request = IncomingRequest::<'_,16,16>::new(request_bytes);
         match request {
-            FormingRequestResult::Success(mut request ) => {
+            FormingRequestResult::Success( request ) => {
                 let data = &request_bytes[request.total_headers_bytes..];
             }
             _ =>  {}

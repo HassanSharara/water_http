@@ -24,11 +24,7 @@ WaterController! {
         GET => public/{allRestPath} => main(context) async {
             let path = format!("./public{}",allRestPath);
             let result =  context.send_file(http::FileRSender::new(path.as_ref())).await;
-            match result {
-                Ok(_) => {println!("file sent successfully");}
-                Err(e) => {
-                    println!("{e}")
-                }}
+            println!("invoked {:?}",result);
         }
     }
 }

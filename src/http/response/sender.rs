@@ -630,11 +630,17 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
 /// defining sending file behavior
 #[derive(Debug)]
 pub enum SendingFileResults {
+    /// if file path is not real file
     FileNotFound,
+    /// error while reading file data
     ReadingFileBytesError,
+    /// error while opening an existing file
     ErrorWhileOpeningTheFile,
+    /// error while sending file data bytes to the client
     ErrorWhileSendingBytesToClient,
+    /// when incoming request is not correct
     RangesNotSatisfied,
+    /// when sending file successfully to the client
     Success
 }
 

@@ -276,19 +276,6 @@ pub enum MiddlewareResult {
 
 
 
-#[test]
-mod test {
 
-    #[test]
-    fn testing_finding_function_speed(){
-
-    }
-    fn count_time(label:&str,callback:fn()->()){
-        println!("counting speed of {label}");
-        let s1 = std::time::SystemTime::now();
-        callback();
-        println!("{label}  succeed with {:?} ",std::time::SystemTime::now().duration_since(s1));
-    }
-}
 
 

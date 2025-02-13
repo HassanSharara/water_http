@@ -31,11 +31,21 @@ WaterController! {
     name -> MainController,
     functions -> {
         GET => / => main(context) async {
+            _= context.send_status_code_as_final_response(
+                http::status_code::HttpStatusCode::NOT_FOUND
+            ).await;
+        },
+        POST => / => post(context) async {
+
             _= context.send_str("hello world").await;
         }
     }
-
 }
+
+
+
+
+
 
 
 

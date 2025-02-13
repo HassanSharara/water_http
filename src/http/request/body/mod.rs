@@ -289,7 +289,7 @@ pub enum  HandlingChunkResult<'a> {
 /// all of these function are to make some functionalities easy for you
 /// , if you want blazingly efficient way just use getter function on main context
 ///  to get `HttpGetter`
-/// ```rust
+/// ```rust,ignore
 /// let context = todo!();
 /// let mut getter = context.getter();
 /// ```
@@ -331,7 +331,7 @@ impl DynamicBodyMapTrait for DynamicBodyMap {
 /// all of these function are to make some functionalities easy for you
 /// , if you want blazingly efficient way just use getter function on main context
 ///  to get `HttpGetter`
-/// ```rust
+/// ```rust,ignore
 /// let context = todo!();
 /// let mut getter = context.getter();
 /// ```

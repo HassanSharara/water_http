@@ -106,8 +106,22 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
     let is_port_should_be_securely_handled=
         server_config.tls_ports.contains(port)
         && tls_acceptor.is_some();
+
+    #[cfg(feature = "debugging")]
+    use std::ops::DerefMut;
+    #[cfg(feature = "debugging")]
+    let  connections_count = Arc::new(tokio::sync::Mutex::new(0_usize));
     loop {
+        #[cfg(feature = "debugging")]
+        let connections_count = connections_count.clone();
+
         if let Ok((stream,socket)) = listener.accept().await {
+            #[cfg(feature = "debugging")]
+            {
+                let mut con = connections_count.lock().await;
+                let m = con.deref_mut();
+                *m +=1;
+            }
             let tls = tls_acceptor.clone();
 
             tokio::task::spawn(async move {
@@ -123,6 +137,18 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                         );
                         serve_connection(connection,controller).await;
                     }
+                    #[cfg(feature = "debugging")]
+                    {
+                        let mut con = connections_count.lock().await;
+                        debug!("last connections count {:?}",con.deref());
+                        let m = con.deref_mut();
+                        if *m == 1 {
+                           *m = 0;
+                        } else {
+                            *m -=1;
+                        }
+
+                    }
                     return ;
                 }
 
@@ -130,6 +156,18 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                 let connection
                     = ConnectionStream::new(WaterStream::TOStream(stream),socket);
                 serve_connection(connection,controller).await;
+                #[cfg(feature = "debugging")]
+                {
+                    let mut con = connections_count.lock().await;
+                    debug!("last connections count {:?}",con.deref());
+                    let m = con.deref_mut();
+                    if *m == 1 {
+                        *m = 0;
+                    } else {
+                        *m -=1;
+                    }
+
+                }
             });
         }
     }

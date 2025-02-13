@@ -8,7 +8,7 @@ use h2::RecvStream;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use h2::server::SendResponse;
 use http::Request;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde::ser::Error;
 use tokio::net::{ TcpStream};
 use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
@@ -390,6 +390,13 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         sender.send_str(value).await
     }
 
+    /// for sending back status code as final response
+    pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode<'_>){
+        let mut sender = self.sender();
+        sender.send_status_code(status);
+        _=sender.send_data_as_final_response(ResponseData::Str("")).await;
+    }
+
 
     /// for sending html text
     /// this function is basically set the content type of http response to text/html
@@ -398,6 +405,12 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         let mut sender = self.sender();
         sender.set_header("Content-Type","Text/html");
         sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
+    }
+
+    /// for sending json data
+    pub async fn send_json(&mut self,json:&impl Serialize)->serde_json::Result<()>{
+        let mut sender = self.sender();
+        return sender.send_json(json).await;
     }
 
 
