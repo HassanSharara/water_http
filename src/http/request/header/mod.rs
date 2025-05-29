@@ -1,14 +1,16 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use bytes::Bytes;
+use zstd::zstd_safe::WriteBuf;
 use crate::inc_start_pointer;
 
 
 /// organizing keys and values with simple and fast structure
 #[derive(Debug)]
 pub  struct KeyValueList<'a,const LENGTH:usize> {
-    data:[KeyValuePair<'a>;LENGTH],
-    cursor:usize
+    pub(crate) data:[KeyValuePair<'a>;LENGTH],
+    pub(crate) cursor:usize
 }
 
 impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
@@ -45,6 +47,11 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
                 return Some(i.value);
             }
         }
+        for ref i in self.data {
+            if String::from_utf8_lossy(i.key).to_lowercase() == key.to_lowercase() {
+               return Some(i.value);
+            }
+        }
         None
     }
 
@@ -53,7 +60,7 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
     pub fn get_as_header_value(&self,key:&str)->Option<HeaderValue<'a>>{
         for ref i in self.data {
             if i.key == key.as_bytes() {
-                return Some(HeaderValue::new(i.value));
+                return Some(HeaderValue::new(i.value,Some(i.key)));
             }
         }
         None
@@ -67,8 +74,16 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
         None
     }
 
+    /// getting value as [`&str`] from pair using key
+    pub fn get_as_str_ref(&self,key:&str)->Option<&'a str>{
+        if let Some(value) = self.get_as_bytes(key){
+            return Some(unsafe{std::str::from_utf8_unchecked(value)});
+        }
+        None
+    }
+
     /// for try parsing bytes into headers key and value
-    pub  fn try_parse<const L: usize>(bytes: &[u8]) ->Option<KeyValueList<L>> {
+    pub  fn try_parse<const L: usize>(bytes: &[u8]) ->Option<(KeyValueList<L>,usize)> {
 
         let mut key_list = KeyValueList::empty();
         let mut end_indicators = 0_u16;
@@ -76,29 +91,37 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
         let mut key =None;
         for (index,byte) in bytes.iter().enumerate() {
             match byte {
-                &b':'=>{
+                b':'=>{
+                    if (&bytes[last_index_used] == &b'\n' ||  &bytes[last_index_used] == &b' ' )&&
+                        last_index_used+1 < index {
+                        last_index_used+=1;
+                    }
                     key = Some(&bytes[last_index_used..index]);
                     last_index_used = index ;
                 }
 
-                &b' '=>{
+                b' '=>{
                     if last_index_used+1 == index && key.is_some()
                     && index +1 < bytes.len(){
                         last_index_used=index+1;
                     }
                 }
 
-                &b'\r'=>{
+                b'\r'=>{
+
                     end_indicators+=1;
                     if let Some(key) = key {
                         _=key_list.push(key,&bytes[last_index_used..index]);
                     }
+                    last_index_used = index;
                 }
-                &b'\n'=> {
+                b'\n'=> {
                     end_indicators+=1;
                     if end_indicators >= 4 {
-                        key_list.cursor = end_indicators as usize;
-                        return Some(key_list);}
+                        return Some((key_list,
+                                     index+ 1 .min(bytes.len() -1 )
+                        ));}
+                    last_index_used = index;
                 }
                 _=>{
                     end_indicators = 0;
@@ -122,16 +145,17 @@ pub struct HeaderValue <'a>{
 impl<'a> HeaderValue<'a> {
 
     #[allow(unused_assignments)]
-    pub (crate) fn new(bytes:&'a [u8])->HeaderValue<'a>{
+    pub (crate) fn new(bytes:&'a [u8],mut key:Option<&'a [u8]>)->HeaderValue<'a>{
         let mut map = HashMap::new();
         let mut last_index = 0_usize;
-        let mut key = None;
-
         let payload_length = bytes.len();
         for (index,byte) in bytes.iter().enumerate() {
 
             match byte {
                 &b'='=>{
+                    if &bytes[last_index] == &b' ' && last_index+1 <index {
+                        last_index+=1;
+                    }
                     key = Some(&bytes[last_index..index]);
                     inc_start_pointer!(last_index,index,payload_length);
                 }
@@ -196,6 +220,12 @@ impl<'a> HeaderValue<'a> {
             if let Some(value) = v.get(key.as_bytes()) {
                 return Some(*value);
             }
+            for (k,v) in v{
+                let k = String::from_utf8_lossy(*k).to_lowercase() ;
+                if k == key.to_lowercase() {
+                    return Some(*v)
+                }
+            }
         }
         None
     }
@@ -229,10 +259,17 @@ impl<'a> Clone for KeyValuePair<'a> {
 impl <'a> Copy for  KeyValuePair<'a> {}
 impl <'a> KeyValuePair <'a> {
 
+    /// changing key and value pair
     pub fn change_to(&mut self,key:&'a [u8],value:&'a [u8]){
         self.key = key;
         self.value = value;
     }
+
+    /// converting value pair to header value
+    pub fn to_header_value(&self)->HeaderValue{
+        HeaderValue::new(self.value,Some(self.key))
+    }
+    /// get empty key value pair
     pub fn empty()->Self {
         KeyValuePair {
             key:b"",
@@ -256,6 +293,63 @@ impl <'a> Display for  KeyValuePair<'a> {
 
 
 
+/// Key value  map
+#[derive(Debug,Clone)]
+pub struct KeyValueMap {
+    map:HashMap<String,Bytes>,
+}
+
+impl KeyValueMap {
+    /// returning all data that hold valid key-value pair
+    pub fn all_pairs(&self)->&HashMap<String,Bytes>{
+        &self.map
+    }
+
+
+    /// getting value as bytes from pair using key
+    pub fn get_as_bytes(&self,key:&str)->Option<&Bytes>{
+        self.map.get(key)
+    }
+
+
+    /// getting value as HeaderValue from pair using key
+    pub fn get_as_header_value(&self,key:&str)->Option<HeaderValue>{
+        if let Some(bytes) = self.get_as_bytes(key){
+            HeaderValue::new(bytes.as_slice(),Some(key.as_bytes()));
+        }
+        None
+    }
+
+    /// getting value as [`Cow<str>`] from pair using key
+    pub fn get_as_str(&self,key:&str)->Option<Cow<str>>{
+        if let Some(value) = self.get_as_bytes(key){
+            return Some(String::from_utf8_lossy(value));
+        }
+        None
+    }
+
+}
+
+
+impl<'a,const T:usize> From<&'_ KeyValueList<'a,T>> for  KeyValueMap {
+    fn from(value: &KeyValueList<'a, T>) -> Self {
+        let mut map = HashMap::new();
+        for ref value in value.data {
+            if value.key.is_empty() {continue;}
+            let vv = value.to_header_value();
+            if let Some(m) = vv.map.as_ref() {
+                for (key,value) in m {
+                    map.insert(String::from_utf8_lossy(*key).replace("\"",""),Bytes::copy_from_slice(*value));
+                }
+            }else {
+                map.insert(String::from_utf8_lossy(value.key).to_string().replace("\"",""),Bytes::copy_from_slice(value.value));
+            }
+        }
+        KeyValueMap {
+            map
+        }
+    }
+}
 
 #[cfg(test)]
 mod test_key_list {
@@ -265,11 +359,20 @@ mod test_key_list {
     fn check_header_parsing(){
         let bytes = b"Content-Disposition: attachment; filename=\"example.txt\" name=\"file1\"\r\nContent-Type: Image/png\r\n\r\n";
 
-        let v = KeyValueList::<12>::try_parse::<12>(bytes);
-        if let Some(ref d) = v {
+        let v= KeyValueList::<12>::try_parse::<12>(bytes);
+        if let Some( (d,_kl)) = &v {
             let content_disposition = d.get_as_header_value("Content-Disposition");
             if let Some(content_disposition) = content_disposition {
-                println!("{:?}",content_disposition.get_from_values_as_str("name"));
+                let cd = content_disposition.get_from_values_as_str("Content-Disposition").unwrap();
+                let name = content_disposition.get_from_values_as_str("name").unwrap();
+                let filename = content_disposition.get_from_values_as_str("filename").unwrap();
+                println!("content-disposition = {}",cd);
+                println!("content-disposition:name = {}",name);
+                println!("content-disposition:filename = {}",filename);
+
+                assert_eq!(cd,"attachment");
+                assert_eq!(name,"\"file1\"");
+                assert_eq!(filename,"\"example.txt\"");
             }
         }
         assert!(v.is_some());

@@ -32,7 +32,11 @@ unsafe impl<
     const QUERY_SIZE:usize,
 > Sync for CapsuleWaterController<H,HEADER_SIZE,QUERY_SIZE> {}
 
-
+unsafe impl <
+    H:Send + 'static,
+    const HEADER_SIZE:usize,
+    const QUERY_SIZE:usize,
+> Send for CapsuleWaterController<H,HEADER_SIZE,QUERY_SIZE> {}
 /// a struct for holding handlers and another controllers
 #[derive(Debug)]
  pub struct CapsuleWaterController<

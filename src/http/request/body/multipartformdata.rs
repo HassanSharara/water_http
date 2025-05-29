@@ -2,14 +2,7 @@
 /// when ever incoming request has body of type multipartForm-data
 #[derive(Debug)]
  pub struct MultiPartFormDataField<'a> {
-   /// detecting Content-Disposition head
-   pub content_disposition:ContentDispositionType,
-   /// holding the name of content-disposition
-   pub name:&'a [u8],
-   /// holding file name if exist
-   pub file_name:Option<&'a [u8]>,
-   /// holding content-type of disposition if exist
-   pub content_type:Option<&'a[u8]>,
+   pub headers:KeyValueList<'a,12>,
    /// determining the main length of field headers
    pub field_header_length:usize
 }
@@ -22,16 +15,37 @@ impl <'a> MultiPartFormDataField<'a> {
     /// checking if incoming field is a file or not
     /// by checking file name property
     /// you could check also content-type manually by using [self.content_type]
-    pub fn is_file(&self)->bool{ self.file_name.is_some() }
+    pub fn is_file(&self)->bool{
+        if let Some(v) = self.headers.get_as_header_value("Content-Disposition") {
+            return v.get_from_values_as_bytes("filename").is_some();
+        }
+        false
+    }
+
+
+    /// getting content_disposition name
+    pub fn content_disposition_name(&self)->Option<Cow<str>>{
+        if let Some(ref v) = self.headers.get_as_header_value("Content-Disposition") {
+            if let Some(v) = v.get_from_values_as_str("name") {
+                return Some(Cow::Owned(v.to_string()))
+            }
+        }
+        None
+    }
 
     /// for getting content type of field [MultiPartFormDataField]
-    pub fn content_type(&self)->Option<&'a [u8]>{self.content_type}
+    pub fn content_type(&self)->Option<&'a [u8]>{
+        self.headers.get_as_bytes("Content-Type")
+    }
 
 
-    pub (crate) fn new(payload:&'a[u8])->Option<MultiPartFormDataField>{
-        let key_list = KeyValueList::try_parse(payload);
-        if let Some(list) = key_list {
-
+    pub (crate) fn new(payload:&'a[u8])->Option<MultiPartFormDataField<'a> >{
+        let key_list = KeyValueList::<12>::try_parse(payload);
+        if let Some((list,length)) = key_list {
+            return Some(MultiPartFormDataField{
+                field_header_length:length,
+                headers:list,
+            })
         }
         None
     }
@@ -154,60 +168,12 @@ impl <'a> MultiPartFormDataField<'a> {
     //     None
     // }
 
-    /// for cloning [MultiPartFormDataField]
-    pub fn clone<'b>(& self,data:&'b mut Vec<u8>) -> MultiPartFormDataField<'b> {
-        let index = data.len();
-        data.extend_from_slice(self.name);
-        let name = (index,data.len());
-        let mut file_name = None;
-        let mut content_type = None;
-        if let Some(f_name) = self.file_name {
-            let index = data.len();
-            data.extend_from_slice(f_name);
-            file_name = Some((index,data.len()));
-        }
 
-        if let Some(c_t) = self.content_type {
-            let index = data.len();
-            data.extend_from_slice(c_t);
-            content_type = Some((index,data.len()));
-        }
-
-        let name = &data[name.0..name.1];
-        let mut f_name = None;
-        if let Some(file_name) = file_name {
-            f_name = Some(&data[file_name.0..file_name.1]);
-        }
-
-        let mut c_disposition = None;
-        if let Some(content_type) = content_type {
-            c_disposition = Some(&data[content_type.0..content_type.1]);
-        }
-        return MultiPartFormDataField {
-            name,
-            file_name:f_name,
-            content_type:c_disposition,
-            content_disposition:self.content_disposition.clone(),
-            field_header_length:self.field_header_length
-        }
-
-    }
 }
 
 
-use crate::http::request::{inc_start_pointer, KeyValueList};
+use std::borrow::Cow;
+use crate::http::request::KeyValueList;
 
 
 
-
-/// for specifying Content-Disposition if the incoming request
-/// and als FormData type is the most used one
-#[derive(Debug,Clone)]
-pub enum ContentDispositionType {
- /// indicating that this content could be use inside web page
- Inline,
- /// indicating that this content meant to be downloaded and saved locally
- Attachment,
- /// indicating that this content Treated as Form Content Holding Data
- FormData
-}

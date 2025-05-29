@@ -3,7 +3,7 @@ use std::future::Future;
 use bytes::Buf;
 use h2::RecvStream;
 use http::{ Request};
-use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller};
+use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller, BodyChunkedReader};
 use crate::http::request::MultipartStreamHolder::H1;
 use crate::http::status_code::HttpStatusCode;
 use crate::server::connection::BodyReadingBuffer;
@@ -85,6 +85,24 @@ impl <'a:'request,'request
     }
 
 
+    pub (crate) async fn get_body_as_chunked_transferred(&'a mut self)->ParsingBodyResults<'a>{
+
+        let holder  = H1(
+            H1StreamHolder{
+                stream:self.stream,
+                left_bytes:self.left_bytes
+            }
+        );
+        let r = BodyChunkedReader::new(
+            holder,
+            self.body_reading_buffer
+        );
+        ParsingBodyResults::Chunked(
+            IBodyChunks::Chunked(
+                r
+            )
+        )
+    }
     #[inline]
     pub (crate) async fn get_chunked_body_multipart(&'a mut self,content_type:&'a [u8],content_length:&usize)
     ->ParsingBodyResults<'a>{
@@ -110,6 +128,36 @@ impl <'a:'request,'request
             WaterErrors::Http(
                 HttpStatusCode::BAD_REQUEST
             )
+        )
+    }
+
+    #[inline]
+    pub (crate) async fn get_xxx_ff(&'a mut self,content_length:&usize)
+    ->ParsingBodyResults<'a>{
+        let  remaining = *content_length - self.left_bytes.len();
+        let mut rem = remaining;
+        while rem > 0 {
+            match self.body_reading_buffer.read_buf(self.stream).await {
+                Ok(s) => {
+                    rem -= rem.min(s);
+                }
+                Err(_) => {
+                    return ParsingBodyResults::Err(
+                        WaterErrors::Server(
+                            ServerError::HANDLING_INCOMING_BODY_ERROR
+                        )
+                    )
+                }
+            }
+
+        }
+        let data = self.left_bytes;
+        let second_data = &self.body_reading_buffer[..remaining];
+        let data = XWWWFormUrlEncoded::from_multiple_payloads(
+            (data,second_data)
+        );
+        return ParsingBodyResults::FullBody(
+            IBody::XWWWFormUrlEncoded(data)
         )
     }
 }
@@ -143,7 +191,9 @@ impl <'a:'request,'request
                                     ).await
                                 }
                                 b"application/x-www-form-urlencoded"=>{
-
+                                    return self.get_xxx_ff(
+                                        content_length
+                                    ).await
                                 }
                                 _=>{}
                             }
@@ -177,31 +227,12 @@ impl <'a:'request,'request
                         }
                     }
                     ParsingBodyMechanism::XWWWFormData => {
-                        let  remaining = *content_length - self.left_bytes.len();
-                        let mut rem = remaining;
-                        while rem > 0 {
-                            match self.body_reading_buffer.read_buf(self.stream).await {
-                                Ok(s) => {
-                                    rem -= rem.min(s);
-                                }
-                                Err(_) => {
-                                    return ParsingBodyResults::Err(
-                                        WaterErrors::Server(
-                                            ServerError::HANDLING_INCOMING_BODY_ERROR
-                                        )
-                                    )
-                                }
-                            }
-
-                        }
-                        let data = self.left_bytes;
-                        let second_data = &self.body_reading_buffer[..remaining];
-                        let data = XWWWFormUrlEncoded::from_multiple_payloads(
-                            (data,second_data)
-                        );
-                        return ParsingBodyResults::FullBody(
-                            IBody::XWWWFormUrlEncoded(data)
-                        )
+                        return self.get_xxx_ff(
+                            content_length
+                        ).await
+                    }
+                    ParsingBodyMechanism::ChunkedTransferEncoding => {
+                        return self.get_body_as_chunked_transferred().await
                     }
                 }
             }
@@ -265,7 +296,16 @@ impl <'a:'request,'request
                             )
                         )
                     }
+                    ParsingBodyMechanism::ChunkedTransferEncoding => {
+                       return self.get_body_as_chunked_transferred().await
+                    }
                 };
+            }
+        }
+        if let Some(transfer_encoding) = self.request.headers
+            .get_as_str("Transfer-Encoding") {
+            if transfer_encoding.to_lowercase() == "chunked" {
+                return self.get_body_as_chunked_transferred().await
             }
         }
          ParsingBodyResults::None
@@ -412,6 +452,24 @@ impl<'a>   Http2Getter<'a> {
         )
 
     }
+
+    pub (crate) async fn get_body_as_chunked_transferred(&'a mut self)->ParsingBodyResults<'a>{
+
+        let holder  = MultipartStreamHolder::H2(
+            H2StreamHolder{
+                batch:self.batch
+            }
+        );
+        let r = BodyChunkedReader::new(
+            holder,
+            self.reading_buffer
+        );
+        ParsingBodyResults::Chunked(
+            IBodyChunks::Chunked(
+                r
+            )
+        )
+    }
 }
 impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
 
@@ -485,6 +543,9 @@ impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
             }
             ParsingBodyMechanism::XWWWFormData => {
                 return self.get_body_as_xww().await;
+            }
+            ParsingBodyMechanism::ChunkedTransferEncoding => {
+                self.get_body_as_chunked_transferred().await
             }
         }
     }

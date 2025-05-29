@@ -5,7 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
-use tracing::debug;
+use tracing::{info,debug, trace};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, HttpStream, READING_BUF_LEN, WRITING_BUF_LEN};
 use crate::server::sr_context::{Http1Context, Http2Context, HttpContext, Protocol, ServingRequestResults};
@@ -161,6 +161,12 @@ impl  ConnectionStream {
 
                 loop {
                     let buf_bytes = reading_buffer.chunk();
+
+                    #[cfg(feature = "debugging")]
+                    {
+                        info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
+                    }
+
                     if buf_bytes.is_empty() {
                         break;
                     }
@@ -179,6 +185,12 @@ impl  ConnectionStream {
 
                     match request {
                         FormingRequestResult::Success(request) => {
+
+                            #[cfg(feature = "debugging")]
+                            {
+                                debug!("new request has been received ");
+                            }
+
                             let total_request_size = request.total_headers_bytes;
                             let left_bytes = &buf_bytes[total_request_size..];
                             let mut context =
@@ -216,8 +228,16 @@ impl  ConnectionStream {
                                             let br = total_request_size >= buf_bytes.len();
                                             if br { reading_buffer.clear(); break ;}
                                             else {
+                                                if let Some(h) = context.get_from_headers("Transfer-Encoding"){
+                                                    if h == "chunked" {
+                                                        drop(h);
+                                                        reading_buffer.clear();
+                                                        continue;
+                                                    }
+                                                }
                                                 reading_buffer.advance(total_request_size);
                                             }
+
                                         }
                                         Some(content_length) => {
                                             reading_buffer.advance(total_request_size);
@@ -371,6 +391,10 @@ impl BodyReadingBuffer {
     where Stream:AsyncRead + Unpin {
         let res =  stream.read_buf(&mut self.buffer).await;
         if let Ok(s) = res {
+            #[cfg(feature = "debugging")]
+            {
+                debug!("the red data from buffer is {} {} ",self.buffer.len(),String::from_utf8_lossy(&self.buffer))
+            }
             self.bytes_consumed +=s;
         }
         return res;

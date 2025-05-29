@@ -16,6 +16,8 @@ pub use capsule::*;
 
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
+#[cfg(feature = "debugging")]
+use std::ops::Deref;
 use std::sync::Arc;
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]

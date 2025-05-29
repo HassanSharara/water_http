@@ -45,7 +45,7 @@ pub struct MultipartData<'a> {
  }
 
 
-type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output = Result<(),()>>+Send>>>,()>;
+pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output = Result<(),()>>+Send>>>,()>;
 // type FieldCallBackResult = Pin<Box<dyn Future<Output=Result<(), ()>>>>;
  impl <'a>  MultipartData<'a> {
 
@@ -78,6 +78,9 @@ type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output = Result<(),
                 }
                 let boundary = self.boundary.as_bytes();
                 loop {
+                    if h1.left_bytes == b"--\r\n" {
+                        return Ok(())
+                    }
                     // when left bytes is not empty
                     if h1.left_bytes.is_empty()
                     {

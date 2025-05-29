@@ -12,8 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde::ser::Error;
 use tokio::net::{ TcpStream};
 use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
-use crate::http::request::{DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks
-                           ,ParsingBodyMechanism, ParsingBodyResults};
+use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
 use crate::server::{CapsuleWaterController, MiddlewareCallback, MiddlewareResult};
@@ -280,6 +279,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     }
 
 
+
     /// returning dynamic trait that would be for getting values from body using
     /// keys
     pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors> {
@@ -452,7 +452,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                 if let Ok(s) = s.parse::<usize>() {
                     start = Some(s);
                 }
-            }
+            } else {}
             if let Some(e) = range.next() {
                 if let Ok(e) = e.parse::<usize>() {
                     end = Some(e);

@@ -3,6 +3,7 @@ mod multipartformdata;
 mod multer;
 mod bytes_puller;
 mod stream_holders;
+mod chunked;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -14,8 +15,9 @@ use std::future::Future;
 use std::pin::Pin;
 use bytes::Bytes;
 pub use multipartformdata::MultiPartFormDataField;
-use crate::http::request::body::multipartformdata::ContentDispositionType;
 pub use crate::http::request::body::xwwwformurlencoded::*;
+pub use chunked::*;
+use crate::http::request::header::KeyValueMap;
 use crate::server::errors::WaterErrors;
 
 /// indicates the incoming body
@@ -42,7 +44,12 @@ pub enum IBodyChunks<'a> {
     FormData(
         MultipartData<'a>
     ),
+    /// handling incoming body as chunked body
+    Chunked(BodyChunkedReader<'a>)
 }
+
+
+
 
 /// telling the context how we would like to handle incoming body
  pub enum ParsingBodyMechanism {
@@ -54,7 +61,10 @@ pub enum IBodyChunks<'a> {
     /// parsing incoming bytes to [MultiPartFormDataField] Fields
     FormData,
     /// parse incoming body bytes to [XWWWFormUrlEncoded] struct
-    XWWWFormData
+    XWWWFormData,
+
+    /// when body is chunked transfer-encoding
+    ChunkedTransferEncoding
  }
 
 /// parsing body mechanism results
@@ -140,33 +150,17 @@ impl <'a> ParsingBodyResults<'a> {
 /// which take a little much time and considering less efficient than calling chunks function
 #[derive(Debug)]
 pub struct HeapFormField {
-    pub content_disposition_type: ContentDispositionType,
-    pub name:String,
-    pub file_name:Option<String>,
-    pub content_type:Option<String>,
+    pub multipart:KeyValueMap,
     pub data:Vec<u8>
 }
 
 impl  HeapFormField {
     fn from(value: &MultiPartFormDataField,data:&[u8]) -> Self {
-        let name = String::from_utf8_lossy(value.name).to_string().replace("\"","");
-        let mut file_name = None;
-        if let Some(f) = value.file_name.as_ref() {
-            file_name = Some(String::from_utf8_lossy(*f).to_string());
-        }
-
-        let mut content_type = None;
-        if let Some(f) = value.content_type.as_ref() {
-            content_type = Some(String::from_utf8_lossy(*f).to_string());
-        }
-        return HeapFormField {
-            name,
-            file_name,
-            content_type,
-            content_disposition_type:value.content_disposition.clone(),
+        let map = KeyValueMap::from(&value.headers);
+        HeapFormField {
+            multipart:map,
             data:data.to_vec()
         }
-
     }
 
 
@@ -180,12 +174,14 @@ impl  HeapFormField {
     /// checking if incoming field is a file or not
     /// by checking file name property
     /// you could check also content-type manually by using [self.content_type]
-    pub fn is_file(&self)->bool{ self.file_name.is_some() }
+    pub fn is_file(&self)->bool{
+        self.multipart.get_as_bytes("filename").is_some()
+    }
 
     /// for getting content type of field [MultiPartFormDataField]
     pub fn content_type(&self)->Option<&[u8]>{
-        if let Some(f) = self.content_type.as_ref() {
-            return Some(f.as_bytes())
+        if let Some(value) = self.multipart.get_as_bytes("Content-Type") {
+            return Some(value.as_ref())
         }
         None
     }
@@ -219,7 +215,12 @@ impl DynamicBodyMapTrait for FormDataAll {
     fn all(&self) -> HashMap<String, Bytes> {
         let mut map = HashMap::new();
         for field in &self.fields {
-           map.insert(field.name.to_string(),Bytes::copy_from_slice(field.data().as_ref()));
+
+            for  (key,value) in field.multipart.all_pairs() {
+
+                map.insert(key.to_string(),value.clone());
+
+            }
         }
         map
     }
@@ -229,7 +230,10 @@ impl  FormDataAll {
     /// for getting specific field form incoming multipart data
     pub fn get_field(&self,key:&str)->Option<&HeapFormField>{
         self.fields.iter().find(|c| {
-            c.name == key
+            if let Some(f) = c.multipart.get_as_str("name") {
+                return f == key || f.replace("\"","" ) == key
+            }
+                false
         })
     }
     /// for getting specific field form incoming multipart data
@@ -242,7 +246,11 @@ impl  FormDataAll {
         }
         let fields = &mut self.fields;
         for field in fields  {
-            if field.name == key { return Some(field);}
+            if let Some(name) = field.multipart.get_as_str("name") {
+                if name == key || name.replace("\"","") == key {
+                    return Some(field);
+                }
+            }
         }
         None
     }
@@ -258,9 +266,12 @@ impl  FormDataAll {
 
 
     pub (crate) fn push(& mut self,field:&MultiPartFormDataField,data:&[u8]){
-        if let Some( field) = self.get_mut(String::from_utf8_lossy(field.name).as_ref()) {
-            field.data.extend_from_slice(data);
-            return;
+
+        if let Some(name) = field.content_disposition_name() {
+            if let Some( field) = self.get_mut(name.as_ref()) {
+                field.data.extend_from_slice(data);
+                return;
+            }
         }
         self.fields.push(
             HeapFormField::from(field,data)

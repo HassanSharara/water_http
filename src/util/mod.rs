@@ -64,6 +64,17 @@ pub  fn bytes_to_usize(bytes:&[u8])->Option<usize>{
     Some(usize::from_be_bytes(data))
 }
 
+
+/// for converting hexadecimals bytes to usize data type
+pub fn hex_bytes_to_usize(data: &[u8]) -> Option<usize> {
+    // Convert byte slice to UTF-8 string
+    std::str::from_utf8(data)
+        .ok() // Handle invalid UTF-8
+        .and_then(|s| {
+            // Trim whitespace and parse as hexadecimal (base-16)
+            usize::from_str_radix(s.trim(), 16).ok()
+        })
+}
 pub (crate) fn content_type_from_file_path(path: &&Path) -> Option<&'static str> {
     let extension = path
         .extension()
