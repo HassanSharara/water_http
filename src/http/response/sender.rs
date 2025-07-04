@@ -476,10 +476,10 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
 
         if data.len() >= en_configurations.threshold_for_encoding_response &&  en_configurations.is_not_none() {
             let accept_encoding = self.context
-                .request.headers.get_as_str("Accept-Encoding");
+                .request.headers().get_as_str("Accept-Encoding");
             if let Some(accept_encoding ) = accept_encoding {
                 let encoder = en_configurations.encode(
-                    accept_encoding,
+                    accept_encoding.into(),
                     data
                 ).await;
                 if let Some(encoder )  = encoder {

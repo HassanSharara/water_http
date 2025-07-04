@@ -36,17 +36,32 @@ WaterController! {
                 "hello world"
             ).await;
         },
+        PATCH => / => patch(context) async{
+
+            _= context.send_str("patch successfully").await;
+        },
+         put => / => put(context) async{
+
+            _= context.send_str("put successfully").await;
+        },
+         head => / => head(context) async{
+
+            _= context.send_str("head successfully").await;
+        },
+         Options => / => options(context) async{
+
+            _= context.send_str("patch successfully").await;
+        },
+         Delete => / => delete(context) async{
+
+            _= context.send_str("delete successfully").await;
+        },
+         Trace => / => trace(context) async{
+
+            _= context.send_str("trace successfully").await;
+        },
+
         POST => / => post(context) async {
-            let mut getter = context
-            .getter();
-            let body_chunks_reader =  getter.get_body_by_mechanism(ParsingBodyMechanism::ChunkedTransferEncoding).await;
-            if let ParsingBodyResults::Chunked(IBodyChunks::Chunked(mut reader)) =
-            body_chunks_reader {
-                _= reader.on_chunk_detected(|c,data|{
-                    println!("chunk {} {} {}",c.chunk_size,c.index,String::from_utf8_lossy(data).len());
-                    return Ok(None);
-                }).await;
-            }
             _= context.send_str("hello world").await;
         }
     }

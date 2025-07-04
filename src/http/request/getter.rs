@@ -39,6 +39,24 @@ impl <'a:'request,'request
     const PATH_QUERY_COUNT:usize
 > Http1Getter<'a,'request,HEADER_SIZE,PATH_QUERY_COUNT> {
 
+    #[inline]
+   fn to_bytes_puller(&mut self,content_length:usize)->ParsingBodyResults{
+        let puller = BytesPuller::new(
+            StreamBytesPuller::H1(
+                H1BytesPuller {
+                    stream:self.stream,
+                    reading_buffer:self.body_reading_buffer,
+                    left_bytes:self.left_bytes
+                }
+            ),
+            content_length
+        );
+        return ParsingBodyResults::Chunked(
+            IBodyChunks::Bytes(
+                puller
+            )
+        );
+    }
 
     /// getting full body if the body was using multipart form data content type during incoming request
     pub  async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8],content_length:&usize)
@@ -175,60 +193,54 @@ impl <'a:'request,'request
 
     async fn get_body_by_mechanism(&'a mut self,mechanism: ParsingBodyMechanism)->ParsingBodyResults<'a>{
         let content_length = self.request.content_length();
+        println!("\n content length {:?} \n",content_length);
         if let Some( content_length) = content_length {
-            let body_should_handled_as_chunks = self.left_bytes.len() < *content_length;
+            let body_should_handled_as_chunks = self.left_bytes.len() < content_length;
             if body_should_handled_as_chunks {
                 match mechanism {
                     ParsingBodyMechanism::Default => {
-                        let content_type = self.request.headers
+                        let content_type = self.request.headers()
                             .get_as_bytes("Content-Type");
+
                         if let Some(content_type) = content_type {
-                            match content_type {
+                            return match content_type {
                                 b"multipart/form-data" => {
-                                    return self.get_chunked_body_multipart(
+                                    self.get_chunked_body_multipart(
                                         content_type,
-                                        content_length
+                                        &content_length
                                     ).await
                                 }
-                                b"application/x-www-form-urlencoded"=>{
-                                    return self.get_xxx_ff(
-                                        content_length
+                                b"application/x-www-form-urlencoded" => {
+                                    self.get_xxx_ff(
+                                        &content_length
                                     ).await
                                 }
-                                _=>{}
+                                _ => {
+                                   return  self.to_bytes_puller(
+                                       content_length
+                                   );
+                                }
                             }
                         }
                     }
                     ParsingBodyMechanism::JustBytes => {
-                        let puller = BytesPuller::new(
-                            StreamBytesPuller::H1(
-                                H1BytesPuller {
-                                    stream:self.stream,
-                                    reading_buffer:self.body_reading_buffer,
-                                    left_bytes:self.left_bytes
-                                }
-                            ),
-                            *content_length
-                        );
-                        return ParsingBodyResults::Chunked(
-                            IBodyChunks::Bytes(
-                                puller
-                            )
+                        return  self.to_bytes_puller(
+                            content_length
                         );
                     }
                     ParsingBodyMechanism::FormData => {
-                        let content_type = self.request.headers
+                        let content_type = self.request.headers()
                             .get_as_bytes("Content-Type");
                            if let Some(content_type) = content_type {
                             return self.get_chunked_body_multipart(
                                 content_type,
-                                content_length
+                                &content_length
                             ).await
                         }
                     }
                     ParsingBodyMechanism::XWWWFormData => {
                         return self.get_xxx_ff(
-                            content_length
+                                                &content_length
                         ).await
                     }
                     ParsingBodyMechanism::ChunkedTransferEncoding => {
@@ -239,13 +251,13 @@ impl <'a:'request,'request
             else {
                 match mechanism {
                     ParsingBodyMechanism::Default => {
-                        match self.request.headers
+                        match self.request.headers()
                             .get_as_bytes("Content-Type") {
                             None => { return ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST))}
                             Some(content_type) => {
                                 let lower_case = String::from_utf8_lossy(content_type).to_lowercase();
                                 if lower_case.contains("application/x-www-form-urlencoded") {
-                                    let data = &self.left_bytes[..*content_length];
+                                    let data = &self.left_bytes[..content_length];
                                     let x_fields = XWWWFormUrlEncoded::new(data);
                                     return ParsingBodyResults::FullBody(
                                         IBody::XWWWFormUrlEncoded(
@@ -256,12 +268,12 @@ impl <'a:'request,'request
                                 else if lower_case.contains("multipart/form-data") {
                                     return self.get_chunked_body_multipart(
                                       content_type,
-                                      content_length
+                                      &content_length
                                     ).await;
                                 }
-                                  ParsingBodyResults::FullBody(
+                                 return  ParsingBodyResults::FullBody(
                                     IBody::Bytes(
-                                        &self.left_bytes[..*content_length]
+                                        &self.left_bytes[..content_length]
                                     )
                                 )
                             }
@@ -270,17 +282,17 @@ impl <'a:'request,'request
                     ParsingBodyMechanism::JustBytes => {
                         return  ParsingBodyResults::FullBody(
                             IBody::Bytes(
-                                &self.left_bytes[..*content_length]
+                                &self.left_bytes[..content_length]
                             )
                         )
                     }
                     ParsingBodyMechanism::FormData => {
-                        let content_type = self.request.headers
+                        let content_type = self.request.headers()
                             .get_as_bytes("Content-Type");
                         if let Some(content_type) = content_type {
                             return self.get_chunked_body_multipart(
                                 content_type,
-                                content_length
+                                &content_length
                             ).await
                         }
                         return  ParsingBodyResults::Err(
@@ -288,7 +300,7 @@ impl <'a:'request,'request
                         )
                     }
                     ParsingBodyMechanism::XWWWFormData => {
-                        let data = &self.left_bytes[..*content_length];
+                        let data = &self.left_bytes[..content_length];
                         let x_fields = XWWWFormUrlEncoded::new(data);
                         return ParsingBodyResults::FullBody(
                             IBody::XWWWFormUrlEncoded(
@@ -302,11 +314,15 @@ impl <'a:'request,'request
                 };
             }
         }
-        if let Some(transfer_encoding) = self.request.headers
+        if let Some(transfer_encoding) = self.request.headers()
             .get_as_str("Transfer-Encoding") {
             if transfer_encoding.to_lowercase() == "chunked" {
                 return self.get_body_as_chunked_transferred().await
             }
+        }
+
+        if let Some(_) = self.request.headers().get("content-type") {
+            return  ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
         }
          ParsingBodyResults::None
     }

@@ -4,5 +4,6 @@
 .idea/
 /templates
 /public
+/logs
 .templates/
 

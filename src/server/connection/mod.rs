@@ -151,13 +151,15 @@ impl  ConnectionStream {
         let mut response_buffer = BytesMut::with_capacity(WRITING_BUF_LEN);
        'main_loop: loop {
            reserve_buf(&mut reading_buffer);
-           if let Ok(read_size)
-               = stream.read_buf(&mut reading_buffer).await
+
+           if let Ok(Ok(read_size))
+               = tokio::time::timeout(std::time::Duration::from_secs(10),stream.read_buf(&mut reading_buffer)).await
                {
                 // when connection is closed
                 if read_size == 0 {
                     return;
                 }
+
 
                 loop {
                     let buf_bytes = reading_buffer.chunk();
@@ -191,8 +193,11 @@ impl  ConnectionStream {
                                 debug!("new request has been received ");
                             }
 
-                            let total_request_size = request.total_headers_bytes;
+                            let total_request_size = request.get_total_headers_length();
                             let left_bytes = &buf_bytes[total_request_size..];
+
+                            #[cfg(feature = "debugging")]
+                            debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
                             let mut context =
                             HttpContext::new(
                                 Protocol::from_http1_context(
@@ -206,15 +211,18 @@ impl  ConnectionStream {
                                 ),
                                 peer
                             );
-                            let content_length = context.content_length().copied();
+                            let content_length = context.content_length();
 
                             #[cfg( feature = "count_connection_parsing_speed")]
                             let t1 = std::time::SystemTime::now();
 
 
                             _= match  context.serve(controller).await {
+
                                 ServingRequestResults::Stop => {return;}
+
                                 ServingRequestResults::Done => {
+
                                     #[cfg( feature = "count_connection_parsing_speed")]
                                     {
                                         let end = std::time::SystemTime::now();
@@ -223,6 +231,7 @@ impl  ConnectionStream {
                                          end.duration_since(t1)
                                         );
                                     }
+
                                     match content_length {
                                         None => {
                                             let br = total_request_size >= buf_bytes.len();
@@ -276,19 +285,19 @@ impl  ConnectionStream {
 
                         }
                         FormingRequestResult::ReadMore => {
-                            if reading_buffer.len() > 250 {
-                                return
-                            }
-                            break;
+                            // why I need to return if reading_buf less than 250
+                            // if reading_buffer.len() > 250 {
+                            //     return
+                            // }
+                            continue 'main_loop;
                         }
-                        FormingRequestResult::Err => {
+                        FormingRequestResult::Err(_) => {
                             return;
                         }
                     }
                 }
 
                if !response_buffer.is_empty() {
-
                    if let Err(_) = handle_responding(&mut response_buffer,stream).await {
                        return;
                    }

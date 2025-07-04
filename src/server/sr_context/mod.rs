@@ -340,7 +340,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                 return  h2.get_from_headers(key)
             }
             Protocol::Http1(h1) => {
-                h1.request.headers.get_as_bytes(key)
+                h1.request.headers().get_as_bytes(key)
             }
         }
     }
@@ -361,10 +361,13 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
     /// getting content body length if request has body it will return [usize] as content length
     /// else it's returning [None]
-    pub fn content_length(&mut self) ->Option<&usize>{
+    pub fn content_length(&mut self) ->Option<usize>{
         match &mut self.protocol {
             Protocol::Http2(h2) => {
-                h2.content_length()
+               if let Some(v) =   h2.content_length() {
+                   return  Some(*v);
+               }
+                None
             }
             Protocol::Http1(h1) => {
                 h1.content_length()
@@ -473,7 +476,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                 Cow::from(request.uri().path())
             }
             Protocol::Http1(h1) => {
-                h1.request.path()
+                Cow::Owned(h1.request.path().to_string())
             }
         }
     }
@@ -486,7 +489,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                 Cow::from(request.method().as_str())
             }
             Protocol::Http1(h1) => {
-                h1.request.method()
+                Cow::Owned(h1.request.method().to_string())
             }
         }
     }
@@ -528,7 +531,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ServingRequestResults
     {
 
-        let content_length = self.content_length().copied();
+        let content_length = self.content_length();
         let method = self.method();
         if let Some(content_length )  = content_length {
             if (content_length > 0) && ["GET","HEAD","DELETE","TRACE"].contains(&method.as_ref()) {
@@ -664,7 +667,7 @@ impl <'a,const HEADERS_COUNT:usize
 
     /// getting content-length if the current request
     #[inline]
-    pub fn content_length(&self)->Option<&usize>{
+    pub fn content_length(&self)->Option<usize>{
         self.request.content_length()
     }
 

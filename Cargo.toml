@@ -33,11 +33,13 @@ tracing = {version = "0.1.40",optional = true}
 tracing-subscriber = {version = "0.3.18",optional = true,features = ["env-filter"]}
 twoway = "0.2.2"
 zstd = "0.13.2"
+water_http_utils = {path = "P:\\projects\\rust\\packages\\water_http_utils" , features = ["server"]}
 
 
 [features]
 debugging = ["tracing","tracing-subscriber"]
 count_connection_parsing_speed = ["tracing","tracing-subscriber"]
+write_logs = ["water_http_utils/write_logs"]
 
 [dev-dependencies]
 askama = "0.12.1"
