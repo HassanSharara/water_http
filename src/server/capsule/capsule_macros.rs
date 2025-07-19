@@ -90,7 +90,15 @@ macro_rules! RunServer {
 
     };
 }
-
+#[doc(hidden)]
+#[macro_export]
+macro_rules! FunctionsMacroBuilderTow {
+    ( $hi:ident async { $($body:tt)* } ) => {
+        GET => $hi => $hi(context) async {
+            $($body)*
+        }
+    };
+}
 
 /// constructing functions builder
 #[doc(hidden)]
@@ -264,6 +272,7 @@ macro_rules! FunctionsMacroBuilder {
 
 
 
+
     // for building
     (
      functions -> {
@@ -303,6 +312,20 @@ macro_rules! FunctionsMacroBuilder {
        }
     };
 
+
+      ( functions -> {
+         $(
+          $($fn_tokens:tt)*
+         ),*
+     }) => {
+        water_http::FunctionsMacroBuilder!(
+            functions -> {
+                $(
+          water_http::FunctionsMacroBuilderTow!($($fn_tokens)*)
+        ),*
+            }
+        );
+    };
 
 }
 
@@ -371,13 +394,14 @@ macro_rules! WaterController {
      holder -> $holder:path,
      name -> $name:ident,
      functions -> {$($function_tokens:tt)*}
+
      $($key:tt -> ($($value:tt)*)),*
     } => {
         #[allow(non_snake_case)]
         pub mod $name {
 
             use water_http::http::{HttpSenderTrait,request::{HttpGetterTrait,IBodyChunks,IBody,ParsingBodyResults,ParsingBodyMechanism}};
-            use  water_http::server::HttpContext;
+            use water_http::server::HttpContext;
             use water_http::*;
             pub type Holder = $holder;
 
@@ -403,6 +427,22 @@ macro_rules! WaterController {
 
         }
     };
+
+
+    {
+     holder -> $holder:path,
+     name -> $name:ident,
+     functions -> {$($function_tokens:tt)*} $separator:tt
+     $($key:tt -> ($($value:tt)*)),*
+    } => {
+       water_http::WaterController!(
+          holder -> $holder,
+          name -> $name,
+          functions -> { $($function_tokens)* }
+           $($key -> ($($value)*)),*
+       );
+    };
+
 }
 
 
@@ -429,7 +469,22 @@ macro_rules! path_setter {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! response {
+    ($context:ident -> $res:expr) => {
+        _= $context.send_str($res).await;
+    };
+    ($context:ident json -> $res:expr) => {
+        let mut sender = $context.sender();
+            _= sender.send_json($res).await;
+    };
 
+    ($context:ident file -> $res:expr) => {
+        let mut sender = $context.sender();
+            _= sender.send_file(water_http::http::FileRSender::new($res)).await;
+    };
+}
 
 
 

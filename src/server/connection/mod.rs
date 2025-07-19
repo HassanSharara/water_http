@@ -152,8 +152,8 @@ impl  ConnectionStream {
        'main_loop: loop {
            reserve_buf(&mut reading_buffer);
 
-           if let Ok(Ok(read_size))
-               = tokio::time::timeout(std::time::Duration::from_secs(10),stream.read_buf(&mut reading_buffer)).await
+           if let Ok(read_size)
+               = stream.read_buf(&mut reading_buffer).await
                {
                 // when connection is closed
                 if read_size == 0 {
@@ -211,7 +211,7 @@ impl  ConnectionStream {
                                 ),
                                 peer
                             );
-                            let content_length = context.content_length();
+                            let content_length = context.content_length().copied();
 
                             #[cfg( feature = "count_connection_parsing_speed")]
                             let t1 = std::time::SystemTime::now();
@@ -340,7 +340,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
 }
 
 
-
+#[derive(Debug)]
 pub (crate) struct BodyReadingBuffer {
     buffer:BytesMut,
     pub (crate ) bytes_consumed:usize,

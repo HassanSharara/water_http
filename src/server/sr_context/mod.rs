@@ -10,7 +10,7 @@ use h2::server::SendResponse;
 use http::Request;
 use serde::{Deserialize, Serialize};
 use serde::ser::Error;
-use tokio::net::{ TcpStream};
+use tokio::net::TcpStream;
 use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
 use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
@@ -361,13 +361,10 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
     /// getting content body length if request has body it will return [usize] as content length
     /// else it's returning [None]
-    pub fn content_length(&mut self) ->Option<usize>{
+    pub fn content_length(&mut self) ->Option<&usize>{
         match &mut self.protocol {
             Protocol::Http2(h2) => {
-               if let Some(v) =   h2.content_length() {
-                   return  Some(*v);
-               }
-                None
+                h2.content_length()
             }
             Protocol::Http1(h1) => {
                 h1.content_length()
@@ -469,27 +466,27 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
     /// getting the path from incoming request
-    pub fn path(&self)->Cow<str>{
+    pub fn path(&self)->&str{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
-                Cow::from(request.uri().path())
+                request.uri().path()
             }
             Protocol::Http1(h1) => {
-                Cow::Owned(h1.request.path().to_string())
+                h1.request.path()
             }
         }
     }
 
     /// getting incoming request method
-    pub fn method(&self)->Cow<str>{
+    pub fn method(&self)->&str{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
-                Cow::from(request.method().as_str())
+                request.method().as_str()
             }
             Protocol::Http1(h1) => {
-                Cow::Owned(h1.request.method().to_string())
+               h1.request.method()
             }
         }
     }
@@ -531,10 +528,10 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ServingRequestResults
     {
 
-        let content_length = self.content_length();
+        let content_length = self.content_length().copied();
         let method = self.method();
         if let Some(content_length )  = content_length {
-            if (content_length > 0) && ["GET","HEAD","DELETE","TRACE"].contains(&method.as_ref()) {
+            if (content_length > 0) && ["GET","HEAD","DELETE","TRACE"].contains(&method) {
                 let mut sender = self.sender();
                 sender.send_status_code(HttpStatusCode::BAD_REQUEST);
                 _=sender.write_custom_bytes(&[]).await;
@@ -583,7 +580,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
 
-
+#[derive(Debug)]
 
 pub (crate)enum HttpStream {
     AsyncSecure(tokio_rustls::server::TlsStream<TcpStream>),
@@ -667,7 +664,7 @@ impl <'a,const HEADERS_COUNT:usize
 
     /// getting content-length if the current request
     #[inline]
-    pub fn content_length(&self)->Option<usize>{
+    pub fn content_length(&self)->Option<&usize>{
         self.request.content_length()
     }
 

@@ -12,6 +12,7 @@ pub type BodyChunksReadingResult = Result<Bytes,()>;
 
 /// incoming body chunked bytes
 
+#[derive(Debug)]
 /// for handling multipart from data in both protocols http1 and http2
 pub struct BodyChunkedReader<'a> {
     stream_holder:MultipartStreamHolder<'a>,

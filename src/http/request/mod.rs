@@ -57,8 +57,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     /// getting total headers length
     pub fn get_total_headers_length(&self)->usize{
         self.http_request.headers().headers_length
-        +
-            self.http_request.first_line().first_line_length
+        + self.http_request.first_line().first_line_length
     }
 
     /// first line
@@ -77,7 +76,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     /// is end or at what position
     /// # return [FormingRequestResult]
      pub  fn new(payload:&'a[u8])->FormingRequestResult<'a,HEADERS_COUNT,PATH_QUERY_COUNT> {
-        let request = HttpRequest::<HEADERS_COUNT>::from_incoming_bytes(payload);
+        let request = HttpRequest::<HEADERS_COUNT>::from_bytes(payload);
         return match request {
             Ok(request) => {
                 FormingRequestResult::Success(
@@ -116,14 +115,9 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     }
 
     /// getting content length in headers
-    pub fn content_length(&self)->Option<usize> {
-        if let Some(c) = self.http_request.headers().get("Content-Length") {
-            if let Ok(v) = c.to_str().parse::<usize>() {
-                return Some(v);
-            }
+    pub fn content_length(&self)->Option<&usize> {
+            return  self.http_request.headers().content_length.as_ref();
         }
-        None
-    }
 
 
     /// getting data from path query

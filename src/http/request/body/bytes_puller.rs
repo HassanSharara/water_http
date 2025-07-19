@@ -6,20 +6,23 @@ use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::HttpStream;
 
-
+#[derive(Debug)]
 pub (crate) enum StreamBytesPuller<'a> {
     H1(H1BytesPuller<'a>),
     H2(H2BytesPuller<'a>)
 }
+#[derive(Debug)]
 pub (crate) struct H1BytesPuller<'a> {
     pub(crate)stream:&'a mut HttpStream,
     pub(crate)reading_buffer:&'a mut BodyReadingBuffer,
     pub(crate) left_bytes:&'a [u8]
 }
-
+#[derive(Debug)]
 pub (crate) struct  H2BytesPuller<'a>{
     pub(crate)batch:&'a mut Request<RecvStream>,
 }
+
+#[derive(Debug)]
 /// struct for handling  body bytes as chunks with very efficient way
  pub struct BytesPuller<'a >{
        puller:StreamBytesPuller<'a>,

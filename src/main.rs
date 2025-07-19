@@ -1,15 +1,18 @@
-use water_http::server::{ ServerConfigurations};
+use water_http::server::{ServerConfigurations};
 use water_http::{InitControllersRoot, WaterController};
 
-type MainHolderType = u8;
-InitControllersRoot!{
+
+InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }
+type MainHolderType = u8;
+
 
 #[tokio::main]
 async fn main() {
 
+    // when debugging feature enabled
     #[cfg(feature = "debugging")]
     {
         let subscriber  = tracing_subscriber::FmtSubscriber::builder()
@@ -18,60 +21,43 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber)
             .expect("no thing");
     }
-   _= tokio::spawn(async move {
-       let  config = ServerConfigurations::bind("127.0.0.1",8084);
-       water_http::RunServer!(
+
+
+    let  config = ServerConfigurations::bind("127.0.0.1",8084);
+    water_http::RunServer!(
         config,
         MAIN_ROOT,
         MainController
     );
-   }).await;
 }
+
 WaterController! {
     holder -> crate::MainHolderType,
     name -> MainController,
     functions -> {
+
         GET => / => main(context) async {
-            _= context.send_str(
-                "hello world"
-            ).await;
-        },
-        PATCH => / => patch(context) async{
 
-            _= context.send_str("patch successfully").await;
-        },
-         put => / => put(context) async{
-
-            _= context.send_str("put successfully").await;
-        },
-         head => / => head(context) async{
-
-            _= context.send_str("head successfully").await;
-        },
-         Options => / => options(context) async{
-
-            _= context.send_str("patch successfully").await;
-        },
-         Delete => / => delete(context) async{
-
-            _= context.send_str("delete successfully").await;
-        },
-         Trace => / => trace(context) async{
-
-            _= context.send_str("trace successfully").await;
-        },
-
-        POST => / => post(context) async {
-            _= context.send_str("hello world").await;
+            response!( context -> "hello world" );
         }
+
+
     }
     extra_code->(..{
 
+
+
     })
 }
+#[derive(serde::Serialize)]
+pub struct Response {
+    status:&'static str,
+    body:&'static str
+}
+impl Response {
 
-
-
+    pub fn test()->Self{ Self {status:"success",body:"yes this is response"}}
+}
 
 
 

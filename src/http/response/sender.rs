@@ -200,7 +200,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
-    async fn send_file(&mut self,pc: FileRSender<'_>)-> SendingFileResults {
+    async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
 
         // preparing file
@@ -256,6 +256,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
                 to_send
             )
         );
+
         if self.write_headers_and_get_ready().await.is_err() {
             return SendingFileResults::ErrorWhileSendingBytesToClient;
         }
@@ -264,6 +265,9 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
             match file.read_buf(&mut buffer).await {
                 Ok(size) => {
                     let index = to_send.min(size);
+                    if let Some(ref mut callback) = pc.edit_each_chunk {
+                        callback(&mut buffer[..index]);
+                    }
                     if self.write_custom_bytes(&buffer[..index]).await.is_err() {
                         return SendingFileResults::ErrorWhileSendingBytesToClient
                     }

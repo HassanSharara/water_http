@@ -27,14 +27,14 @@ macro_rules! body_reading_checker {
         }
     };
 }
-
+#[derive(Debug)]
 pub (crate) enum  MultipartStreamHolder<'a> {
     H1(H1StreamHolder<'a>),
     H2(H2StreamHolder<'a>)
 }
 
 
-
+#[derive(Debug)]
 /// for handling multipart from data in both protocols http1 and http2
 pub struct MultipartData<'a> {
      stream_holder:MultipartStreamHolder<'a>,

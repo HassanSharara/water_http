@@ -32,7 +32,7 @@ pub enum IBody<'a> {
     /// handling x-www-form-data within request
     XWWWFormUrlEncoded(XWWWFormUrlEncoded<'a>)
 }
-
+#[derive(Debug)]
 /// if the incoming body need to be handled as chunks
 pub enum IBodyChunks<'a> {
     /// handling incoming body bytes as chunked
@@ -67,6 +67,7 @@ pub enum IBodyChunks<'a> {
     ChunkedTransferEncoding
  }
 
+#[derive(Debug)]
 /// parsing body mechanism results
 pub enum  ParsingBodyResults<'a> {
     /// handling the incoming body as chunks because of the size

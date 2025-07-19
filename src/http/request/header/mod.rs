@@ -200,16 +200,41 @@ impl<'a> HeaderValue<'a> {
 
     /// get as string
     pub fn get_from_values_as_string(&self,key:&'static str)->Option<String>{
-        if let Some(v) = self.get_from_values_as_str(key){
-            return Some(v.replace("\"",""));
+        if let Some(v) = self.get_from_values_as_bytes(key){
+            return Some(String::from_utf8_lossy(v).replace("\"",""));
         }
         None
     }
 
-    /// get value as [`Cow<str>`]
-    pub fn get_from_values_as_str(&self,key:&'static str)->Option<Cow<str>>{
-        if let Some(v) = self.get_from_values_as_bytes(key){
+
+    /// get as string
+    pub fn get_from_values_as_cow(&self,key:&'static str)->Option<Cow<'a,str>>{
+        if let Some(mut v) = self.get_from_values_as_bytes(key){
+            if v.starts_with(b"\""){
+                v = &v[1..];
+            }
+            if v.ends_with(b"\""){
+                v=&v[..v.len()-1]
+            }
             return Some(String::from_utf8_lossy(v));
+        }
+        None
+    }
+    /// get value as [`&str`]
+    ///
+    /// notice: that this method is not safe because its converting unknown bytes from headers to std::str
+    /// which is not safe so if you want to convert these bytes manually you could use either
+    /// [self.get_from_values_as_string] or [self.get_from_values_as_bytes] and then convert these bytes
+     pub  fn get_from_values_as_str(&self,key:&'static str)->Option<&'a str>{
+        if let Some(v) = self.get_from_values_as_bytes(key){
+            let mut v = unsafe {std::str::from_utf8_unchecked(v)};
+            if v.starts_with("\"") {
+                v =&v[1..];
+            }
+            if v.ends_with("\"") {
+                v = &v[..v.len() - 1 ];
+            }
+            return Some(v);
         }
         None
     }
