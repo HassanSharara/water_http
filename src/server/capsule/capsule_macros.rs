@@ -90,15 +90,860 @@ macro_rules! RunServer {
 
     };
 }
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! FunctionsMacroBuilderTow {
-    ( $hi:ident async { $($body:tt)* } ) => {
-        GET => $hi => $hi(context) async {
-            $($body)*
-        }
+    // ----- Public entrypoint -----
+    (
+        @entry
+        functions -> { $($items:tt)* }
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [],
+            $($items)*
+
+        );
+    };
+
+
+    // first option
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident => $($path:tt)/+ => $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* } $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+      // first option
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident -> $($path:tt)/+ -> $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* } $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+     // second option
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident => $($path:tt)/+ => $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+     // second option
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident -> $($path:tt)/+ -> $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+       // third option
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident => $($path:tt)/+ => $fn_name:ident ( $context:ident )  [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+          // third option
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident -> $($path:tt)/+ -> $fn_name:ident ( $context:ident )  [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow! (
+            @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+    // Case 2: method => path => fn(context) { .. } , rest...  (implicit async)
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident => $($path:tt)/+ => $fn_name:ident ( $context:ident ) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // Case 2: method => path => fn(context) { .. } , rest...  (implicit async)
+    (
+        @parse [ $($acc:tt)* ],
+        $method:ident -> $($path:tt)/+ -> $fn_name:ident ( $context:ident ) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+
+    // case 3 without async path and fn name only
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident => $fn_name:ident ( $context:ident ) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+
+    // case 3 without async path and fn name only
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident -> $fn_name:ident ( $context:ident ) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident => $fn_name:ident ( $context:ident ) [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident -> $fn_name:ident ( $context:ident ) [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident => $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) $async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+      (
+        @parse [ $($acc:tt)* ],
+         $method:ident -> $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) $async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident => $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident -> $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $fn_name => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ => $fn_name:ident ( $context:ident ) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ -> $fn_name:ident ( $context:ident ) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 3 without async path and fn name only
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ => $fn_name:ident ( $context:ident ) [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 3 without async path and fn name only
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ -> $fn_name:ident ( $context:ident ) [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // case 3 with async path and fn name only
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ => $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 3 with async path and fn name only
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ -> $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+      // case 3 with async path and fn name only
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ => $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) $async { $fn_path($context).await; },
+            ],
+            $($rest)*
+        );
+    };
+   // case 3 with async path and fn name only
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ -> $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) $async { $fn_path($context).await; },
+            ],
+            $($rest)*
+        );
+    };
+
+       // case fn name only without async
+      // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $fn_name:ident ( $context:ident ){ $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $fn_name => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+    // case fn name only without async
+      // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $fn_name:ident ( $context:ident )[$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $fn_name => $fn_name($context) async {
+                    $fn_path($context).await;
+                },
+            ],
+            $($rest)*
+        );
+    };
+     // case 5 with fn name only
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $fn_name => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+     // case 5 with fn name only
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $fn_name => $fn_name($context) $async { $fn_path($context).await; },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 6
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => / => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+    // case 6
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => / => $fn_name($context) $async { $fn_path($context).await; },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 7
+    //option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $fn_name:ident ( $context:ident )  { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => / => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 7
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $fn_name:ident ( $context:ident )  [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => / => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+     // option 1
+      (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ $fn_name:ident ( $context:ident )  { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+        // option 2
+      (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ $fn_name:ident ( $context:ident )  [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+   // option 1
+     (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ $fn_name:ident ( $context:ident )  $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 2
+
+     (
+        @parse [ $($acc:tt)* ],
+         $($path:tt)/+ $fn_name:ident ( $context:ident )  $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $($path)/+ => $fn_name($context) $async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 1
+     (
+        @parse [ $($acc:tt)* ],
+         $path:literal $fn_name:ident ( $context:ident )  { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $path => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 2
+     (
+        @parse [ $($acc:tt)* ],
+         $path:literal $fn_name:ident ( $context:ident )  [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $path => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 1
+     (
+        @parse [ $($acc:tt)* ],
+         $path:literal $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $path => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+      // option 2
+     (
+        @parse [ $($acc:tt)* ],
+         $path:literal $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path]   $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                GET => $path => $fn_name($context) $async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+    // case 8
+
+   // option 1
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident $($path:tt)/+ $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 2
+    (
+        @parse [ $($acc:tt)* ],
+         $method:ident $($path:tt)/+ $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 9
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $($path:tt)/+ $fn_name:ident ( $context:ident )  { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+      // case 9
+      // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $($path:tt)/+ $fn_name:ident ( $context:ident )  [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 1
+      (
+        @parse [ $($acc:tt)* ],
+         $method:ident $path:tt $fn_name:ident ( $context:ident ) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $path => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+      // option 2
+      (
+        @parse [ $($acc:tt)* ],
+         $method:ident $path:tt $fn_name:ident ( $context:ident ) $async:tt [$fn_path:path] $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $path => $fn_name($context) $async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+
+
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $path:tt $fn_name:ident ( $context:ident )  { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $path => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+         $method:ident $path:tt $fn_name:ident ( $context:ident )  [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $path => $fn_name($context) async { $fn_path($context).await },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // case 10
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $async:tt $fn_name:ident($context:ident) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+      // case 10
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $fn_name:ident($context:ident) $async:tt { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 10
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $async:tt $fn_name:ident($context:ident) [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async {
+                    $fn_path($context).await
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+    // case 10
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $fn_name:ident($context:ident)$async:tt  [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async {
+                    $fn_path($context).await
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+
+
+    // case 11
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $fn_name:ident($context:ident) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // case 11
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $fn_name:ident($context:ident) [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async {
+                    $fn_path($context).await
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+
+
+    // case 12
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $async:tt fn $fn_name:ident($context:ident) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // case 12
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        $async:tt fn $fn_name:ident($context:ident) [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) $async {
+                    $fn_path($context).await
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // case 13
+    // option 1
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        fn $fn_name:ident($context:ident) { $($body:tt)* }  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async { $($body)* },
+            ],
+            $($rest)*
+        );
+    };
+
+
+    // case 13
+    // option 2
+       (
+        @parse [ $($acc:tt)* ],
+        #[$method:ident,$($path:tt)/+]
+        fn $fn_name:ident($context:ident) [$fn_path:path]  $($rest:tt)*
+    ) => {
+        water_http::FunctionsMacroBuilderTow!( @parse [
+                $($acc)*
+                $method => $($path)/+ => $fn_name($context) async {
+                    $fn_path($context).await
+                },
+            ],
+            $($rest)*
+        );
+    };
+
+    // ----- Terminal: no more tokens -----
+    (
+        @parse [ $($acc:tt)* ],
+    ) => {
+      // fn yess{ let a = stringify!($($acc)*);}
+
+        FunctionsMacroBuilder!(
+          functions->{
+              $($acc)*
+          }
+      );
     };
 }
+
 
 /// constructing functions builder
 #[doc(hidden)]
@@ -279,8 +1124,8 @@ macro_rules! FunctionsMacroBuilder {
          $(
            $method:ident => $($path:tt)/+ => $fn_name:ident($context:ident) $async:tt {
               $($function_body_tokens:tt)*
-          }
-         ),*
+          },
+         )*
      }
     ) => {
 
@@ -313,19 +1158,7 @@ macro_rules! FunctionsMacroBuilder {
     };
 
 
-      ( functions -> {
-         $(
-          $($fn_tokens:tt)*
-         ),*
-     }) => {
-        water_http::FunctionsMacroBuilder!(
-            functions -> {
-                $(
-          water_http::FunctionsMacroBuilderTow!($($fn_tokens)*)
-        ),*
-            }
-        );
-    };
+
 
 }
 
@@ -405,7 +1238,8 @@ macro_rules! WaterController {
             use water_http::*;
             pub type Holder = $holder;
 
-            water_http::FunctionsMacroBuilder!(
+            water_http::FunctionsMacroBuilderTow!(
+                @entry
                 functions -> {$($function_tokens)*}
             );
 
@@ -456,7 +1290,7 @@ macro_rules! WaterController {
 #[macro_export]
 macro_rules! path_setter {
     [$context_name:ident () {$path_item:tt} ]=>{
-        let $path_item = &$context_name.____get_from_generic_path_params(stringify!($path_item)).unwrap();
+        let $path_item = $context_name.get_from_path_params(stringify!($path_item)).unwrap();
     };
      [$context_name:ident () $path_item:tt]=>{
     };
@@ -468,6 +1302,7 @@ macro_rules! path_setter {
         )+
     };
 }
+
 
 #[doc(hidden)]
 #[macro_export]
@@ -484,7 +1319,249 @@ macro_rules! response {
         let mut sender = $context.sender();
             _= sender.send_file(water_http::http::FileRSender::new($res)).await;
     };
+     ($context:ident string -> $res:ident) => {
+            _= $context.send_string_slice(&$res).await;
+    };
+     ($context:ident string -> &$res:ident) => {
+            _= $context.send_string_slice(&$res).await;
+    };
+     ($context:ident string -> $value:expr ) => {
+            _= $context.send_string_slice(format!($value).as_str()).await;
+    };
 }
 
 
+#[macro_export]
+macro_rules! functions_builder {
+    {
+        $($tokens:tt)*
+    } => {
+        $crate::hidden_functions_builder!(@parsed[], $($tokens)*);
+    };
+}
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! hidden_functions_builder {
+    (
+        @parsed[$($d:tt)*],
+        $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* ) $async:tt
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+
+     (
+        @parsed[$($d:tt)*],
+        $pub:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* ) $async:tt
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            $pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+       (
+        @parsed[$($d:tt)*],
+        pub $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+
+     (
+        @parsed[$($d:tt)*],
+        $pub:tt $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            $pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+     (
+        @parsed[$($d:tt)*],
+        $pub:tt $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            $pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+      (
+        @parsed[$($d:tt)*],
+         $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+        (
+        @parsed[$($d:tt)*],
+         $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+          (
+        @parsed[$($d:tt)*],
+        $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+           (
+        @parsed[$($d:tt)*],
+        $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+       {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) async {
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+    // for building results
+      (
+        @parsed[$($d:tt)*],
+        $pub:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* ) $async:tt {
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+                $pub $async $fn $fn_name<
+                    'context,
+                    MainHolderType: Send + 'static,
+                    const header_length: usize,
+                    const query_length: usize
+                >(
+                    $context: &mut $crate::server::HttpContext<
+                        'context, MainHolderType, header_length, query_length
+                    >
+                    $(, $parameter_name: $typ)*
+                ) {
+                    $($body_tokens)*
+                }
+            ],
+            $($res)*
+        );
+    };
+
+
+    (@parsed[$($d:tt)*],) => {
+        $($d)*
+    };
+}

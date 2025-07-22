@@ -478,6 +478,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         }
     }
 
+
     /// getting incoming request method
     pub fn method(&self)->&str{
         match &self.protocol {
@@ -495,7 +496,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// getting from path generic injected parameters
     /// like <http://example.com/test/{id}>
     /// here id is a generic parameter
-    pub fn ____get_from_generic_path_params(&'a self,key:&str)->Option<&'a String>{
+    pub fn get_from_path_params(&'a self,key:&str)->Option<&'a String>{
         if let Some(p) = &self.path_params_map {
             return p.get(key)
         }
@@ -504,6 +505,9 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
     /// getting data from path query
+    ///
+    /// like <http://example.com/test?id=1>
+    /// here you can get id value using this method
     pub  fn get_from_path_query(&self,key:&str)->Option<Cow<str>>{
         match &self.protocol {
             Protocol::Http2(h2) => {
