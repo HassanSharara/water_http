@@ -1,5 +1,6 @@
 use water_http::server::{ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
+use water_http::http::HttpSenderTrait;
 
 
 InitControllersRoot! {
@@ -101,6 +102,8 @@ WaterController! {
             super::get_response(context).await;
         }
 
+        getFile(context) [super::send_files]
+
     }
     extra_code->(..{
 
@@ -121,7 +124,28 @@ water_http::functions_builder!{
         // sending response
         response!(context string -> "method is {method} while path is {path}");
     }
+
+
+    pub async fn send_files(context)  {
+
+        response!(context file -> "./public/text/test1.txt",|c|{
+            // if we need to modify or encrypt every chunk sent to the user
+            for i in &mut *c {
+                *i = b'a';
+            }
+        });
+
+    }
+
+
 }
+
+// to generate normal function without helper
+// pub async fn fn_name<'context, MainHolderType: Send + 'static, const header_length: usize, const query_length: usize>
+//   (context: &mut water_http::server::HttpContext<'context, MainHolderType, header_length, query_length>) {
+// }
+
+// so we created water_http::functions_builder macro to help you create functions in fast and easy way
 
 
 

@@ -457,6 +457,7 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
 impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait for
 Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     fn send_status_code(&mut self, http_status: StatusCode) {
+        if self.is_status_written {return;}
         self.context.response_buffer.extend_from_slice(format!("HTTP/1.1 {} {}\r\n",
          http_status.status,
          http_status.label
@@ -527,7 +528,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
 
 
-    async fn send_file(&mut self,pc: FileRSender<'_>)-> SendingFileResults {
+    async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
 
         // preparing file
@@ -597,6 +598,9 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
            match file.read_buf(&mut buffer).await {
                Ok(size) => {
                    let index = to_send.min(size);
+                   if let Some(ref mut callback) = pc.edit_each_chunk {
+                       callback(&mut buffer[..index]);
+                   }
                    if self.write_bytes(&buffer[..index]).await.is_err() {
                        return SendingFileResults::ErrorWhileSendingBytesToClient
                    }
