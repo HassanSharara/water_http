@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use water_http::server::{ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
@@ -7,8 +8,13 @@ InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }
-type MainHolderType = u8;
+type MainHolderType = CHolder;
 
+#[derive(Debug)]
+pub struct CHolder {
+    pub user:Option<HashMap<String,String>>,
+
+}
 
 #[tokio::main]
 async fn main() {
@@ -41,6 +47,27 @@ WaterController! {
     holder -> crate::MainHolderType,
     name -> MainController,
     functions -> {
+         // in this case POST is Method and api/auth/login is path
+        POST => api/auth/login => login_handler(context) async {
+            response!(context -> "hello from login api endpoint");
+        }
+
+
+        GET => "categories/byId/{id}" => get_cat(context) [super::get_cat_by_id]
+
+        // in this case GET is the method and 'api/v1/users/' the path
+        // and this type could inject string parameter like
+        // 'api/v1/users/t22' so t22 is now represented by id variable
+        GET -> api/v1/users/{id} -> get_user(context) async{
+            println!("user id is {id}");
+            super::get_response(context).await;
+        }
+
+
+        // in this case path is "/" while method is GET
+        "/" hello_world(context){
+            _=context.send_str("hello world").await;
+        }
 
         // in this case hi is the path and method is  GET
         hi(context) [crate::get_response]
@@ -64,13 +91,9 @@ WaterController! {
             super::get_response(context).await;
         }
 
-        // in this case GET is the method and 'api/v1/users/' the path
-        // and this type could inject string parameter like
-        // 'api/v1/users/t22' so t22 is now represented by id variable
-        GET -> api/v1/users/{id} -> get_user(context) async{
-            println!("user id is {id}");
-            super::get_response(context).await;
-        }
+
+
+        GET info(context)[super::get_response]
 
         // in this case GET is the method and api/v2 is path ,
         #[POST,api/v2/{id}]
@@ -107,8 +130,20 @@ WaterController! {
     }
     extra_code->(..{
 
+    }),
+    middleware-> (context {
+        println!("middleware function invoked");
 
+        if let Some(ref holder) = context.holder {
+            if holder.user.is_some() {
+                println!("user is authenticated");
+            }
+        }
 
+        if 1 == 1  { return server::MiddlewareResult::Pass }
+
+        response!(context -> "invalid middleware passing");
+        server::MiddlewareResult::Stop
     })
 }
 
@@ -125,19 +160,33 @@ water_http::functions_builder!{
         response!(context string -> "method is {method} while path is {path}");
     }
 
+    pub async fn get_cat_by_id(context) (id){
+        let method = context.method();
+        let path = context.path();
+      response!(context string -> "method is {method} , id is {id} while path is {path}");
+    }
 
     pub async fn send_files(context)  {
 
-        response!(context file -> "./public/text/test1.txt",|c|{
-            // if we need to modify or encrypt every chunk sent to the user
-            for i in &mut *c {
-                *i = b'a';
-            }
-        });
+           response!(context file -> "./public/text/test1.txt");
+
+        // response!(context file -> "./public/text/test1.txt",|c|{
+        //     // if we need to modify or encrypt every chunk sent to the user
+        //     for i in &mut *c {
+        //         *i = b'a';
+        //     }
+        // });
 
     }
 
+      pub async fn send_response(context){
 
+        response!(context -> "hi this is api response") ;
+      }
+
+      pub async fn send_file(context){
+         response!(context file -> "./public/text/test1.txt");
+      }
 }
 
 // to generate normal function without helper

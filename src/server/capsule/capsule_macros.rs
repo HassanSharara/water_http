@@ -37,6 +37,47 @@ macro_rules! InitControllersRoot {
      } => {
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
     };
+
+      {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    $name:ident ,
+    $holder:ty
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           headers_length:16,
+           queries_length:16
+       }
+    };
+
+      {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    $name:ident ,
+    $holder:ty,
+          $hl:literal
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           headers_length:$hl,
+           queries_length:16
+       }
+    };
+      {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    $name:ident ,
+    $holder:ty,
+          $hl:literal,
+          $hq:literal
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           headers_length:$hl,
+           queries_length:$hq
+       }
+    };
 }
 
 
@@ -1319,7 +1360,7 @@ macro_rules! response {
         let mut sender = $context.sender();
             let sending_result= sender.send_file(water_http::http::FileRSender::new($res)).await;
            if !sending_result.is_success() {
-            _= $context.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
+            _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
         }
     };
     ($context:ident file -> $res:expr , $($function_tokens:tt)*) => {
