@@ -117,8 +117,8 @@ WaterController! {
          // in this example GET is the method and api/v4 is path
         #[GET,api/v4]
         get_profiles_v4(context)  [super::get_response]
-         // in this example GET is the method and api/v4 is path
 
+         // in this example GET is the method and api/v5 is path
         #[GET,api/v5]
         async get_profiles_v5(context)  [super::get_response]
 
