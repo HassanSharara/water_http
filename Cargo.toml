@@ -45,5 +45,5 @@ count_connection_parsing_speed = ["tracing","tracing-subscriber"]
 write_logs = ["water_http_utils/write_logs"]
 
 [dev-dependencies]
-askama = "0.12.1"
+askama = "0.14.0"
 
