@@ -47,6 +47,11 @@ WaterController! {
     holder -> crate::MainHolderType,
     name -> MainController,
     functions -> {
+
+          // in this case path is "/" while method is GET
+        "/" hello_world(context){
+            _=context.send_str("hello world").await;
+        }
          // in this case POST is Method and api/auth/login is path
         POST => api/auth/login => login_handler(context) async {
             response!(context -> "hello from login api endpoint");
@@ -64,10 +69,7 @@ WaterController! {
         }
 
 
-        // in this case path is "/" while method is GET
-        "/" hello_world(context){
-            _=context.send_str("hello world").await;
-        }
+
 
         // in this case hi is the path and method is  GET
         hi(context) [crate::get_response]
@@ -130,21 +132,22 @@ WaterController! {
     }
     extra_code->(..{
 
-    }),
-    middleware-> (context {
-        println!("middleware function invoked");
-
-        if let Some(ref holder) = context.holder {
-            if holder.user.is_some() {
-                println!("user is authenticated");
-            }
-        }
-
-        if 1 == 1  { return server::MiddlewareResult::Pass }
-
-        response!(context -> "invalid middleware passing");
-        server::MiddlewareResult::Stop
     })
+
+    // , middleware-> (context {
+    //     println!("middleware function invoked");
+    //
+    //     if let Some(ref holder) = context.holder {
+    //         if holder.user.is_some() {
+    //             println!("user is authenticated");
+    //         }
+    //     }
+    //
+    //     if 1 == 1  { return server::MiddlewareResult::Pass }
+    //
+    //     response!(context -> "invalid middleware passing");
+    //     server::MiddlewareResult::Stop
+    // })
 }
 
 // notice that writing methods like POST,post,Post,posT,POst
