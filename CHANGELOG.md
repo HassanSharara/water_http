@@ -1,3 +1,5 @@
+## 3.0.2 
+ - updates packages to the latest versions
 ## 3.0.1
  - breaking new records for speed and stability
  - adding more secure logics inside parsing http request and handling
