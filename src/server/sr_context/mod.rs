@@ -190,7 +190,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// ```shell
     /// context.getter()
     /// ```
-    pub async fn get_body_full_bytes(&mut self)->Result<Option<&Vec<u8>>,WaterErrors>{
+    pub async fn get_body_full_bytes(&mut self)->Result<Option<&Vec<u8>>,WaterErrors<'_>>{
         if self.body_bytes_holder.is_some() {
             return Ok(self.body_bytes_holder.as_ref())
         }
@@ -251,7 +251,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
     /// getting body as multipart form data [FormDataAll]
-    pub async fn get_body_as_multipart(&mut self)->Result<FormDataAll,WaterErrors>{
+    pub async fn get_body_as_multipart(&mut self)->Result<FormDataAll,WaterErrors<'_>>{
         let mut body = self.getter();
         let  body = body.get_body_by_mechanism(
             ParsingBodyMechanism::FormData
@@ -259,6 +259,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
          match body {
             Chunked(a)=>{
                 if let IBodyChunks::FormData( data) = a {
+
                     if let Ok( data) = data.to_form_data_all().await {
                         return  Ok(data)
                     }
@@ -282,7 +283,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
     /// returning dynamic trait that would be for getting values from body using
     /// keys
-    pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors> {
+    pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
 
         let mut getter = self.getter();
         match getter.get_body().await {
@@ -325,7 +326,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             }
             _ => {}
         };
-        Err::<DynamicBodyMap,WaterErrors<'a>>(
+        Err::<DynamicBodyMap,WaterErrors<'_>>(
             WaterErrors::Http(
                 HttpStatusCode::BAD_REQUEST
             )
@@ -334,7 +335,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
     /// this function return the original data on the request buffer on memory ,and
     /// it is very fast and memory safe function ,and it has zero allocation for data
-    pub fn get_from_headers_as_bytes(&'a self,key:&str)->Option<&[u8]>{
+    pub fn get_from_headers_as_bytes(&self,key:&str)->Option<&[u8]>{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 return  h2.get_from_headers(key)
@@ -346,12 +347,12 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     }
 
     /// this function just convert the bytes that come from [self.get_from_headers]
-    /// to `Cow<str>`
-    ///  return [`Cow<str>`]
+    /// to `Cow<'_,str>`
+    ///  return [`Cow<'_,str>`]
     ///
     /// please note that rust could allocate new memory for holding [Cow] when it`s converted
     /// from clean bytes
-    pub fn get_from_headers(&'a self,key:&str)->Option<Cow<str>>{
+    pub fn get_from_headers(&self,key:&str)->Option<Cow<'_,str>>{
         if let Some(data) = self.get_from_headers_as_bytes(key) {
             return Some(String::from_utf8_lossy(data))
         }
@@ -508,7 +509,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ///
     /// like <http://example.com/test?id=1>
     /// here you can get id value using this method
-    pub  fn get_from_path_query(&self,key:&str)->Option<Cow<str>>{
+    pub  fn get_from_path_query(&self,key:&str)->Option<Cow<'_,str>>{
         match &self.protocol {
             Protocol::Http2(h2) => {
                 if let Some(pq)  = h2.path_query.as_ref() {

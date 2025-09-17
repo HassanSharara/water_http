@@ -1,3 +1,6 @@
+## 3.0.4
+- fixes content length reading and increasing the size of parsing bytes to valid rust data type
+- update packages 
 ## 3.0.2 
  - updates packages to the latest versions
 ## 3.0.1

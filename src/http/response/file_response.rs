@@ -15,7 +15,7 @@ impl <'a> FileRSender<'a> {
     /// creating new file response config
     pub fn custom(path:&Path,
                buffer_size_for_reading_from_file_and_writing_to_stream:usize,
-    )->FileRSender{
+    )->FileRSender<'_>{
         FileRSender {
             path,
             buffer_size_for_reading_from_file_and_writing_to_stream,
@@ -24,7 +24,7 @@ impl <'a> FileRSender<'a> {
         }
     }
     /// creating new file response with only path
-    pub fn new(path:&str)->FileRSender{
+    pub fn new(path:&str)->FileRSender<'_>{
         Self::custom(Path::new(path),WRITING_FILES_BUF_LEN)
     }
 

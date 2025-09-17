@@ -55,7 +55,7 @@ pub  trait HttpSenderTrait {
     /// for writing custom bytes to the stream
     fn write_custom_bytes(&mut self,bytes:&[u8])->
      impl Future<
-     Output = Result<(),WaterErrors>> + Send;
+     Output = Result<(),WaterErrors<'_>>> + Send;
 }
 
 
@@ -302,7 +302,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         return Err(())
     }
 
-    async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors> {
+    async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
         if let Some(send_stream) = &mut self.send_stream {
             if let Ok(_) = send_stream.send_data(Bytes::copy_from_slice(bytes),false) {
                 return  Ok(())
@@ -404,7 +404,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
          }
      }
 
-     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors> {
+     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
          match self {
              HttpSender::H1(h1) => {h1.write_custom_bytes(bytes).await}
              HttpSender::H2(h2) => {h2.write_custom_bytes(bytes).await}
@@ -624,7 +624,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
          Ok(())
     }
 
-    async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors> {
+    async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
         self.context.response_buffer.extend_from_slice(bytes);
         if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
             return Err(WaterErrors::Server(ServerError::WRITING_TO_STREAM_ERROR))

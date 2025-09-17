@@ -392,7 +392,7 @@ impl BodyReadingBuffer {
 
     //
     // #[inline]
-    // pub (crate) fn as_str(&self)->Cow<str>{
+    // pub (crate) fn as_str(&self)->Cow<'_,str>{
     //     String::from_utf8_lossy(self.chunk())
     // }
 

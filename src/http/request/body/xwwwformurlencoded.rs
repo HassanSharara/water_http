@@ -38,7 +38,7 @@ impl  DynamicBodyMapTrait for HeapXWWWFormUrlEncoded {
         None
     }
 
-    fn get(&self, key: &str) -> Option<Cow<str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
         if let Some(data) = self.data.get(key){
             return Some(String::from_utf8_lossy(data.as_ref()))
         }
@@ -55,7 +55,7 @@ impl<'a> DynamicBodyMapTrait for XWWWFormUrlEncoded<'a> {
         self.get_as_bytes_ref(key)
     }
 
-    fn get(&self, key: &str) -> Option<Cow<str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
         self.get_as_str(key)
     }
 
@@ -79,7 +79,7 @@ impl <'a> XWWWFormUrlEncoded<'a> {
     }
 
     /// for getting value based on its given key as [&str]
-     fn get_as_str(&self,key:&str)->Option<Cow<str>>{
+     fn get_as_str(&self,key:&str)->Option<Cow<'_,str>>{
         if let Some(data) = self.get_as_bytes(key) {
             return String::from_utf8_lossy(data).into();
         }

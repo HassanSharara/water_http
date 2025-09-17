@@ -120,6 +120,7 @@ macro_rules! RunServer {
         $controller:expr,
         $entry:ident
     ) => {
+        #[allow(static_mut_refs)]
         unsafe {
             let co = $entry::build();
             $controller = Some(co);

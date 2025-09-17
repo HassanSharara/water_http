@@ -98,11 +98,11 @@ pub enum  ParsingBodyResults<'a> {
 impl <'a> ParsingBodyResults<'a> {
 
     pub async fn on_multipart_form_data_detect(
-        payload:&'a[u8],
+        payload:&'a [u8],
         mut on_detect: impl FnMut(
         Result<MultiPartFormDataField<'a>,&str>
     ) -> Pin<Box<dyn Future<Output=HandlingFormDataResult> + Send>>
-    )->Result<(),&str>{
+    )->Result<(),&'a str>{
         let mut index:usize = 0;
         loop {
             match MultiPartFormDataField::new(&payload[index..]) {
@@ -206,7 +206,7 @@ impl DynamicBodyMapTrait for FormDataAll {
         None
     }
 
-    fn get(&self, key: &str) -> Option<Cow<str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
         if let Some(data) = self.get_as_bytes(key){
            return Some(String::from_utf8_lossy(data))
         }
@@ -321,7 +321,7 @@ impl DynamicBodyMapTrait for DynamicBodyMap {
         }
     }
 
-    fn get(&self, key: &str) -> Option<Cow<str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
         match self {
             DynamicBodyMap::FormField(data) => { data.get(key)}
             DynamicBodyMap::Xww(data) => {data.get(key)}
@@ -354,8 +354,8 @@ pub trait DynamicBodyMapTrait{
     /// getting field or any data key value as bytes or [&[u8]]
     fn get_as_bytes(&self,key:&str)-> Option<&[u8]>;
 
-    /// getting field or any data key value as [`Cow<str>`]
-    fn get (&self,key:&str)->Option<Cow<str>>;
+    /// getting field or any data key value as [`Cow<'_,str>`]
+    fn get (&self,key:&str)->Option<Cow<'_,str>>;
 
     /// getting all incoming keys and values as hashmap
     fn all(&self)-> HashMap<String,Bytes>;

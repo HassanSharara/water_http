@@ -40,7 +40,7 @@ impl <'a:'request,'request
 > Http1Getter<'a,'request,HEADER_SIZE,PATH_QUERY_COUNT> {
 
     #[inline]
-   fn t_bytes_puller(&mut self,content_length:usize)->ParsingBodyResults{
+   fn t_bytes_puller(&mut self,content_length:usize)->ParsingBodyResults<'_>{
         let puller = BytesPuller::new(
             StreamBytesPuller::H1(
                 H1BytesPuller {
@@ -59,8 +59,8 @@ impl <'a:'request,'request
     }
 
     /// getting full body if the body was using multipart form data content type during incoming request
-    pub  async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8],content_length:&usize)
-    -> Result<FormDataAll,WaterErrors>{
+    pub  async fn get_full_body_multipart_mechanism(& mut self,content_type:&[u8],content_length:&usize)
+    -> Result<FormDataAll,WaterErrors<'_>>{
         let split = split(content_type,b"boundary=");
         if let Some(boundary) = split.last() {
             if !boundary.is_empty() {
@@ -366,8 +366,8 @@ impl<'a>   Http2Getter<'a> {
 
 
     /// getting full body if the body was using multipart form data content type during incoming request
-    pub   async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8])
-                                                    -> Result<FormDataAll,WaterErrors>{
+    pub   async fn get_full_body_multipart_mechanism(& mut self,content_type:&[u8])
+                                                    -> Result<FormDataAll,WaterErrors<'_>>{
         let split = split(content_type,b"boundary=");
         if let Some(boundary) = split.last() {
             if !boundary.is_empty() {

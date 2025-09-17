@@ -24,7 +24,7 @@ impl <'a> MultiPartFormDataField<'a> {
 
 
     /// getting content_disposition name
-    pub fn content_disposition_name(&self)->Option<Cow<str>>{
+    pub fn content_disposition_name(&self)->Option<Cow<'_,str>>{
         if let Some(ref v) = self.headers.get_as_header_value("Content-Disposition") {
             if let Some(v) = v.get_from_values_as_str("name") {
                 return Some(Cow::Owned(v.to_string()))

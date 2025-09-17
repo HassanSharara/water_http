@@ -18,7 +18,7 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc};
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
 use tracing::{debug};
@@ -26,8 +26,11 @@ pub use configurations::*;
 use crate::server::connection::{ConnectionStream, WaterStream};
 
 pub (crate) static mut STATIC_SERVER_CONFIGURATION:Option<ServerConfigurations> = None;
-pub (crate) fn get_server_config()->&'static ServerConfigurations{
-    unsafe  { STATIC_SERVER_CONFIGURATION.as_ref().unwrap() }
+#[allow(static_mut_refs)]
+pub (crate)  fn get_server_config()->&'static ServerConfigurations{
+    unsafe  {
+           STATIC_SERVER_CONFIGURATION.as_ref().unwrap()
+    }
 }
 
 
@@ -50,7 +53,7 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
 
 
 
-    for  address in &conf.addresses {
+    for  address in conf.addresses.clone() {
         workers.push(tokio::spawn(async move {
             #[cfg(feature = "debugging")]
             {
@@ -59,7 +62,7 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
                 debug!("count of running workers {workers_count}");
             }
 
-            let _ = run_server_with_address(address,controller).await;
+            let _ = run_server_with_address(&address,controller).await;
         }));
     }
     for worker in workers {
@@ -142,7 +145,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                     #[cfg(feature = "debugging")]
                     {
                         let mut con = connections_count.lock().await;
-                        debug!("last connections count {:?}",con.deref());
+                        debug!("last connections count where port is not secure {:?}",con.deref());
                         let m = con.deref_mut();
                         if *m == 1 {
                            *m = 0;

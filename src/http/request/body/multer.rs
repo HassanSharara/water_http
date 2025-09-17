@@ -360,7 +360,6 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
     /// but the better approach is to use the default struct handler [MultipartData]
     pub async fn take(mut self)->Result<FormDataAll,()>{
         let mut data = FormDataAll::new();
-
         if (&mut self).on_field_detected(|field,parsed_data|{
             data.push(field,parsed_data);
             return Ok(None)

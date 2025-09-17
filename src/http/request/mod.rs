@@ -124,7 +124,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     /// for examples
     /// - http:://examples.com/posts?id=1 the key is `id` and the value is `1`
     /// - http:://examples.com/posts?year=2024 the key is `year` and the value is `2024`
-    pub fn get_from_path_query(&self,key:&str)->Option<Cow<str>>{
+    pub fn get_from_path_query(&self,key:&str)->Option<Cow<'_,str>>{
       let (_,query) =    self.http_request.path().split_to_path_and_query();
         if let Some(v) = query.get(key) {
             return Some(Cow::Owned(v.into()));

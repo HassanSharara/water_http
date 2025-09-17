@@ -45,7 +45,7 @@ impl <'a> BytesPuller <'a> {
 
     /// reading each chunk seperated and parsed to [FnMut] Closure
     pub async fn on_chunk(&mut self,mut callback:impl FnMut(&[u8])-> Result<(),()> )
-    ->Result<(),WaterErrors>{
+    ->Result<(),WaterErrors<'_>>{
         let content_length = self.content_length;
 
         match &mut self.puller {
