@@ -588,6 +588,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 #[derive(Debug)]
 
 pub (crate)enum HttpStream {
+    #[cfg(feature = "support_tls")]
     AsyncSecure(tokio_rustls::server::TlsStream<TcpStream>),
     Async(TcpStream),
 }
@@ -595,6 +596,7 @@ pub (crate)enum HttpStream {
 impl AsyncWrite for HttpStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
         match self.get_mut() {
+            #[cfg(feature = "support_tls")]
             HttpStream::AsyncSecure(stream) => Pin::new(stream).poll_write(cx, buf),
             HttpStream::Async(stream) => Pin::new(stream).poll_write(cx, buf),
         }
@@ -602,6 +604,7 @@ impl AsyncWrite for HttpStream {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
+            #[cfg(feature = "support_tls")]
             HttpStream::AsyncSecure(stream) => Pin::new(stream).poll_flush(cx),
             HttpStream::Async(stream) => Pin::new(stream).poll_flush(cx),
         }
@@ -609,6 +612,7 @@ impl AsyncWrite for HttpStream {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
+            #[cfg(feature = "support_tls")]
             HttpStream::AsyncSecure(stream) => Pin::new(stream).poll_shutdown(cx),
             HttpStream::Async(stream) => Pin::new(stream).poll_shutdown(cx),
         }
@@ -618,6 +622,7 @@ impl AsyncWrite for HttpStream {
 impl AsyncRead for HttpStream {
     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
+            #[cfg(feature = "support_tls")]
             HttpStream::AsyncSecure(stream) => {
                 Pin::new(stream).poll_read(cx,buf)
             }

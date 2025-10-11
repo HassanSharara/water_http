@@ -1,3 +1,5 @@
+## 3.0.6
+- splitting tls support to make the crate much easier to run in different environments so when you need to configure your server with tls you could add feature [support_tls]()
 ## 3.0.4
 - fixes content length reading and increasing the size of parsing bytes to valid rust data type
 - update packages 

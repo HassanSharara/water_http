@@ -1,3 +1,4 @@
+#![cfg(feature = "support_tls")]
 use std::path::Path;
 use tokio_rustls::rustls::pki_types::{CertificateDer,PrivateKeyDer};
 use rustls_pemfile::{certs, private_key};
@@ -11,7 +12,7 @@ pub fn generate_tls_configurations(config:&TLSCertificate)->Result<rustls::serve
     let key = load_key(Path::new(&config.tls_key));
     if let Ok( mut certs ) = certs {
         if let Some(tls_bundle) = &config.tls_ca_bundle {
-            let ca_bundle = load_certs(Path::new(&tls_bundle));
+            let ca_bundle = load_certs(Path::new(tls_bundle));
             if let Ok(mut ca_bundle) = ca_bundle {
                 certs.append(&mut ca_bundle);
             }

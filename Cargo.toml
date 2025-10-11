@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "3.0.4"
+version = "3.0.6"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -23,13 +23,14 @@ h2 = "0.4.6"
 http = "1.1.0"
 httparse = "1.9.5"
 lz4 = "1.28.0"
-rustls = "0.23.13"
-rustls-pemfile = "2.2.0"
+
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 snap = "1.1.1"
 tokio = { version = "1.47.1", features = ["full"] }
-tokio-rustls = "0.26.2"
+tokio-rustls = {version = "0.26.2",optional = true}
+rustls = {version = "0.23.13" , optional = true}
+rustls-pemfile = {version = "2.2.0" ,optional = true}
 tracing = {version = "0.1.40",optional = true}
 tracing-subscriber = {version = "0.3.18",optional = true,features = ["env-filter"]}
 twoway = "0.2.2"
@@ -43,6 +44,7 @@ water_http_utils = { version = "0.1.1", features = ["server"]}
 debugging = ["tracing","tracing-subscriber"]
 count_connection_parsing_speed = ["tracing","tracing-subscriber"]
 write_logs = ["water_http_utils/write_logs"]
+support_tls = ["rustls","rustls-pemfile","tokio-rustls"]
 
 [dev-dependencies]
 askama = "0.14.0"

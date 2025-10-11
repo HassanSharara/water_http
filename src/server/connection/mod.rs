@@ -3,6 +3,7 @@ use std::ops::Deref;
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
+#[cfg(feature = "support_tls")]
 use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
@@ -12,6 +13,7 @@ use crate::server::sr_context::{Http1Context, Http2Context, HttpContext, Protoco
 
 
 pub enum WaterStream {
+    #[cfg(feature = "support_tls")]
     TLS(TlsStream<TcpStream>),
     TOStream(TcpStream)
 }
@@ -39,6 +41,7 @@ impl  ConnectionStream {
              debug!("new connection from  : {:?}",self.address);
         }
         match  self.io {
+            #[cfg(feature = "support_tls")]
             WaterStream::TLS( stream) => {
                 #[cfg(feature = "debugging")]
                 {

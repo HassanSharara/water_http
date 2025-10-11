@@ -137,6 +137,7 @@ pub struct ServerConfigurations {
     /// the default value for encoding logic [`EncodingLogic::None`]
     pub (crate) responding_encoding_configurations:EncodingConfigurations,
 
+    #[cfg(feature = "support_tls")]
     /// - if you need your server to support tls or ssl encryption
     /// just provide the path of your [private.key] and [certificate.cer]
     /// and also you can provide [ca_bundle.cert]
@@ -144,6 +145,7 @@ pub struct ServerConfigurations {
     /// the fastest results
     pub tls_certificate:Option<TLSCertificate>,
 
+    #[cfg(feature = "support_tls")]
     /// - specify where should the system apply tls protocol on which ports
     /// the default value is ['443']
     pub tls_ports:Vec<u16>,
@@ -166,7 +168,7 @@ pub struct ServerConfigurations {
     // pub max_http1_query_length:usize,
 }
 
-
+#[cfg(feature = "support_tls")]
 /// - struct for parsing tls certificates resources files paths
 ///  to  [ServerConfigurations]
 pub struct TLSCertificate {
@@ -189,9 +191,11 @@ impl ServerConfigurations {
     pub fn default()->Self {
         ServerConfigurations{
             addresses:vec![("0.0.0.0".to_string(),80),],
+            #[cfg(feature = "support_tls")]
             tls_certificate:None,
             restricted_ips:None,
             responding_encoding_configurations:EncodingConfigurations::default(),
+            #[cfg(feature = "support_tls")]
             tls_ports:vec![443],
             backlog:1028,
             max_request_size:10000,
@@ -222,6 +226,7 @@ impl ServerConfigurations {
         self.restricted_ips = Some(roll);
     }
 
+    #[cfg(feature = "support_tls")]
 
     /// # creating [TLSCertificate] from certificate path and private key path
     /// - (optional) also you could provide bundle path

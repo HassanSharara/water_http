@@ -18,7 +18,9 @@ use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
+#[cfg(feature = "support_tls")]
 use std::sync::{Arc};
+#[cfg(feature = "support_tls")]
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
 use tracing::{debug};
@@ -100,7 +102,9 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
 
 
     // building tls acceptor
+    #[cfg(feature = "support_tls")]
     let mut tls_acceptor:Option<TlsAcceptor> = None;
+    #[cfg(feature = "support_tls")]
     if let Some(tls_config) = server_config.tls_certificate.as_ref() {
         let server_tls_config =
             tls::generate_tls_configurations(tls_config);
@@ -108,9 +112,12 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
             tls_acceptor = Some(TlsAcceptor::from(Arc::new(server_tls_config)));
         }
     }
+
+    #[cfg(feature = "support_tls")]
     let is_port_should_be_securely_handled=
         server_config.tls_ports.contains(port)
         && tls_acceptor.is_some();
+
 
     #[cfg(feature = "debugging")]
     use std::ops::DerefMut;
@@ -127,34 +134,38 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                 let m = con.deref_mut();
                 *m +=1;
             }
+            #[cfg(feature = "support_tls")]
             let tls = tls_acceptor.clone();
 
             tokio::task::spawn(async move {
                 // checking if the current port should be handled
                 // with tls configurations if it`s exist
-                if is_port_should_be_securely_handled {
-                    let tls = tls.unwrap();
-                    let tls_stream = tls.accept(stream).await;
-                    if let Ok(tls_stream) = tls_stream {
-                        let connection =  ConnectionStream::new(
-                            WaterStream::TLS(tls_stream),
-                            socket_address
-                        );
-                        serve_connection(connection,controller).await;
-                    }
-                    #[cfg(feature = "debugging")]
-                    {
-                        let mut con = connections_count.lock().await;
-                        debug!("last connections count where port is not secure {:?}",con.deref());
-                        let m = con.deref_mut();
-                        if *m == 1 {
-                           *m = 0;
-                        } else {
-                            *m -=1;
+                #[cfg(feature = "support_tls")]
+                {
+                    if is_port_should_be_securely_handled {
+                        let tls = tls.unwrap();
+                        let tls_stream = tls.accept(stream).await;
+                        if let Ok(tls_stream) = tls_stream {
+                            let connection =  ConnectionStream::new(
+                                WaterStream::TLS(tls_stream),
+                                socket_address
+                            );
+                            serve_connection(connection,controller).await;
                         }
+                        #[cfg(feature = "debugging")]
+                        {
+                            let mut con = connections_count.lock().await;
+                            debug!("last connections count where port is not secure {:?}",con.deref());
+                            let m = con.deref_mut();
+                            if *m == 1 {
+                                *m = 0;
+                            } else {
+                                *m -=1;
+                            }
 
+                        }
+                        return ;
                     }
-                    return ;
                 }
 
                 // handling connection normally
