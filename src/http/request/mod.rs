@@ -105,7 +105,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     }
 
     /// parsing incoming http method
-    pub fn method(&self)->& str {
+    pub fn method(&self)->&'a str {
         self.http_request.method()
     }
 

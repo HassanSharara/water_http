@@ -32,7 +32,7 @@ async fn main() {
     }
 
 
-    let  config = ServerConfigurations::bind("127.0.0.1",8084);
+    let  config = ServerConfigurations::bind("0.0.0.0",8084);
     water_http::RunServer!(
         config,
         MAIN_ROOT,

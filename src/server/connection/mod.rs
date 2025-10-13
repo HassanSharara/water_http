@@ -214,7 +214,6 @@ impl  ConnectionStream {
                                 ),
                                 peer
                             );
-                            let content_length = context.content_length().copied();
 
                             #[cfg( feature = "count_connection_parsing_speed")]
                             let t1 = std::time::SystemTime::now();
@@ -234,6 +233,16 @@ impl  ConnectionStream {
                                          end.duration_since(t1)
                                         );
                                     }
+                                    if context.method() == "GET" {
+                                        if total_request_size >= buf_bytes.len() {
+                                            reading_buffer.clear();
+                                            break;
+                                        } else {
+                                            reading_buffer.advance(total_request_size);
+                                            continue;
+                                        }
+                                    }
+                                    let content_length = context.content_length().copied();
 
                                     match content_length {
                                         None => {
@@ -321,7 +330,7 @@ impl  ConnectionStream {
 }
 
 
-#[inline]
+#[inline(always)]
 pub (crate) async fn handle_responding<'e,Stream:AsyncWrite+Unpin>(response_buf:&mut BytesMut,
                                                           stream:&mut Stream)
                                                           ->Result<(),&'e str>{
@@ -331,18 +340,25 @@ pub (crate) async fn handle_responding<'e,Stream:AsyncWrite+Unpin>(response_buf:
     response_buf.clear();
     Ok(())
 }
+//
+// #[inline]
+// pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
+//     let rem = buffer.capacity() - buffer.len() ;
+//     if READING_BUF_LEN < rem {
+//         buffer.reserve(rem);
+//     } else if rem < 1024 {
+//         buffer.reserve(READING_BUF_LEN - rem);
+//     }
+// }
 
-#[inline]
-pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
-    let rem = buffer.capacity() - buffer.len() ;
-    if READING_BUF_LEN < rem {
-        buffer.reserve(rem);
-    } else if rem < 1024 {
-        buffer.reserve(READING_BUF_LEN - rem);
+#[inline(always)]
+pub(crate) fn reserve_buf(buffer: &mut BytesMut) {
+    const MIN_RESERVE: usize = 1024;
+    let remaining = buffer.capacity() - buffer.len();
+    if remaining < MIN_RESERVE {
+        buffer.reserve(READING_BUF_LEN);
     }
 }
-
-
 #[derive(Debug)]
 pub (crate) struct BodyReadingBuffer {
     buffer:BytesMut,
@@ -365,7 +381,7 @@ impl BodyReadingBuffer {
 
 
 
-    #[inline]
+    #[inline(always)]
     pub (crate) fn is_empty(&self) -> bool {
         self.buffer.is_empty()
     }

@@ -93,6 +93,8 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
     }.expect("can not create tcp socket from given address");
     socket.set_reuseaddr(true).expect("can not set reuse address");
     socket.set_nodelay(true).expect("");
+    #[cfg(target_os = "linux")]
+    socket.set_reuseport(true).expect("could not reuse port on linux");
     socket.bind(socket_address).expect("can not bind to given address");
     let listener = socket.listen(
         server_config.backlog
