@@ -20,6 +20,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::Deref;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
+use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
@@ -53,8 +54,16 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
     let mut workers_count = 0_usize;
 
 
+    let local_sets = LocalSet::new();
 
+    for  address in conf.addresses.clone() {
+        local_sets.spawn_local(async move {
+            let _ = run_server_with_address(&address,controller).await;
+        });
+    }
 
+    local_sets.await;
+    return;
     for  address in conf.addresses.clone() {
         workers.push(tokio::spawn(async move {
             #[cfg(feature = "debugging")]
@@ -139,7 +148,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
             #[cfg(feature = "support_tls")]
             let tls = tls_acceptor.clone();
 
-            tokio::task::spawn(async move {
+            tokio::spawn(async move {
                 // checking if the current port should be handled
                 // with tls configurations if it`s exist
                 #[cfg(feature = "support_tls")]
