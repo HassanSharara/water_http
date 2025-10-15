@@ -55,7 +55,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
 {
 
     /// getting total headers length
-    pub fn get_total_headers_length(&self)->usize{
+    pub const fn get_total_headers_length(&self)->usize{
         self.http_request.headers().headers_length
         + self.http_request.first_line().first_line_length
     }
@@ -66,7 +66,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     }
 
     /// get headers
-    pub fn headers(&self) -> &HttpHeaders<'a,HEADERS_COUNT>{
+    pub const fn headers(&self) -> &HttpHeaders<'a,HEADERS_COUNT>{
         self.http_request.headers()
     }
 

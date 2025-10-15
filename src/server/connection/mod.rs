@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::ops::Deref;
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 #[cfg(feature = "support_tls")]
@@ -31,6 +31,8 @@ impl  ConnectionStream {
             address
         }
     }
+
+    #[inline(always)]
     pub (crate) async fn serve<Holder:Send + 'static ,const HS:usize,const QS:usize,>
     (self,
      controller:&'static  CapsuleWaterController<Holder,HS,QS>
@@ -108,7 +110,7 @@ impl  ConnectionStream {
                                         Http2Context
                                         ::<>
                                         ::new(
-                                            batch,
+                                             batch,
                                             &mut reading_buffer
                                         )
                                     ),
@@ -140,6 +142,7 @@ impl  ConnectionStream {
     }
 
 
+    #[inline(always)]
     async fn handle_h1_connections
     <Holder:Send + 'static,
         const HS:usize,
@@ -172,9 +175,7 @@ impl  ConnectionStream {
                         info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
                     }
 
-                    if buf_bytes.is_empty() {
-                        break;
-                    }
+                    if buf_bytes.is_empty() { break; }
 
                     #[cfg(feature = "count_connection_parsing_speed")]
                     let t1 = std::time::SystemTime::now();
@@ -233,15 +234,15 @@ impl  ConnectionStream {
                                          end.duration_since(t1)
                                         );
                                     }
-                                    if context.method() == "GET" {
-                                        if total_request_size >= buf_bytes.len() {
-                                            reading_buffer.clear();
-                                            break;
-                                        } else {
-                                            reading_buffer.advance(total_request_size);
-                                            continue;
-                                        }
-                                    }
+                                    // if context.method() == "GET" {
+                                    //     if total_request_size >= buf_bytes.len() {
+                                    //         reading_buffer.clear();
+                                    //         break;
+                                    //     } else {
+                                    //         reading_buffer.advance(total_request_size);
+                                    //         continue;
+                                    //     }
+                                    // }
                                     let content_length = context.content_length().copied();
 
                                     match content_length {
@@ -341,24 +342,29 @@ pub (crate) async fn handle_responding<'e,Stream:AsyncWrite+Unpin>(response_buf:
     Ok(())
 }
 //
-// #[inline]
-// pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
-//     let rem = buffer.capacity() - buffer.len() ;
-//     if READING_BUF_LEN < rem {
-//         buffer.reserve(rem);
-//     } else if rem < 1024 {
-//         buffer.reserve(READING_BUF_LEN - rem);
+#[inline(always)]
+pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
+    let rem = buffer.capacity() - buffer.len() ;
+    if READING_BUF_LEN < rem {
+        buffer.reserve(rem);
+    }
+}
+
+// #[inline(always)]
+// pub(crate) fn reserve_buf(buffer: &mut BytesMut) {
+//     const MIN_RESERVE: usize = 1024;
+//     let remaining = buffer.capacity() - buffer.len();
+//     if remaining < MIN_RESERVE {
+//         buffer.reserve(READING_BUF_LEN);
 //     }
 // }
 
-#[inline(always)]
-pub(crate) fn reserve_buf(buffer: &mut BytesMut) {
-    const MIN_RESERVE: usize = 1024;
-    let remaining = buffer.capacity() - buffer.len();
-    if remaining < MIN_RESERVE {
-        buffer.reserve(READING_BUF_LEN);
-    }
-}
+// #[inline(always)]
+// pub(crate) fn reserve_buf(buffer: &mut BytesMut) {
+//     if buffer.remaining_mut() < 1024 {
+//         buffer.reserve(1024);
+//     }
+// }
 #[derive(Debug)]
 pub (crate) struct BodyReadingBuffer {
     buffer:BytesMut,
@@ -386,6 +392,7 @@ impl BodyReadingBuffer {
         self.buffer.is_empty()
     }
 
+    #[inline(always)]
     pub (crate) fn with_capacity(len:usize)->Self{
         Self {
             buffer:BytesMut::with_capacity(len),
@@ -393,17 +400,21 @@ impl BodyReadingBuffer {
             advanced_bytes:0,
         }
     }
+
+
+    #[inline(always)]
     pub (crate) fn clear(&mut self){
         self.buffer.clear();
     }
 
+    #[inline(always)]
     pub (crate) fn reset(&mut self){
         self.bytes_consumed = 0;
         self.advanced_bytes = 0;
         self.clear();
     }
 
-
+    #[inline(always)]
     pub (crate) fn extend_from_slice(&mut self,slice:&[u8]) {
         self.buffer.extend_from_slice(slice);
     }
@@ -415,6 +426,7 @@ impl BodyReadingBuffer {
     //     String::from_utf8_lossy(self.chunk())
     // }
 
+    #[inline(always)]
     pub (crate) async fn read_buf<Stream>(&mut self,stream:&mut Stream) ->  tokio::io::Result<usize>
     where Stream:AsyncRead + Unpin {
         let res =  stream.read_buf(&mut self.buffer).await;
@@ -433,6 +445,7 @@ impl BodyReadingBuffer {
 
 
 impl AsRef<[u8]> for  BodyReadingBuffer {
+    #[inline(always)]
     fn as_ref(&self) -> &[u8] {
         self.buffer.as_ref()
     }
@@ -441,6 +454,7 @@ impl AsRef<[u8]> for  BodyReadingBuffer {
 impl Deref for  BodyReadingBuffer {
     type Target = [u8];
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.as_ref()
     }
@@ -448,13 +462,19 @@ impl Deref for  BodyReadingBuffer {
 
 
 impl Buf for BodyReadingBuffer {
+    #[inline(always)]
+
     fn remaining(&self) -> usize {
         self.buffer.remaining()
     }
 
+    #[inline(always)]
+
     fn chunk(&self) -> &[u8] {
         self.buffer.chunk()
     }
+
+    #[inline(always)]
 
     fn advance(&mut self, cnt: usize) {
         self.advanced_bytes +=cnt;

@@ -1250,8 +1250,6 @@ dependencies = [
 [[package]]
 name = "water_http_utils"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c9a5ebc3987584df57751db7a3b16e17f8ceca3f35c99169a3eb0565a777a6f"
 dependencies = [
  "chrono",
  "serde",

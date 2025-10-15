@@ -193,7 +193,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
 
 
 
-
+#[inline(always)]
 async fn serve_connection<Holder:Send + 'static + std::fmt::Debug,
     const HS:usize,const QS:usize,>
 (connection:ConnectionStream,
