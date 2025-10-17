@@ -384,6 +384,23 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         }
     }
 
+    // pub(crate)  fn h1_response_buffer(&mut self,)->Result<&mut BytesMut,()>{
+    //     match &mut self.protocol {
+    //         Protocol::Http2(_) => {Err(())}
+    //         Protocol::Http1(h1) => {
+    //             Ok(h1.response_buffer)
+    //         }
+    //     }
+    // }
+    //
+    // pub(crate)  fn h1_stream(&mut self,)->Result<&mut HttpStream,()>{
+    //     match &mut self.protocol {
+    //         Protocol::Http2(_) => {Err(())}
+    //         Protocol::Http1(h1) => {
+    //             Ok(h1.stream)
+    //         }
+    //     }
+    // }
 
     /// for sending [`&str`] values to the client
     pub async fn send_str(&mut self,value:&'static str)->Result<(),()>{
