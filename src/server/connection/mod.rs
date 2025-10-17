@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::ops::Deref;
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 #[cfg(feature = "support_tls")]
