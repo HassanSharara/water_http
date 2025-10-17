@@ -50,6 +50,17 @@ impl  ConnectionStream {
                     debug!("{:?} connected by tls layer",self.address);
                 }
                 if let Some(alpn_preface) = stream.get_ref().1.alpn_protocol() {
+
+                    #[cfg(feature = "use_only_http1")]
+                    {
+                        Self::handle_h1_connections(
+                            &mut HttpStream::AsyncSecure(stream)
+                            ,&self.address,
+                            controller
+                        ).await;
+                        return
+                    }
+
                     if alpn_preface == b"h2" {
                         let handshake
                         = h2::server::handshake(stream).await;
@@ -89,6 +100,13 @@ impl  ConnectionStream {
                 }
             }
             WaterStream::TOStream(stream) => {
+
+                #[cfg(feature = "use_only_http1")]
+                {
+                    Self::handle_h1_connections(
+                        &mut HttpStream::Async(stream),&self.address,controller).await;
+                    return
+                }
                 #[cfg(feature = "debugging")]
                 {
                     debug!("{:?} connected without secure layer (tls)",self.address);

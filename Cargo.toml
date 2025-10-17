@@ -45,6 +45,7 @@ debugging = ["tracing","tracing-subscriber"]
 count_connection_parsing_speed = ["tracing","tracing-subscriber"]
 write_logs = ["water_http_utils/write_logs"]
 support_tls = ["rustls","rustls-pemfile","tokio-rustls"]
+use_only_http1 = []
 
 [dev-dependencies]
 askama = "0.14.0"

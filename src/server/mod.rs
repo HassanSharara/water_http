@@ -141,7 +141,7 @@ async fn run_server_with_address_in_thread<Holder: Send + 'static + std::fmt::De
     #[cfg(feature = "debugging")]
     use std::sync::atomic::{AtomicUsize, Ordering};
     #[cfg(feature = "debugging")]
-        let connections_count = std::sync::Arc::new(AtomicUsize::new(0));
+        let connections_count = Arc::new(AtomicUsize::new(0));
 
     // create a LocalSet for this thread and run it
     let local = LocalSet::new();
