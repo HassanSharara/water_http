@@ -51,46 +51,41 @@ impl  ConnectionStream {
                 }
                 if let Some(alpn_preface) = stream.get_ref().1.alpn_protocol() {
 
-                    #[cfg(feature = "use_only_http1")]
+                    #[cfg(not(feature = "use_only_http1"))]
                     {
-                        Self::handle_h1_connections(
-                            &mut HttpStream::AsyncSecure(stream)
-                            ,&self.address,
-                            controller
-                        ).await;
-                        return
+                        if alpn_preface == b"h2" {
+                            let handshake
+                                = h2::server::handshake(stream).await;
+                            if let Ok(mut connection) = handshake {
+                                let mut reading_buffer =
+                                    BodyReadingBuffer::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER);
+                                while let Some(
+                                    Ok(batch))
+                                    = connection.accept().await {
+                                    let mut context:HttpContext<Holder,HS,QS> =
+                                        HttpContext::new(
+                                            Protocol::<'_,HS, QS>::from_http2_context(
+                                                Http2Context
+                                                    ::<'_>
+                                                ::new(batch, &mut reading_buffer)
+                                            ),
+                                            &self.address
+                                        );
+                                    match  context.serve(controller).await {
+                                        ServingRequestResults::Stop => {
+                                            return;
+                                        }
+                                        ServingRequestResults::Done => {
+                                            continue;
+                                        }
+                                    };
+                                }
+                            }
+                            return;
+                        }
                     }
 
-                    if alpn_preface == b"h2" {
-                        let handshake
-                        = h2::server::handshake(stream).await;
-                        if let Ok(mut connection) = handshake {
-                            let mut reading_buffer =
-                            BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
-                            while let Some(
-                                Ok(batch))
-                                = connection.accept().await {
-                                  let mut context:HttpContext<Holder,HS,QS> =
-                                  HttpContext::new(
-                                      Protocol::<'_,HS, QS>::from_http2_context(
-                                          Http2Context
-                                          ::<'_>
-                                          ::new(batch, &mut reading_buffer)
-                                      ),
-                                      &self.address
-                                  );
-                                match  context.serve(controller).await {
-                                    ServingRequestResults::Stop => {
-                                        return;
-                                    }
-                                    ServingRequestResults::Done => {
-                                        continue;
-                                    }
-                                };
-                                 }
-                        }
-                        return;
-                    }
+
                     Self::handle_h1_connections(
                         &mut HttpStream::AsyncSecure(stream)
                         ,&self.address,
@@ -100,50 +95,49 @@ impl  ConnectionStream {
                 }
             }
             WaterStream::TOStream(stream) => {
-
-                #[cfg(feature = "use_only_http1")]
-                {
-                    Self::handle_h1_connections(
-                        &mut HttpStream::Async(stream),&self.address,controller).await;
-                    return
-                }
                 #[cfg(feature = "debugging")]
                 {
                     debug!("{:?} connected without secure layer (tls)",self.address);
                 }
-                let mut preface :[u8;3]=[0;3];
-                _=stream.peek(&mut preface).await;
-                if preface == *b"PRI" {
-                    #[cfg(feature = "debugging")]
-                    {
-                        debug!("{:?} connection is using http2 protocol",self.address);
-                    }
-                    if let Ok(mut connection) =  h2::server::handshake(stream).await {
-                        while let Some(Ok(batch)) = connection.accept().await {
-                            let mut reading_buffer =
-                                BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
-                            let mut context =
-                                HttpContext::new(
-                                    Protocol::<'_,HS, QS>::from_http2_context(
-                                        Http2Context
-                                        ::<>
-                                        ::new(
-                                             batch,
-                                            &mut reading_buffer
-                                        )
-                                    ),
-                                    &self.address
-                                );
-                            match  context.serve(controller).await {
-                                ServingRequestResults::Stop => {return;}
-                                ServingRequestResults::Done => {
-                                    continue;
-                                }
-                            };
+
+                #[cfg(not(feature = "use_only_http1"))]
+                {
+                    let mut preface :[u8;3]=[0;3];
+                    _=stream.peek(&mut preface).await;
+                    if preface == *b"PRI" {
+                        #[cfg(feature = "debugging")]
+                        {
+                            debug!("{:?} connection is using http2 protocol",self.address);
                         }
+                        if let Ok(mut connection) =  h2::server::handshake(stream).await {
+                            while let Some(Ok(batch)) = connection.accept().await {
+                                let mut reading_buffer =
+                                    BodyReadingBuffer::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER);
+                                let mut context =
+                                    HttpContext::new(
+                                        Protocol::<'_,HS, QS>::from_http2_context(
+                                            Http2Context
+                                                ::<>
+                                            ::new(
+                                                batch,
+                                                &mut reading_buffer
+                                            )
+                                        ),
+                                        &self.address
+                                    );
+                                match  context.serve(controller).await {
+                                    ServingRequestResults::Stop => {return;}
+                                    ServingRequestResults::Done => {
+                                        continue;
+                                    }
+                                };
+                            }
+                        }
+                        return;
                     }
-                    return;
                 }
+
+
                 #[cfg(feature = "debugging")]
                 {
                     debug!("{:?} connection is using http1 protocol",self.address);
