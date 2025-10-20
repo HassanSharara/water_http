@@ -34,6 +34,8 @@ pub  trait HttpSenderTrait {
     /// for setting header key value to response holder
 
    fn set_header<K:Display, V:Display>(&mut self,key:K,value:V);
+    /// for setting header with the highest efficiency
+   fn set_header_ef<'h,K:Into<HeaderBytes<'h>>, V:Into<HeaderBytes<'h>>>(&mut self,key:K,value:V);
 
     fn send_json<JSON:Serialize>(&mut self,value:&JSON)->
     impl Future<Output=serde_json::Result<()>>;
@@ -179,6 +181,24 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         } else {
             self.send_status_code(StatusCode::OK);
             self.set_header(key,value);
+        }
+    }
+
+    fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
+        let is_status_written = self.response_builder.is_some();
+        if !is_status_written {return;}
+        let res = self.response_builder.as_mut();
+        if let Some(res) = res {
+            if let Some(headers ) = res.headers_mut() {
+                headers.insert(HeaderName::from_bytes(
+                    key.into().as_bytes()
+                ).unwrap(),HeaderValue::from_bytes(
+                    value.into().as_bytes()
+                ).unwrap());
+            }
+        } else {
+            self.send_status_code(StatusCode::OK);
+            self.set_header_ef(key,value);
         }
     }
 
@@ -372,6 +392,17 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
         }
     }
 
+     fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
+            match self {
+                HttpSender::H1(h1) => {
+                    h1.set_header_ef(key,value)
+                }
+                HttpSender::H2(h2) => {
+                    h2.set_header_ef(key,value)
+                }
+            }
+     }
+
      async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
          match self {
              HttpSender::H1(h1) => {h1.send_json(value).await}
@@ -506,6 +537,16 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     fn set_header<K:Display, V:Display>(&mut self, key: K, value: V) {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         self.context.response_buffer.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
+    }
+
+    fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
+        if !self.is_status_written { self.send_status_code(StatusCode::OK);}
+        let key_bytes = key.into();
+        let value_bytes = value.into();
+        self.context.response_buffer.extend_from_slice(key_bytes.as_bytes());
+        self.context.response_buffer.extend_from_slice(b": ");
+        self.context.response_buffer.extend_from_slice(value_bytes.as_bytes());
+        self.context.response_buffer.extend_from_slice(b"\r\n");
     }
 
     async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()> {
@@ -660,6 +701,41 @@ impl SendingFileResults {
         false
     }
 }
+
+
+pub enum HeaderBytes<'a> {
+    Str(&'static str),
+    Slice(&'a [u8]),
+    String(String)
+}
+
+impl<'a> HeaderBytes<'a> {
+    pub fn as_bytes(&self)->&'_ [u8] {
+        match self {
+            HeaderBytes::Str(s) => {s.as_bytes()}
+            HeaderBytes::Slice(s) => {s}
+            HeaderBytes::String(s) => {(*s).as_bytes()}
+        }
+    }
+}
+
+impl<'a> Into<HeaderBytes<'a>> for &'a [u8] {
+    fn into(self) -> HeaderBytes<'a> {
+        HeaderBytes::Slice(self)
+    }
+}
+impl<'a> Into<HeaderBytes<'a>> for  String {
+    fn into(self) -> HeaderBytes<'a> {
+        HeaderBytes::String(self)
+    }
+}
+impl Into<HeaderBytes<'_>> for &'static str {
+    fn into(self) -> HeaderBytes<'static> {
+        HeaderBytes::Str(self)
+    }
+
+}
+
 
 
 
