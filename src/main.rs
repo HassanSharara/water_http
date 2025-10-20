@@ -68,7 +68,11 @@ WaterController! {
 
           // in this case path is "/" while method is GET
         "/" hello_world(context){
-            _=context.send_str("hello world").await;
+
+            let mut sender = context.sender();
+            sender.set_header("Date",chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S GMT"));
+            sender.set_header("Content-Type","text/plain;");
+            _= sender.send_str("Hello World").await;
         }
 
         POST -> upload -> upload(context) [super::upload_file]

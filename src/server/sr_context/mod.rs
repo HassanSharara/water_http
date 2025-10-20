@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -372,6 +373,13 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             }
         }
     }
+
+    pub (crate) fn total_h1_request_headers_size(&self)->usize{
+        match &self.protocol {
+            Protocol::Http2(_) => {panic!("not supported in http2")}
+            Protocol::Http1(h1) => {h1.request.get_total_headers_length()}
+        }
+    }
     /// getting sender for sending all types of data to client
     pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         return match &mut self.protocol {
@@ -610,6 +618,20 @@ pub (crate)enum HttpStream {
     Async(TcpStream),
 }
 
+impl HttpStream {
+
+    pub (crate) async fn readable(&self)->io::Result<()>{
+        match &self {
+            #[cfg(feature = "support_tls")]
+            HttpStream::AsyncSecure(s) => {
+                s.get_ref().0.readable().await
+            }
+            HttpStream::Async(s) => {
+                s.readable().await
+            }
+        }
+    }
+}
 impl AsyncWrite for HttpStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
         match self.get_mut() {

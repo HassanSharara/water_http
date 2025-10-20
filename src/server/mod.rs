@@ -243,11 +243,14 @@ pub  use sr_context::*;
 pub mod errors;
 mod capsule;
 mod encoding;
+mod io;
+
+pub(crate) use io::*;
 pub use encoding::*;
 
 pub use capsule::*;
 
-use std::io;
+use std::io as stdio;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
@@ -310,7 +313,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
     (address,port):&(String,u16),
     controller:&'static  CapsuleWaterController<Holder,HS,QS>
 
-)->io::Result<()>{
+)->stdio::Result<()>{
     // defining configuration object
     let server_config = get_server_config();
 

@@ -55,10 +55,12 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
 {
 
     /// getting total headers length
+    #[inline(always)]
     pub  fn get_total_headers_length(&self)->usize{
         self.http_request.headers().headers_length
         + self.http_request.first_line().first_line_length
     }
+
 
     /// first line
     pub fn first_line(&self)->&HttpFirstLine<'a>{

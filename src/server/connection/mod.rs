@@ -10,7 +10,7 @@ use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
-use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, HttpStream, READING_BUF_LEN, WRITING_BUF_LEN};
+use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, HttpStream, READING_BUF_LEN, WaterTcpStream, WRITING_BUF_LEN};
 use crate::server::sr_context::{Http1Context, Http2Context, HttpContext, Protocol, ServingRequestResults};
 
 
@@ -165,6 +165,8 @@ impl  ConnectionStream {
      controller:&'static  CapsuleWaterController<Holder,HS,QS>
 
     ){
+        let s = WaterTcpStream::serve(stream,peer,controller).await;
+        return;
         let mut each_request_body_reading_buffer =
             BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
         let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
