@@ -495,9 +495,9 @@ dependencies = [
 
 [[package]]
 name = "itoa"
-version = "1.0.11"
+version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
+checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
 name = "jobserver"
@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "3.0.6-beta.5"
+version = "3.0.6-beta.7"
 dependencies = [
  "askama",
  "brotli",
@@ -1246,6 +1246,7 @@ dependencies = [
  "h2",
  "http",
  "httparse",
+ "itoa",
  "lz4",
  "pin-project",
  "rustls",

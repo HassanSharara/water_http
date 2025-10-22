@@ -15,71 +15,116 @@ pub struct WaterTcpStream<'a,'b> {
     write_buf: &'a mut BytesMut,
     body_reading_buffer: &'a mut BodyReadingBuffer,
     peer:&'a SocketAddr,
+    system_calls_counter:&'a mut usize,
 }
 
 
 #[derive(Debug)]
-pub enum PollResults {
+pub enum PollReadResults {
     ReadSuccess(usize),
     ReadErr,
-    WriteSuccess(usize),
-    WriteErr,
 }
 
 impl<'a,'b> WaterTcpStream<'a,'b> {
+
     #[inline(always)]
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollResults> {
-        // get mutable access to the pinned `self` without creating multiple &mut borrows
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollWriteResults> {
         let this = unsafe { self.get_unchecked_mut() };
-        // raw pointer to the `HttpStream` field to avoid simultaneous &mut borrows of `this`
+        *this.system_calls_counter +=1;
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
 
-        // perform variant dispatch and calls inside an unsafe block using the raw pointer
         unsafe {
             match &mut *stream_ptr {
                 #[cfg(feature = "support_tls")]
                 HttpStream::AsyncSecure(stream) => {
                     match stream.poll_write(cx, this.write_buf) {
-                        Poll::Ready(r) => match r {
-                            Ok(n) => {
-                                if n >= this.write_buf.len() {
-                                    this.write_buf.clear();
-                                } else {
-                                    this.write_buf.advance(n);
-                                }
-                                return Poll::Ready(PollResults::WriteSuccess(n));
+                        Poll::Ready(Ok(n)) => {
+                            this.write_buf.advance(n);
+                            if this.write_buf.is_empty() {
+                                this.write_buf.clear();
                             }
-                            Err(_) => {}
-                        },
-                        Poll::Pending => {}
+                            Poll::Ready(PollWriteResults::WriteSuccess(n))
+                        }
+                        Poll::Ready(Err(_)) => Poll::Ready(PollWriteResults::WriteErr),
+                        Poll::Pending => Poll::Pending,
                     }
                 }
                 HttpStream::Async(stream) => {
-                    match Pin::new_unchecked(stream).poll_write(cx, &mut this.write_buf) {
-                        Poll::Ready(r) => match r {
-                            Ok(n) => {
-                                if n >= this.write_buf.len() {
-                                    this.write_buf.clear();
-                                } else {
-                                    this.write_buf.advance(n);
-                                }
-                                return Poll::Ready(PollResults::WriteSuccess(n));
+                    match Pin::new_unchecked(stream).poll_write(cx, &this.write_buf) {
+                        Poll::Ready(Ok(n)) => {
+                            if n >= this.write_buf.len() {
+                                this.write_buf.clear();
                             }
-                            Err(_) => {}
-                        },
-                        _ => {}
+                            else {
+                                this.write_buf.advance(n);
+                            }
+
+
+                            Poll::Ready(PollWriteResults::WriteSuccess(n))
+                        }
+                        Poll::Ready(Err(_)) => Poll::Ready(PollWriteResults::WriteErr),
+                        Poll::Pending => Poll::Pending,
                     }
-                    return Poll::Pending;
                 }
             }
         }
-
-        Poll::Pending
     }
+
+
+    // #[inline(always)]
+    // fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollResults> {
+    //     // get mutable access to the pinned `self` without creating multiple &mut borrows
+    //     let this = unsafe { self.get_unchecked_mut() };
+    //     // raw pointer to the `HttpStream` field to avoid simultaneous &mut borrows of `this`
+    //     let stream_ptr: *mut HttpStream = this.stream as *mut _;
+    //
+    //     // perform variant dispatch and calls inside an unsafe block using the raw pointer
+    //     unsafe {
+    //         match &mut *stream_ptr {
+    //             #[cfg(feature = "support_tls")]
+    //             HttpStream::AsyncSecure(stream) => {
+    //                 match stream.poll_write(cx, this.write_buf) {
+    //                     Poll::Ready(r) => match r {
+    //                         Ok(n) => {
+    //                             if n >= this.write_buf.len() {
+    //                                 this.write_buf.clear();
+    //                             } else {
+    //                                 this.write_buf.advance(n);
+    //                             }
+    //                             return Poll::Ready(PollResults::WriteSuccess(n));
+    //                         }
+    //                         Err(_) => {}
+    //                     },
+    //                     Poll::Pending => {}
+    //                 }
+    //             }
+    //             HttpStream::Async(stream) => {
+    //                 match Pin::new_unchecked(stream).poll_write(cx, &mut this.write_buf) {
+    //                     Poll::Ready(r) => match r {
+    //                         Ok(n) => {
+    //                             if n >= this.write_buf.len() {
+    //                                 this.write_buf.clear();
+    //                             } else {
+    //                                 this.write_buf.advance(n);
+    //                             }
+    //                             return Poll::Ready(PollResults::WriteSuccess(n));
+    //                         }
+    //                         Err(_) => {}
+    //                     },
+    //                     _ => {}
+    //                 }
+    //                 return Poll::Pending;
+    //             }
+    //         }
+    //     }
+    //
+    //     Poll::Pending
+    // }
     #[inline(always)]
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollResults> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollReadResults> {
         // obtain a mutable reference to the pinned `self`
         let this = unsafe { self.get_unchecked_mut() };
+        *this.system_calls_counter +=1;
         // raw pointer to the HttpStream field to avoid moving the field out
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
 
@@ -90,22 +135,26 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 HttpStream::AsyncSecure(s) => match Pin::new_unchecked(s).poll_read(cx, this.read_buf) {
                     Poll::Ready(Ok(_)) => {
                         let filled = unsafe {(&mut *this).read_buf.filled()};
-                        Poll::Ready(PollResults::ReadSuccess(filled.len()))
-                    },                    Poll::Ready(Err(_)) => Poll::Ready(PollResults::ReadErr),
+                        Poll::Ready(PollReadResults::ReadSuccess(filled.len()))
+                    },                    Poll::Ready(Err(_)) => Poll::Ready(PollReadResults::ReadErr),
                     Poll::Pending => Poll::Pending,
                 },
                 HttpStream::Async(s) => match Pin::new_unchecked(s).poll_read(cx, this.read_buf) {
                     Poll::Ready(Ok(_)) => {
                         let filled = unsafe {(&mut *this).read_buf.filled()};
-                        Poll::Ready(PollResults::ReadSuccess(filled.len()))
+                        #[cfg(feature = "debugging")]
+                        {
+                            println!("read {:?} ",String::from_utf8_lossy(filled));
+                        }
+                        Poll::Ready(PollReadResults::ReadSuccess(filled.len()))
                     },
-                    Poll::Ready(Err(_)) => Poll::Ready(PollResults::ReadErr),
+                    Poll::Ready(Err(_)) => Poll::Ready(PollReadResults::ReadErr),
                     Poll::Pending => Poll::Pending,
                 },
             }
         }}
     #[inline(always)]
-    fn poll_read_ready(mut self:Pin<&mut Self>,cx:&mut Context<'_>)->Poll<PollResults>{
+    fn poll_read_ready(mut self:Pin<&mut Self>,cx:&mut Context<'_>)->Poll<PollReadResults>{
         return match &mut self.stream {
             #[cfg(feature = "support_tls")]
             HttpStream::AsyncSecure(s) => {
@@ -131,7 +180,8 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                       read_buf:&'a mut ReadBuf<'b>,
                       write_buf:&'a mut BytesMut,
                       body_reading_buffer:&'a mut BodyReadingBuffer,
-                      peer:&'a SocketAddr
+                      peer:&'a SocketAddr,
+                      system_calls_counter:&'a mut usize,
     ) -> Self {
         Self {
             stream,
@@ -139,10 +189,136 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
             write_buf,
             body_reading_buffer,
             peer,
+            system_calls_counter
         }
     }
 
 
+
+    // pub async fn serve<Holder:Send + 'static, const HS:usize, const QS:usize>(
+    //     hs: &mut HttpStream,
+    //     peer: &SocketAddr,
+    //     controller: &'static CapsuleWaterController<Holder, HS, QS>
+    // ) {
+    //     let mut read_buf = BytesMut::with_capacity(READING_BUF_LEN);
+    //     let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
+    //     let mut body_buf = BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
+    //
+    //     const MIN_READ_SIZE: usize = 4096;
+    //
+    //     loop {
+    //         // Only reserve if actually needed
+    //         if read_buf.remaining_mut() < MIN_READ_SIZE {
+    //             reserve_buf(&mut read_buf);
+    //         }
+    //
+    //         // Read more data if buffer doesn't have a complete request
+    //         let needs_more = read_buf.len() < 16 || {
+    //             matches!(
+    //             IncomingRequest::<HS, QS>::new(&read_buf),
+    //             FormingRequestResult::ReadMore
+    //         )
+    //         };
+    //
+    //         if needs_more {
+    //             let uninit_slice = read_buf.chunk_mut();
+    //             let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
+    //                 std::slice::from_raw_parts_mut(
+    //                     uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
+    //                     uninit_slice.len()
+    //                 )
+    //             };
+    //
+    //             let mut rdr = ReadBuf::uninit(uninit_buf);
+    //
+    //             // INLINED: Direct read/write without Future wrapper
+    //             let result = std::future::poll_fn(|cx| {
+    //                 // Try read
+    //                 let before_len = rdr.filled().len();
+    //                 let read_result = match hs {
+    //                     #[cfg(feature = "support_tls")]
+    //                     HttpStream::AsyncSecure(s) => Pin::new(s).poll_read(cx, &mut rdr),
+    //                     HttpStream::Async(s) => Pin::new(s).poll_read(cx, &mut rdr),
+    //                 };
+    //
+    //                 match read_result {
+    //                     Poll::Ready(Ok(_)) => {
+    //                         let bytes_read = rdr.filled().len() - before_len;
+    //                         return Poll::Ready(Ok(bytes_read));
+    //                     }
+    //                     Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
+    //                     Poll::Pending => {}
+    //                 }
+    //
+    //                 // Read pending, try to flush writes
+    //                 if write_buf.len() > 0 {
+    //                     let write_result = match hs {
+    //                         #[cfg(feature = "support_tls")]
+    //                         HttpStream::AsyncSecure(s) => s.poll_write(cx, &write_buf),
+    //                         HttpStream::Async(s) => Pin::new(s).poll_write(cx, &write_buf),
+    //                     };
+    //
+    //                     if let Poll::Ready(Ok(n)) = write_result {
+    //                         write_buf.advance(n);
+    //                         if write_buf.is_empty() {
+    //                             write_buf.clear();
+    //                         }
+    //                     }
+    //                 }
+    //
+    //                 Poll::Pending
+    //             }).await;
+    //
+    //             match result {
+    //                 Ok(0) => return, // EOF
+    //                 Ok(n) => {
+    //                     unsafe { read_buf.advance_mut(n); }
+    //                 }
+    //                 Err(_) => return,
+    //             }
+    //         }
+    //
+    //         if read_buf.is_empty() {
+    //             continue;
+    //         }
+    //
+    //         // MAJOR OPTIMIZATION: Process ALL complete requests in buffer
+    //         loop {
+    //             let req = IncomingRequest::<HS, QS>::new(&read_buf);
+    //
+    //             match req {
+    //                 FormingRequestResult::ReadMore => break, // Need more data, go read
+    //                 FormingRequestResult::Err(_) => return,
+    //                 FormingRequestResult::Success(request) => {
+    //                     let total_req_size = request.get_total_headers_length();
+    //                     let left_bytes = &read_buf[total_req_size..];
+    //
+    //                     let mut context = HttpContext::<Holder, HS, QS>::new(
+    //                         Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+    //                         peer
+    //                     );
+    //
+    //                     match context.serve(controller).await {
+    //                         ServingRequestResults::Stop => return,
+    //                         ServingRequestResults::Done => {
+    //                             read_buf.advance(total_req_size);
+    //
+    //                             // Compact if buffer grew too large
+    //                             if read_buf.capacity() > READING_BUF_LEN * 2 &&
+    //                                 read_buf.len() < READING_BUF_LEN / 4 {
+    //                                 let remaining = read_buf.split().freeze();
+    //                                 read_buf.clear();
+    //                                 read_buf.put(remaining);
+    //                             }
+    //
+    //                             // Continue inner loop to process next request in buffer
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     pub async fn serve<Holder:Send + 'static, const HS:usize, const QS:usize>(
         hs: &mut HttpStream,
@@ -152,76 +328,155 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         let mut read_buf = BytesMut::with_capacity(READING_BUF_LEN);
         let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
         let mut body_buf = BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
-
+        let mut water_stream;
+        let mut system_calls_counter = 0usize;
         loop {
             // Only read if we need more data
-            if read_buf.len() < 16 || matches!(
-            IncomingRequest::<HS, QS>::new(&read_buf),
-            FormingRequestResult::ReadMore
-        ) {
-                // Ensure we have space to read into
-                reserve_buf(&mut read_buf);
+            // Ensure we have space to read into
+            reserve_buf(&mut read_buf);
 
-                // Convert UninitSlice to [MaybeUninit<u8>]
-                let uninit_slice = read_buf.chunk_mut();
-                let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
-                        uninit_slice.len()
-                    )
-                };
+            // Convert UninitSlice to [MaybeUninit<u8>]
+            let uninit_slice = read_buf.chunk_mut();
+            let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
+                std::slice::from_raw_parts_mut(
+                    uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
+                    uninit_slice.len()
+                )
+            };
 
-                let mut rdr = ReadBuf::uninit(uninit_buf);
+            let mut rdr = ReadBuf::uninit(uninit_buf);
 
-                let mut water_stream = WaterTcpStream::new(
-                    hs, &mut rdr, &mut write_buf, &mut body_buf, peer
-                );
 
-                let exec = WaterTcpReader { stream: &mut water_stream };
-                match exec.await {
-                    PollResults::ReadSuccess(_) => {
-                        let filled_len = rdr.filled().len();
-                        if filled_len > 0 {
-                            // Mark the bytes as initialized in BytesMut
-                            unsafe { read_buf.advance_mut(filled_len); }
+
+            water_stream = WaterTcpStream::new(
+                hs, &mut rdr,
+                &mut write_buf,
+                &mut body_buf,
+                peer,
+                &mut system_calls_counter
+            );
+
+            let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
+
+            unsafe {
+                let exec = WaterTcpReader { stream: &mut *stream_ptr }.await;
+                match exec {
+                    PollReadResults::ReadSuccess(u) => {
+                        if u > 0 {
+                            read_buf.advance_mut(u);
                         }
                     }
-                    PollResults::ReadErr => return,
-                    PollResults::WriteSuccess(_) => continue,
-                    PollResults::WriteErr => return,
-                    _ => continue,
+                    PollReadResults::ReadErr => break,
+                }
+
+                if read_buf.is_empty() {
+                    let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
+                    match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
+                        PollWriteResults::WriteSuccess(_) => {}
+                        PollWriteResults::WriteErr => {return;}
+                        PollWriteResults::Pending => {}
+                    };
                 }
             }
+            loop {
+                let req = IncomingRequest::<HS, QS>::new(&read_buf);
+                match req {
+                    FormingRequestResult::ReadMore => {
+                        break
+                    },
+                    FormingRequestResult::Err(_) => return,
+                    FormingRequestResult::Success(request) => {
+                        let total_req_size = request.get_total_headers_length();
+                        let left_bytes = &read_buf[total_req_size..];
 
-            if read_buf.is_empty() {
-                continue;
-            }
+                        let mut context = HttpContext::<Holder, HS, QS>::new(
+                            Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+                            peer
+                        );
 
-            let req = IncomingRequest::<HS, QS>::new(&read_buf);
-
-            match req {
-                FormingRequestResult::ReadMore => continue,
-                FormingRequestResult::Err(_) => return,
-                FormingRequestResult::Success(request) => {
-                    let total_req_size = request.get_total_headers_length();
-                    let left_bytes = &read_buf[total_req_size..];
-
-                    let mut context = HttpContext::<Holder, HS, QS>::new(
-                        Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
-                        peer
-                    );
-
-                    match context.serve(controller).await {
-                        ServingRequestResults::Stop => return,
-                        ServingRequestResults::Done => {
-                            read_buf.advance(total_req_size);
+                        match context.serve(controller).await {
+                            ServingRequestResults::Stop => return,
+                            ServingRequestResults::Done => {
+                                read_buf.advance(total_req_size);
+                            }
                         }
                     }
                 }
             }
         }
+
+        // println!("system calls counter {:?} for address {:?}",system_calls_counter,peer);
     }
 
+    // pub async fn serve<Holder:Send + 'static, const HS:usize, const QS:usize>(
+    //     hs: &mut HttpStream,
+    //     peer: &SocketAddr,
+    //     controller: &'static CapsuleWaterController<Holder, HS, QS>
+    // ) {
+    //     let mut read_buf = BytesMut::with_capacity(READING_BUF_LEN);
+    //     let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
+    //     let mut body_buf = BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
+    //     let mut water_stream;
+    //     let mut system_calls_counter = 0usize;
+    //     loop {
+    //         // Only read if we need more data
+    //         // Ensure we have space to read into
+    //         reserve_buf(&mut read_buf);
+    //
+    //         // Convert UninitSlice to [MaybeUninit<u8>]
+    //         let uninit_slice = read_buf.chunk_mut();
+    //         let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
+    //             std::slice::from_raw_parts_mut(
+    //                 uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
+    //                 uninit_slice.len()
+    //             )
+    //         };
+    //
+    //         let mut rdr = ReadBuf::uninit(uninit_buf);
+    //
+    //         water_stream = WaterTcpStream::new(
+    //             hs, &mut rdr, &mut write_buf, &mut body_buf, peer, &mut system_calls_counter
+    //         );
+    //
+    //         let exec = WaterTcpReader { stream: &mut water_stream };
+    //         match exec.await {
+    //             PollReadResults::ReadSuccess(u) => {
+    //                 if u > 0 {
+    //                     unsafe { read_buf.advance_mut(u); }
+    //                 }
+    //             }
+    //             PollReadResults::ReadErr => break,
+    //         }
+    //
+    //         if read_buf.is_empty() { continue; }
+    //         let req = IncomingRequest::<HS, QS>::new(&read_buf);
+    //
+    //         match req {
+    //             FormingRequestResult::ReadMore => {
+    //                 continue
+    //             },
+    //             FormingRequestResult::Err(_) => return,
+    //             FormingRequestResult::Success(request) => {
+    //                 let total_req_size = request.get_total_headers_length();
+    //                 let left_bytes = &read_buf[total_req_size..];
+    //
+    //                 let mut context = HttpContext::<Holder, HS, QS>::new(
+    //                     Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+    //                     peer
+    //                 );
+    //
+    //                 match context.serve(controller).await {
+    //                     ServingRequestResults::Stop => return,
+    //                     ServingRequestResults::Done => {
+    //                         read_buf.advance(total_req_size);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    //
+    //     println!("system calls counter {:?} for address {:?}",system_calls_counter,peer);
+    // }
 
 
 }
@@ -232,48 +487,73 @@ pub (crate) struct  WaterTcpReader<'a,'b>{
 }
 
 impl Future for WaterTcpReader<'_, '_> {
-    type Output = PollResults;
+    type Output = PollReadResults;
+
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // get mutable access to the pinned `self`
         let this = unsafe { self.get_unchecked_mut() };
-        // obtain a raw pointer to the inner `WaterTcpStream` (does not move the field)
         let stream_ptr: *mut WaterTcpStream<'_, '_> = this.stream as *mut _;
-        // create a Pin<&mut WaterTcpStream> from the raw pointer and call the inherent poll methods.
-        // Using `new_unchecked` is required because we pinned `WaterTcpStream` by contract outside.
-        let read_results = unsafe { Pin::new_unchecked(&mut *stream_ptr) }.poll_read(cx);
-        match read_results  {
-            Poll::Ready(r) => match r {
-                PollResults::ReadSuccess(n) => {
-                    if  n > 0 { return  Poll::Ready(PollResults::ReadSuccess(n)) }
-                },
-                PollResults::ReadErr => {return  Poll::Ready(PollResults::ReadErr)},
-                _ => unreachable!(),
-            },
-            _ => {
-                let write_length = (unsafe{&*stream_ptr}).write_buf.len();
-                let read_filled_len = unsafe { &*stream_ptr }.read_buf.filled().is_empty();
-                if  write_length > 0 && read_filled_len  {
-                    // println!("writing {:?}",(unsafe{&*stream_ptr}).write_buf.len());
-                    if let Poll::Ready(PollResults::WriteErr) =
-                        unsafe { Pin::new_unchecked(&mut *stream_ptr) }.poll_write(cx)
-                    {
-                        return Poll::Ready(PollResults::WriteErr);
-                    }
-                }
-            }
+
+        let mut_stream = unsafe {&mut *stream_ptr};
+        // Try read first
+        let read_results = unsafe { Pin::new_unchecked(mut_stream) }.poll_read(cx);
+        if let Poll::Ready(r) = read_results {
+            return match r {
+                PollReadResults::ReadSuccess(n) if n > 0 => Poll::Ready(PollReadResults::ReadSuccess(n)),
+                PollReadResults::ReadErr => Poll::Ready(PollReadResults::ReadErr),
+                _ => Poll::Pending,
+            };
         }
-
-
-        Poll::Pending
+        if (unsafe {&mut *stream_ptr}).read_buf.filled().is_empty() {
+           match unsafe {Pin::new_unchecked(&mut *stream_ptr)}.poll_write(cx) {
+               Poll::Ready(r) => {
+                   if let PollWriteResults::WriteErr = r {
+                       return Poll::Ready(PollReadResults::ReadErr)
+                   }
+               }
+               Poll::Pending => {}
+           }
+        }
+        return Poll::Pending
     }
 }
 
 
 
+pub (crate) struct  WaterTcpWriter<'a,'b>{
+    stream:&'a mut WaterTcpStream<'a,'b>,
+}
 
 
+pub enum PollWriteResults {
+    WriteSuccess(usize),
+    WriteErr,
+    Pending,
+}
 
+impl<'a,'b> Future for WaterTcpWriter<'a,'b> {
 
+    type Output = PollWriteResults;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let this = unsafe { self.get_unchecked_mut() };
+        let stream_ptr: *mut WaterTcpStream<'_, '_> = this.stream as *mut _;
+        match unsafe { Pin::new_unchecked(&mut *stream_ptr).poll_write(cx) } {
+            Poll::Ready(r)=> {
+               return match r {
+                   PollWriteResults::WriteSuccess(n) => {
+                         Poll::Ready(PollWriteResults::WriteSuccess(n))
+                    },
+                   PollWriteResults::WriteErr => {
+                         Poll::Ready(PollWriteResults::WriteErr)
+                    },
+                   _=> Poll::Pending
+                }
+            }
+            Poll::Pending=> {}
+        }
+        return  Poll::Pending
+     }
+}
 
 
 

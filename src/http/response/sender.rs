@@ -85,8 +85,8 @@ impl <'a,'b> Http2Sender<'a,'b>{
     fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr){
         match file_content_type {
             None => {
-                self.set_header("Content-Type","Application/octet-stream");
-                self.set_header("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
+                self.set_header_ef("Content-Type","Application/octet-stream");
+                self.set_header_ef("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
             }
             Some(content_type) => {
                 self.set_header("Content-Type",content_type);
@@ -189,11 +189,21 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         if !is_status_written {return;}
         let res = self.response_builder.as_mut();
         if let Some(res) = res {
+
+            let mut ito = itoa::Buffer::new();
+
+
+            let key =key.into();
+            let value =value.into();
             if let Some(headers ) = res.headers_mut() {
                 headers.insert(HeaderName::from_bytes(
-                    key.into().as_bytes()
+                   if let HeaderBytes::Usize(n) = key {
+                       ito.format(n).as_bytes()
+                    } else { key.as_bytes() }
                 ).unwrap(),HeaderValue::from_bytes(
-                    value.into().as_bytes()
+                    if let HeaderBytes::Usize(n) = value {
+                        ito.format(n).as_bytes()
+                    } else { value.as_bytes() }
                 ).unwrap());
             }
         } else {
@@ -203,7 +213,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
     }
 
     async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
-        self.set_header("content-type","application/json");
+        self.set_header_ef("content-type","application/json");
         return match serde_json::to_vec(&value) {
             Ok(data) => {
                 _=self.send_data_as_final_response(ResponseData::Slice(
@@ -519,7 +529,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
                     data
                 ).await;
                 if let Some(encoder )  = encoder {
-                    self.set_header("Content-Encoding",encoder.logic);
+                    self.set_header_ef("Content-Encoding",encoder.logic);
                     let data = encoder.data;
                     self.context.response_buffer.extend_from_slice(format!("Content-Length: {}\r\n\r\n",data.len()).as_bytes());
                     self.context.response_buffer.extend_from_slice(data.as_ref());
@@ -528,8 +538,10 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             }
 
         }
-
-        self.context.response_buffer.extend_from_slice(format!("Content-Length: {}\r\n\r\n",data.len()).as_bytes());
+        let mut buffer = itoa::Buffer::new();
+        self.context.response_buffer.extend_from_slice(b"content-length: ");
+        self.context.response_buffer.extend_from_slice(buffer.format(data.len()).as_bytes());
+        self.context.response_buffer.extend_from_slice(b"\r\n\r\n");
         self.context.response_buffer.extend_from_slice(data);
         Ok(())
     }
@@ -543,14 +555,25 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         let key_bytes = key.into();
         let value_bytes = value.into();
-        self.context.response_buffer.extend_from_slice(key_bytes.as_bytes());
+
+        if let HeaderBytes::Usize(u) = key_bytes {
+            let mut buffer = itoa::Buffer::new();
+            self.context.response_buffer.extend_from_slice(buffer.format(u).as_bytes());
+        } else {
+            self.context.response_buffer.extend_from_slice(key_bytes.as_bytes());
+        }
         self.context.response_buffer.extend_from_slice(b": ");
-        self.context.response_buffer.extend_from_slice(value_bytes.as_bytes());
+        if let HeaderBytes::Usize(v) = value_bytes {
+            let mut bb = itoa::Buffer::new();
+            self.context.response_buffer.extend_from_slice(bb.format(v).as_bytes());
+        } else {
+            self.context.response_buffer.extend_from_slice(value_bytes.as_bytes());
+        }
         self.context.response_buffer.extend_from_slice(b"\r\n");
     }
 
     async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()> {
-        self.set_header("content-type","application/json");
+        self.set_header_ef("content-type","application/json");
         match serde_json::to_vec(value) {
             Ok(data) => {
                 if self.send_data_as_final_response(ResponseData::Slice(data.as_ref())).await.is_ok() {
@@ -706,7 +729,8 @@ impl SendingFileResults {
 pub enum HeaderBytes<'a> {
     Str(&'static str),
     Slice(&'a [u8]),
-    String(String)
+    String(String),
+    Usize(usize),
 }
 
 impl<'a> HeaderBytes<'a> {
@@ -715,6 +739,7 @@ impl<'a> HeaderBytes<'a> {
             HeaderBytes::Str(s) => {s.as_bytes()}
             HeaderBytes::Slice(s) => {s}
             HeaderBytes::String(s) => {(*s).as_bytes()}
+            _ => {panic!("cannot convert usize to bytes directly")}
         }
     }
 }
@@ -724,11 +749,19 @@ impl<'a> Into<HeaderBytes<'a>> for &'a [u8] {
         HeaderBytes::Slice(self)
     }
 }
+
+impl <'a> Into<HeaderBytes<'a>> for usize {
+    fn into(self) -> HeaderBytes<'a> {
+        HeaderBytes::Usize(self)
+    }
+}
 impl<'a> Into<HeaderBytes<'a>> for  String {
     fn into(self) -> HeaderBytes<'a> {
         HeaderBytes::String(self)
     }
 }
+
+
 impl Into<HeaderBytes<'_>> for &'static str {
     fn into(self) -> HeaderBytes<'static> {
         HeaderBytes::Str(self)

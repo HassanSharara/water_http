@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "3.0.6-beta.6"
+version = "3.0.6-beta.7"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -39,6 +39,7 @@ water_http_utils = { version = "0.1.1", features = ["server"]}
 pin-project = "1.1.10"
 #path = "P:\\projects\\rust\\packages\\water_http_utils"
 chrono = "0.4.42"
+itoa = "1.0.15"
 
 
 
@@ -48,6 +49,7 @@ count_connection_parsing_speed = ["tracing","tracing-subscriber"]
 write_logs = ["water_http_utils/write_logs"]
 support_tls = ["rustls","rustls-pemfile","tokio-rustls"]
 use_only_http1 = []
+use_local_threads = []
 
 [dev-dependencies]
 askama = "0.14.0"

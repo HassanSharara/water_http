@@ -256,6 +256,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::Deref;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
+use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
@@ -284,28 +285,58 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
 
     let controller = unsafe {pointer.as_ref().unwrap()};
     let conf = get_server_config();
-    let mut workers = vec![];
-    #[cfg(feature = "debugging")]
-    let mut workers_count = 0_usize;
 
 
+    #[cfg(not(feature = "use_local_threads"))]
+    {
+        #[cfg(feature = "debugging")]
+            let mut workers_count = 0_usize;
 
 
-    for  address in conf.addresses.clone() {
-        workers.push(tokio::spawn(async move {
-            #[cfg(feature = "debugging")]
-            {
-                debug!("listening on ip: {} port: {}",address.0,address.1);
-                workers_count +=1;
-                debug!("count of running workers {workers_count}");
-            }
+        let mut workers = vec![];
 
-            let _ = run_server_with_address(&address,controller).await;
-        }));
+
+        for  address in conf.addresses.clone() {
+            workers.push(tokio::spawn(async move {
+                #[cfg(feature = "debugging")]
+                {
+                    debug!("listening on ip: {} port: {}",address.0,address.1);
+                    workers_count +=1;
+                    debug!("count of running workers {workers_count}");
+                }
+
+                let _ = crate::server::run_server_with_address(&address, controller).await;
+            }));
+        }
+        for worker in workers {
+            let _ = worker.await;
+        }
+        return;
     }
-    for worker in workers {
-        let _ = worker.await;
+    let mut os_threads = vec![];
+    for address in &conf.addresses {
+        let address = address.clone();
+        let controller = controller;
+        let threads = std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_io()
+                .enable_time()
+                .build()
+                .unwrap();
+
+            let local = LocalSet::new();
+
+            local.block_on(&rt, async move {
+                let _ = run_server_with_address(&address,controller).await;
+            });
+        });
+        os_threads.push(threads);
+
     }
+    for thread in os_threads {
+        let _ = thread.join();
+    }
+
 }
 
 
@@ -376,7 +407,62 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
             }
             #[cfg(feature = "support_tls")]
             let tls = tls_acceptor.clone();
-            tokio::spawn(async move {
+
+            #[cfg(not(feature = "use_local_threads"))]
+            {
+                tokio::spawn(async move {
+                    // checking if the current port should be handled
+                    // with tls configurations if it`s exist
+                    #[cfg(feature = "support_tls")]
+                    {
+                        if is_port_should_be_securely_handled {
+                            let tls = tls.unwrap();
+                            let tls_stream = tls.accept(stream).await;
+                            if let Ok(tls_stream) = tls_stream {
+                                let connection =  ConnectionStream::new(
+                                    WaterStream::TLS(tls_stream),
+                                    socket_address
+                                );
+                                crate::server::serve_connection(connection, controller).await;
+                            }
+                            #[cfg(feature = "debugging")]
+                            {
+                                let mut con = connections_count.lock().await;
+                                debug!("last connections count where port is not secure {:?}",con.deref());
+                                let m = con.deref_mut();
+                                if *m == 1 {
+                                    *m = 0;
+                                } else {
+                                    *m -=1;
+                                }
+
+                            }
+                            return ;
+                        }
+                    }
+
+                    // handling connection normally
+                    let connection
+                        = ConnectionStream::new(WaterStream::TOStream(stream),socket);
+                    crate::server::serve_connection(connection, controller).await;
+                    #[cfg(feature = "debugging")]
+                    {
+                        let mut con = connections_count.lock().await;
+                        debug!("last connections count {:?}",con.deref());
+                        let m = con.deref_mut();
+                        if *m == 1 {
+                            *m = 0;
+                        } else {
+                            *m -=1;
+                        }
+
+                    }
+                });
+
+                continue;
+            }
+
+            tokio::task::spawn_local(async move {
                 // checking if the current port should be handled
                 // with tls configurations if it`s exist
                 #[cfg(feature = "support_tls")]
@@ -389,7 +475,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                                 WaterStream::TLS(tls_stream),
                                 socket_address
                             );
-                            serve_connection(connection,controller).await;
+                            crate::server::serve_connection(connection, controller).await;
                         }
                         #[cfg(feature = "debugging")]
                         {
@@ -410,7 +496,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                 // handling connection normally
                 let connection
                     = ConnectionStream::new(WaterStream::TOStream(stream),socket);
-                serve_connection(connection,controller).await;
+                crate::server::serve_connection(connection, controller).await;
                 #[cfg(feature = "debugging")]
                 {
                     let mut con = connections_count.lock().await;
@@ -424,6 +510,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
 
                 }
             });
+
         }
     }
 }
