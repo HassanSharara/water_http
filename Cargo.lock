@@ -440,6 +440,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d71d3574edd2771538b901e6549113b4006ece66150fb69c0fb6d9a2adae946"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.63"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1234,18 +1240,18 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "3.0.6-beta.7"
+version = "3.0.6-beta.8"
 dependencies = [
  "askama",
  "brotli",
  "byteorder",
  "bytes",
  "bzip2",
- "chrono",
  "flate2",
  "h2",
  "http",
  "httparse",
+ "httpdate",
  "itoa",
  "lz4",
  "pin-project",

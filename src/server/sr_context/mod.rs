@@ -571,20 +571,20 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         let path = self.path();
         let f = controller.find_function(path.as_ref(),method.as_ref());
         if let Some((controller,func,map)) = f {
-            self.path_params_map = map;
-            let mut middlewares:Vec<&'static MiddlewareCallback<H,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
-
-            controller.push_all_ancestors_middlewares(&mut middlewares);
-            for m in middlewares {
-               match  m(self).await {
-                   MiddlewareResult::Pass => {
-                       continue;
-                   }
-                   MiddlewareResult::Stop => {
-                       return ServingRequestResults::Done
-                   }
-               }
-            }
+            // self.path_params_map = map;
+            // let mut middlewares:Vec<&'static MiddlewareCallback<H,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
+            //
+            // controller.push_all_ancestors_middlewares(&mut middlewares);
+            // for m in middlewares {
+            //    match  m(self).await {
+            //        MiddlewareResult::Pass => {
+            //            continue;
+            //        }
+            //        MiddlewareResult::Stop => {
+            //            return ServingRequestResults::Done
+            //        }
+            //    }
+            // }
             func(self).await;
         } else {
             let mut sender = self.sender();

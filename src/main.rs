@@ -70,7 +70,8 @@ WaterController! {
         "/" hello_world(context){
 
             let mut sender = context.sender();
-            sender.set_header_ef("Date",chrono::Utc::now().format("%a, %d %b %Y %H:%M:%S GMT").to_string());
+            let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+            sender.set_header_ef("Date",date);
             sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
             _= sender.send_str("Hello World").await;
         }

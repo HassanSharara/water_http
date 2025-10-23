@@ -418,7 +418,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                         if is_port_should_be_securely_handled {
                             let tls = tls.unwrap();
                             let tls_stream = tls.accept(stream).await;
-                            if let Ok(tls_stream) = tls_stream {
+                             if let Ok(tls_stream) = tls_stream {
                                 let connection =  ConnectionStream::new(
                                     WaterStream::TLS(tls_stream),
                                     socket_address

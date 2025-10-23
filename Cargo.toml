@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "3.0.6-beta.7"
+version = "3.0.6-beta.8"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -38,8 +38,9 @@ zstd = "0.13.2"
 water_http_utils = { version = "0.1.1", features = ["server"]}
 pin-project = "1.1.10"
 #path = "P:\\projects\\rust\\packages\\water_http_utils"
-chrono = "0.4.42"
+#chrono = "0.4.42"
 itoa = "1.0.15"
+httpdate = "1.0.3"
 
 
 
