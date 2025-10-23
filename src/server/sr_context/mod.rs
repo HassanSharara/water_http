@@ -567,7 +567,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                 let date = httpdate::fmt_http_date(std::time::SystemTime::now());
                 sender.set_header_ef("Date",date);
                 sender.set_header_ef("Server","water");
-                sender.set_header_ef("Content-Type","application/json;");
+                sender.set_header_ef("Content-Type","application/json");
                 const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
                 _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
                 return ServingRequestResults::Done;
@@ -577,7 +577,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             sender.set_header_ef("Date",date);
             sender.set_header_ef("Server","water");
             sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
-            _= sender.send_str("Hello World").await;
+            _= sender.send_str("Hello, World!").await;
             return ServingRequestResults::Done;
         }
         let content_length = self.content_length().copied();
