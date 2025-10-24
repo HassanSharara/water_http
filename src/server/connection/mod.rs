@@ -165,183 +165,183 @@ impl  ConnectionStream {
      controller:&'static  CapsuleWaterController<Holder,HS,QS>
 
     ){
-        let s = WaterTcpStream::serve(stream,peer,controller).await;
-        return;
-        let mut each_request_body_reading_buffer =
-            BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
-        let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
-        let mut response_buffer = BytesMut::with_capacity(WRITING_BUF_LEN);
-       'main_loop: loop {
-           reserve_buf(&mut reading_buffer);
+        _= WaterTcpStream::serve(stream,peer,controller).await;
 
-           if let Ok(read_size)
-               = stream.read_buf(&mut reading_buffer).await
-               {
-                // when connection is closed
-                if read_size == 0 {
-                    return;
-                }
-
-
-                loop {
-                    let buf_bytes = reading_buffer.chunk();
-
-                    #[cfg(feature = "debugging")]
-                    {
-                        info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
-                    }
-
-                    if buf_bytes.is_empty() { break; }
-
-                    #[cfg(feature = "count_connection_parsing_speed")]
-                    let t1 = std::time::SystemTime::now();
-                    let request =
-                            IncomingRequest::<HS,QS>::new(buf_bytes);
-                    #[cfg(feature = "count_connection_parsing_speed")]
-                    {
-                        let t2 = std::time::SystemTime::now();
-                        let dif = t2.duration_since(t1);
-                        println!("request from {:?}  parsed in  {:?}",peer,dif);
-
-                    }
-
-                    match request {
-                        FormingRequestResult::Success(request) => {
-
-                            #[cfg(feature = "debugging")]
-                            {
-                                debug!("new request has been received ");
-                            }
-
-                            let total_request_size = request.get_total_headers_length();
-                            let left_bytes = &buf_bytes[total_request_size..];
-
-                            #[cfg(feature = "debugging")]
-                            debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
-                            let mut context =
-                            HttpContext::new(
-                                Protocol::from_http1_context(
-                                    Http1Context::new(
-                                        stream,
-                                        &mut response_buffer,
-                                        &mut each_request_body_reading_buffer,
-                                        left_bytes,
-                                        request
-                                    )
-                                ),
-                                peer
-                            );
-
-                            #[cfg( feature = "count_connection_parsing_speed")]
-                            let t1 = std::time::SystemTime::now();
-
-
-                            _= match  context.serve(controller).await {
-
-                                ServingRequestResults::Stop => {return;}
-
-                                ServingRequestResults::Done => {
-
-                                    #[cfg( feature = "count_connection_parsing_speed")]
-                                    {
-                                        let end = std::time::SystemTime::now();
-                                        println!("request from {:?}  served in {:?}",
-                                          peer,
-                                         end.duration_since(t1)
-                                        );
-                                    }
-                                    // if context.method() == "GET" {
-                                    //     if total_request_size >= buf_bytes.len() {
-                                    //         reading_buffer.clear();
-                                    //         break;
-                                    //     } else {
-                                    //         reading_buffer.advance(total_request_size);
-                                    //         continue;
-                                    //     }
-                                    // }
-                                    let content_length = context.content_length().copied();
-
-                                    match content_length {
-                                        None => {
-                                            let br = total_request_size >= buf_bytes.len();
-                                            if br { reading_buffer.clear(); break ;}
-                                            else {
-                                                if let Some(h) = context.get_from_headers("Transfer-Encoding"){
-                                                    if h == "chunked" {
-                                                        drop(h);
-                                                        reading_buffer.clear();
-                                                        continue;
-                                                    }
-                                                }
-                                                reading_buffer.advance(total_request_size);
-                                            }
-
-                                        }
-                                        Some(content_length) => {
-                                            reading_buffer.advance(total_request_size);
-                                            let mut rem = content_length;
-                                            if each_request_body_reading_buffer.bytes_consumed > 0 {
-                                                rem -= reading_buffer.len().min(rem);
-                                                reading_buffer.clear();
-                                                rem -= each_request_body_reading_buffer.bytes_consumed.min(rem);
-                                                if !each_request_body_reading_buffer.is_empty() {
-                                                    reading_buffer.extend_from_slice(each_request_body_reading_buffer.chunk());
-                                                }
-                                                each_request_body_reading_buffer.reset();
-                                            }
-
-                                            while rem > 0  {
-                                                if reading_buffer.is_empty() {
-                                                    if stream.read_buf(&mut reading_buffer).await.is_err() {
-                                                        return;
-                                                    }
-                                                }
-                                                let to_advance = rem.min(reading_buffer.len());
-                                                reading_buffer.advance(to_advance);
-                                                rem -= to_advance;
-                                            }
-
-                                            if reading_buffer.is_empty() {break;}
-
-                                        }
-                                    }
-
-
-                                    continue;
-                                }
-                            };
-
-
-                        }
-                        FormingRequestResult::ReadMore => {
-                            // why I need to return if reading_buf less than 250
-                            // if reading_buffer.len() > 250 {
-                            //     return
-                            // }
-                            continue 'main_loop;
-                        }
-                        FormingRequestResult::Err(_) => {
-                            return;
-                        }
-                    }
-                }
-
-               if !response_buffer.is_empty() {
-                   if let Err(_) = handle_responding(&mut response_buffer,stream).await {
-                       return;
-                   }
-               }
-               continue 'main_loop;
-            }
-           else {
-               if !response_buffer.is_empty() {
-                   if let Err(_) = handle_responding(&mut response_buffer,stream).await {
-                       return;
-                   }
-               }
-               break;
-           }
-        }
+       //  let mut each_request_body_reading_buffer =
+       //      BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
+       //  let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
+       //  let mut response_buffer = BytesMut::with_capacity(WRITING_BUF_LEN);
+       // 'main_loop: loop {
+       //     reserve_buf(&mut reading_buffer);
+       //
+       //     if let Ok(read_size)
+       //         = stream.read_buf(&mut reading_buffer).await
+       //         {
+       //          // when connection is closed
+       //          if read_size == 0 {
+       //              return;
+       //          }
+       //
+       //
+       //          loop {
+       //              let buf_bytes = reading_buffer.chunk();
+       //
+       //              #[cfg(feature = "debugging")]
+       //              {
+       //                  info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
+       //              }
+       //
+       //              if buf_bytes.is_empty() { break; }
+       //
+       //              #[cfg(feature = "count_connection_parsing_speed")]
+       //              let t1 = std::time::SystemTime::now();
+       //              let request =
+       //                      IncomingRequest::<HS,QS>::new(buf_bytes);
+       //              #[cfg(feature = "count_connection_parsing_speed")]
+       //              {
+       //                  let t2 = std::time::SystemTime::now();
+       //                  let dif = t2.duration_since(t1);
+       //                  println!("request from {:?}  parsed in  {:?}",peer,dif);
+       //
+       //              }
+       //
+       //              match request {
+       //                  FormingRequestResult::Success(request) => {
+       //
+       //                      #[cfg(feature = "debugging")]
+       //                      {
+       //                          debug!("new request has been received ");
+       //                      }
+       //
+       //                      let total_request_size = request.get_total_headers_length();
+       //                      let left_bytes = &buf_bytes[total_request_size..];
+       //
+       //                      #[cfg(feature = "debugging")]
+       //                      debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
+       //                      let mut context =
+       //                      HttpContext::new(
+       //                          Protocol::from_http1_context(
+       //                              Http1Context::new(
+       //                                  stream,
+       //                                  &mut response_buffer,
+       //                                  &mut each_request_body_reading_buffer,
+       //                                  left_bytes,
+       //                                  request
+       //                              )
+       //                          ),
+       //                          peer
+       //                      );
+       //
+       //                      #[cfg( feature = "count_connection_parsing_speed")]
+       //                      let t1 = std::time::SystemTime::now();
+       //
+       //
+       //                      _= match  context.serve(controller).await {
+       //
+       //                          ServingRequestResults::Stop => {return;}
+       //
+       //                          ServingRequestResults::Done => {
+       //
+       //                              #[cfg( feature = "count_connection_parsing_speed")]
+       //                              {
+       //                                  let end = std::time::SystemTime::now();
+       //                                  println!("request from {:?}  served in {:?}",
+       //                                    peer,
+       //                                   end.duration_since(t1)
+       //                                  );
+       //                              }
+       //                              // if context.method() == "GET" {
+       //                              //     if total_request_size >= buf_bytes.len() {
+       //                              //         reading_buffer.clear();
+       //                              //         break;
+       //                              //     } else {
+       //                              //         reading_buffer.advance(total_request_size);
+       //                              //         continue;
+       //                              //     }
+       //                              // }
+       //                              let content_length = context.content_length().copied();
+       //
+       //                              match content_length {
+       //                                  None => {
+       //                                      let br = total_request_size >= buf_bytes.len();
+       //                                      if br { reading_buffer.clear(); break ;}
+       //                                      else {
+       //                                          if let Some(h) = context.get_from_headers("Transfer-Encoding"){
+       //                                              if h == "chunked" {
+       //                                                  drop(h);
+       //                                                  reading_buffer.clear();
+       //                                                  continue;
+       //                                              }
+       //                                          }
+       //                                          reading_buffer.advance(total_request_size);
+       //                                      }
+       //
+       //                                  }
+       //                                  Some(content_length) => {
+       //                                      reading_buffer.advance(total_request_size);
+       //                                      let mut rem = content_length;
+       //                                      if each_request_body_reading_buffer.bytes_consumed > 0 {
+       //                                          rem -= reading_buffer.len().min(rem);
+       //                                          reading_buffer.clear();
+       //                                          rem -= each_request_body_reading_buffer.bytes_consumed.min(rem);
+       //                                          if !each_request_body_reading_buffer.is_empty() {
+       //                                              reading_buffer.extend_from_slice(each_request_body_reading_buffer.chunk());
+       //                                          }
+       //                                          each_request_body_reading_buffer.reset();
+       //                                      }
+       //
+       //                                      while rem > 0  {
+       //                                          if reading_buffer.is_empty() {
+       //                                              if stream.read_buf(&mut reading_buffer).await.is_err() {
+       //                                                  return;
+       //                                              }
+       //                                          }
+       //                                          let to_advance = rem.min(reading_buffer.len());
+       //                                          reading_buffer.advance(to_advance);
+       //                                          rem -= to_advance;
+       //                                      }
+       //
+       //                                      if reading_buffer.is_empty() {break;}
+       //
+       //                                  }
+       //                              }
+       //
+       //
+       //                              continue;
+       //                          }
+       //                      };
+       //
+       //
+       //                  }
+       //                  FormingRequestResult::ReadMore => {
+       //                      // why I need to return if reading_buf less than 250
+       //                      // if reading_buffer.len() > 250 {
+       //                      //     return
+       //                      // }
+       //                      continue 'main_loop;
+       //                  }
+       //                  FormingRequestResult::Err(_) => {
+       //                      return;
+       //                  }
+       //              }
+       //          }
+       //
+       //         if !response_buffer.is_empty() {
+       //             if let Err(_) = handle_responding(&mut response_buffer,stream).await {
+       //                 return;
+       //             }
+       //         }
+       //         continue 'main_loop;
+       //      }
+       //     else {
+       //         if !response_buffer.is_empty() {
+       //             if let Err(_) = handle_responding(&mut response_buffer,stream).await {
+       //                 return;
+       //             }
+       //         }
+       //         break;
+       //     }
+       //  }
     }
 
 }

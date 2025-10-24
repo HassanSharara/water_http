@@ -319,7 +319,8 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
     //     }
     // }
 
-    pub async fn serve<Holder:Send + 'static, const HS:usize, const QS:usize>(
+    #[inline(always)]
+    pub (crate) async fn serve<Holder:Send + 'static, const HS:usize, const QS:usize>(
         hs: &mut HttpStream,
         peer: &SocketAddr,
         controller: &'static CapsuleWaterController<Holder, HS, QS>

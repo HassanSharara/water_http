@@ -94,6 +94,7 @@ type FFinderResult<H,const HEADER_SIZE:usize,const QUERY_SIZE:usize> =
          }
          None
      }
+     #[inline(always)]
      pub (crate) fn push_all_ancestors_middlewares(&'static self,vec:& mut Vec<&'static MiddlewareCallback<H,HEADER_SIZE,QUERY_SIZE>>){
          let mut oc = Some(self);
          loop {
