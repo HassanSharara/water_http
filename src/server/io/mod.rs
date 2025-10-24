@@ -27,6 +27,10 @@ pub enum PollReadResults {
 impl<'a,'b> WaterTcpStream<'a,'b> {
 
     #[inline(always)]
+    fn is_write_buf_empty(&self)->bool{
+        self.write_buf.is_empty()
+    }
+    #[inline(always)]
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollWriteResults> {
         let this = unsafe { self.get_unchecked_mut() };
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
@@ -369,8 +373,9 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 }
 
                 if read_buf.is_empty() {
-                    if !write_buf.is_empty() {
-                        let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
+                    let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
+
+                    if ! (&mut *stream_ptr).is_write_buf_empty() {
                         match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
                             PollWriteResults::WriteSuccess(_) => {}
                             PollWriteResults::WriteErr => {return;}
