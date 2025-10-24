@@ -520,7 +520,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
 
         let data = data.as_bytes();
 
-        if data.len() >= en_configurations.threshold_for_encoding_response &&  en_configurations.is_not_none() {
+        if en_configurations.is_not_none() && data.len() >= en_configurations.threshold_for_encoding_response  {
             let accept_encoding = self.context
                 .request.headers().get_as_str("Accept-Encoding");
             if let Some(accept_encoding ) = accept_encoding {
@@ -539,7 +539,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
 
         }
         let mut buffer = itoa::Buffer::new();
-        self.context.response_buffer.extend_from_slice(b"content-length: ");
+        self.context.response_buffer.extend_from_slice(b"Content-Length: ");
         self.context.response_buffer.extend_from_slice(buffer.format(data.len()).as_bytes());
         self.context.response_buffer.extend_from_slice(b"\r\n\r\n");
         self.context.response_buffer.extend_from_slice(data);
@@ -728,9 +728,11 @@ impl SendingFileResults {
 
 pub enum HeaderBytes<'a> {
     Str(&'static str),
+    StringSlice(&'a str),
     Slice(&'a [u8]),
     String(String),
     Usize(usize),
+    Vec(Vec<u8>),
 }
 
 impl<'a> HeaderBytes<'a> {
@@ -739,7 +741,10 @@ impl<'a> HeaderBytes<'a> {
             HeaderBytes::Str(s) => {s.as_bytes()}
             HeaderBytes::Slice(s) => {s}
             HeaderBytes::String(s) => {(*s).as_bytes()}
-            _ => {panic!("cannot convert usize to bytes directly")}
+
+            HeaderBytes::StringSlice(a) => {(*a).as_bytes()}
+            HeaderBytes::Vec(r) => {r.as_slice()}
+            _=>panic!("can not convert to bytes")
         }
     }
 }
@@ -753,6 +758,18 @@ impl<'a> Into<HeaderBytes<'a>> for &'a [u8] {
 impl <'a> Into<HeaderBytes<'a>> for usize {
     fn into(self) -> HeaderBytes<'a> {
         HeaderBytes::Usize(self)
+    }
+}
+impl  Into<HeaderBytes<'_>> for Vec<u8> {
+    fn into(self) -> HeaderBytes<'static> {
+        HeaderBytes::Vec(self)
+    }
+}
+
+
+impl<'a> Into<HeaderBytes<'a>> for &'a String {
+    fn into(self) -> HeaderBytes<'a> {
+        HeaderBytes::StringSlice(self)
     }
 }
 impl<'a> Into<HeaderBytes<'a>> for  String {
