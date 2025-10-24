@@ -420,6 +420,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
          }
      }
 
+     #[inline(always)]
      async fn send_str(&mut self, data: &'static str)->Result<(),()> {
         match self {
             HttpSender::H1(h1) => {
@@ -497,6 +498,7 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
 }
 impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait for
 Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
+    #[inline(always)]
     fn send_status_code(&mut self, http_status: StatusCode) {
         if self.is_status_written {return;}
         let buf = &mut self.context.response_buffer;

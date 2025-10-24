@@ -558,40 +558,43 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     ServingRequestResults
     {
 
-        {
-            let path = self.path();
+        // {
+        //     let path = self.path();
+        //
+        //
+        //     if path == "/json" {
+        //         let mut sender = self.sender();
+        //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+        //         sender.set_header_ef("Date",date);
+        //         sender.set_header_ef("Server","water");
+        //         sender.set_header_ef("Content-Type","application/json");
+        //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
+        //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
+        //         return ServingRequestResults::Done;
+        //     }
+        //     let mut sender = self.sender();
+        //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+        //     sender.set_header_ef("Date",date);
+        //     sender.set_header_ef("Server","water");
+        //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
+        //     _= sender.send_str("Hello, World!").await;
+        //     return ServingRequestResults::Done;
+        // }
 
-
-            if path == "/json" {
-                let mut sender = self.sender();
-                let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-                sender.set_header_ef("Date",date);
-                sender.set_header_ef("Server","water");
-                sender.set_header_ef("Content-Type","application/json");
-                const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
-                _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
-                return ServingRequestResults::Done;
-            }
-            let mut sender = self.sender();
-            let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-            sender.set_header_ef("Date",date);
-            sender.set_header_ef("Server","water");
-            sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
-            _= sender.send_str("Hello, World!").await;
-            return ServingRequestResults::Done;
-        }
-        let content_length = self.content_length().copied();
-        let method = self.method();
-        if let Some(content_length )  = content_length {
-            if (content_length > 0) && ["GET","HEAD","DELETE","TRACE"].contains(&method) {
+        let method ;
+        if self.content_length().is_some() {
+            method = self.method();
+            if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
                 let mut sender = self.sender();
                 sender.send_status_code(HttpStatusCode::BAD_REQUEST);
                 _=sender.write_custom_bytes(&[]).await;
                 return  ServingRequestResults::Stop;
             }
+        } else {
+            method = self.method();
         }
         let path = self.path();
-        let f = controller.find_function(path.as_ref(),method.as_ref());
+        let f = controller.find_function(path,method);
         if let Some((controller,func,map)) = f {
             if map.is_some() {
                 self.path_params_map = map;
