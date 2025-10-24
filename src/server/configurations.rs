@@ -128,6 +128,14 @@ pub struct ServerConfigurations {
     ///
     pub addresses:Vec<(String,u16)>,
 
+
+    /// worker threads count means the number of threads that tokio runtime would
+    /// spawn for handling async tasks which includes handling incoming requests
+    /// the default value is the number of cpu cores in your system
+    /// you could set it to any value that you want,
+    /// but it is recommended to set it to the number of cpu cores
+    pub worker_threads_count:usize,
+
     /// - specifying which ip to accept connection and which not
     pub restricted_ips:Option<RestrictionRule>,
 
@@ -189,6 +197,9 @@ impl ServerConfigurations {
     /// # return [ ServerConfigurations]
     ///
     pub fn default()->Self {
+        let worker_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
         ServerConfigurations{
             addresses:vec![("0.0.0.0".to_string(),80),],
             #[cfg(feature = "support_tls")]
@@ -199,6 +210,7 @@ impl ServerConfigurations {
             tls_ports:vec![443],
             backlog:1028,
             max_request_size:10000,
+            worker_threads_count:worker_threads,
         }
     }
 
