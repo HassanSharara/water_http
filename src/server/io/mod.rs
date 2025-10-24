@@ -369,12 +369,14 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 }
 
                 if read_buf.is_empty() {
-                    let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
-                    match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
-                        PollWriteResults::WriteSuccess(_) => {}
-                        PollWriteResults::WriteErr => {return;}
-                        PollWriteResults::Pending => {}
-                    };
+                    if !write_buf.is_empty() {
+                        let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
+                        match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
+                            PollWriteResults::WriteSuccess(_) => {}
+                            PollWriteResults::WriteErr => {return;}
+                            PollWriteResults::Pending => {}
+                        };
+                    }
                     continue;
                 }
             }
