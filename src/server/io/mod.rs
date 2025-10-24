@@ -405,24 +405,26 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                         match context.serve(controller).await {
                             ServingRequestResults::Stop => return,
                             ServingRequestResults::Done => {
-                                let content_length = context.content_length().copied();
+                                let content_length = context.content_length();
                                 match content_length {
                                     None => {
                                         if total_req_size >= read_buf.chunk().len() {
                                             read_buf.clear();
                                         }
                                         else {
-                                            // if let Some(h) = context.get_from_headers("Transfer-Encoding"){
-                                            //     if h == "chunked" {
-                                            //         drop(h);
-                                            //         read_buf.clear();
-                                            //         break;
-                                            //     }
-                                            // }
+                                            if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding"){
+                                                if h == b"chunked" {
+                                                    let _ = h;
+                                                    read_buf.clear();
+                                                    break;
+                                                }
+                                            }
                                             read_buf.advance(total_req_size);
                                         }
                                     }
                                     Some(c) => {
+
+                                        let c = c.clone();
                                         read_buf.advance(total_req_size );
                                         let mut rem = c;
                                         if body_buf.bytes_consumed > 0 {
