@@ -294,7 +294,7 @@ pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const 
 
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .worker_threads(conf.worker_threads_count)
+            .worker_threads(conf.worker_threads_count * 2)
             .build()
             .unwrap();
         let mut workers = vec![];
