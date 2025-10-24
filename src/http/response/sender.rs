@@ -499,10 +499,14 @@ impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTr
 Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     fn send_status_code(&mut self, http_status: StatusCode) {
         if self.is_status_written {return;}
-        self.context.response_buffer.extend_from_slice(format!("HTTP/1.1 {} {}\r\n",
-         http_status.status,
-         http_status.label
-        ).as_bytes());
+        let buf = &mut self.context.response_buffer;
+        buf.extend_from_slice(b"HTTP/1.1 ");
+        let mut iota_buffer = itoa::Buffer::new();
+        let num_str = iota_buffer.format(http_status.status.get());
+        buf.extend_from_slice(num_str.as_bytes());
+        buf.extend_from_slice(b" ");
+        buf.extend_from_slice(http_status.label.as_bytes());
+        buf.extend_from_slice(b"\r\n");
         self.is_status_written = true;
     }
 
