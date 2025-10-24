@@ -274,7 +274,7 @@ pub (crate)  fn get_server_config()->&'static ServerConfigurations{
 
 
 /// running given server configurations with Controller Root
-pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const QS:usize,>(
+pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const QS:usize,>(
     config:ServerConfigurations,
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
 ){
@@ -287,45 +287,51 @@ pub async fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,c
     let conf = get_server_config();
 
 
-    #[cfg(not(feature = "use_local_threads"))]
+    #[cfg(feature = "use_tokio_send")]
     {
         #[cfg(feature = "debugging")]
             let mut workers_count = 0_usize;
 
-
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(conf.worker_threads_count)
+            .build()
+            .unwrap();
         let mut workers = vec![];
-
         for _ in 0..conf.worker_threads_count {
 
             for  address in conf.addresses.clone() {
-                workers.push(tokio::spawn(async move {
-                    #[cfg(feature = "debugging")]
-                    {
-                        debug!("listening on ip: {} port: {}",address.0,address.1);
-                        workers_count +=1;
-                        debug!("count of running workers {workers_count}");
-                    }
+                workers.push(
+                    rt.spawn(async move {
+                        #[cfg(feature = "debugging")]
+                        {
+                            debug!("listening on ip: {} port: {}",address.0,address.1);
+                            workers_count +=1;
+                            debug!("count of running workers {workers_count}");
+                        }
 
-                    let _ = crate::server::run_server_with_address(&address, controller).await;
-                }));
+                        let _ = crate::server::run_server_with_address(&address, controller).await;
+                    })
+                );
             }
         }
-        for worker in workers {
-            let _ = worker.await;
-        }
+
+        rt.block_on(async move {
+            for worker in workers {
+                let _ = worker.await;
+            }
+        });
         return;
     }
     let mut os_threads = vec![];
     for tid in 0..conf.worker_threads_count {
-
         for address in &conf.addresses {
             let address = address.clone();
             let controller = controller;
             let threads = std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_io()
-                    .enable_time()
-                    .max_blocking_threads(64)
+                    .enable_all()
+                    .max_blocking_threads(90)
                     .build()
                     .unwrap();
 
@@ -414,7 +420,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
             #[cfg(feature = "support_tls")]
             let tls = tls_acceptor.clone();
 
-            #[cfg(not(feature = "use_local_threads"))]
+            #[cfg(feature = "use_tokio_send")]
             {
                 tokio::spawn(async move {
                     // checking if the current port should be handled

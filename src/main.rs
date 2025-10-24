@@ -18,8 +18,7 @@ pub struct CHolder {
 
 }
 
-#[tokio::main]
-async fn main() {
+ fn main() {
 
     // when debugging feature enabled
     #[cfg(feature = "debugging")]

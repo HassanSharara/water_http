@@ -127,7 +127,7 @@ macro_rules! RunServer {
            water_http::server::run_server(
             $config,
             $controller.as_mut().unwrap()
-           ).await;
+           );
         };
 
     };

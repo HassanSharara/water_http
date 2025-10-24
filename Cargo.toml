@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "3.0.6-beta.17"
+version = "3.0.6-beta.18"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -50,7 +50,7 @@ count_connection_parsing_speed = ["tracing","tracing-subscriber"]
 write_logs = ["water_http_utils/write_logs"]
 support_tls = ["rustls","rustls-pemfile","tokio-rustls"]
 use_only_http1 = []
-use_local_threads = []
+use_tokio_send = []
 
 [dev-dependencies]
 askama = "0.14.0"
