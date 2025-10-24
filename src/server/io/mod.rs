@@ -15,7 +15,6 @@ pub struct WaterTcpStream<'a,'b> {
     write_buf: &'a mut BytesMut,
     body_reading_buffer: &'a mut BodyReadingBuffer,
     peer:&'a SocketAddr,
-    system_calls_counter:&'a mut usize,
 }
 
 
@@ -30,7 +29,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
     #[inline(always)]
     fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollWriteResults> {
         let this = unsafe { self.get_unchecked_mut() };
-        *this.system_calls_counter +=1;
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
 
         unsafe {
@@ -124,7 +122,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollReadResults> {
         // obtain a mutable reference to the pinned `self`
         let this = unsafe { self.get_unchecked_mut() };
-        *this.system_calls_counter +=1;
         // raw pointer to the HttpStream field to avoid moving the field out
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
 
@@ -181,7 +178,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                       write_buf:&'a mut BytesMut,
                       body_reading_buffer:&'a mut BodyReadingBuffer,
                       peer:&'a SocketAddr,
-                      system_calls_counter:&'a mut usize,
     ) -> Self {
         Self {
             stream,
@@ -189,7 +185,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
             write_buf,
             body_reading_buffer,
             peer,
-            system_calls_counter
         }
     }
 
@@ -329,7 +324,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
         let mut body_buf = BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
         let mut water_stream;
-        let mut system_calls_counter = 0usize;
+        let mut rem = 0usize;
         loop {
             // Only read if we need more data
             // Ensure we have space to read into
@@ -353,7 +348,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 &mut write_buf,
                 &mut body_buf,
                 peer,
-                &mut system_calls_counter
             );
 
             let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
@@ -364,6 +358,11 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     PollReadResults::ReadSuccess(u) => {
                         if u > 0 {
                             read_buf.advance_mut(u);
+                        }
+                        if rem >  0 {
+                            let to_advance = read_buf.len().min(rem);
+                            read_buf.advance(to_advance);
+                            rem -= to_advance;
                         }
                     }
                     PollReadResults::ReadErr => break,
@@ -376,6 +375,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                         PollWriteResults::WriteErr => {return;}
                         PollWriteResults::Pending => {}
                     };
+                    continue;
                 }
             }
             loop {
@@ -397,7 +397,39 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                         match context.serve(controller).await {
                             ServingRequestResults::Stop => return,
                             ServingRequestResults::Done => {
-                                read_buf.advance(total_req_size);
+                                let content_length = context.content_length().copied();
+                                match content_length {
+                                    None => {
+                                        if total_req_size >= read_buf.chunk().len() {
+                                            read_buf.clear();
+                                        }
+                                        else {
+                                            if let Some(h) = context.get_from_headers("Transfer-Encoding"){
+                                                if h == "chunked" {
+                                                    drop(h);
+                                                    read_buf.clear();
+                                                    break;
+                                                }
+                                            }
+                                            read_buf.advance(total_req_size);
+                                        }
+                                    }
+                                    Some(c) => {
+                                        read_buf.advance(total_req_size );
+                                        let mut rem = c;
+                                        if body_buf.bytes_consumed > 0 {
+                                            rem -= read_buf.len().min(rem);
+                                            read_buf.clear();
+                                            rem -= body_buf.bytes_consumed.min(rem);
+                                            if !body_buf.is_empty() {
+                                                read_buf.extend_from_slice(body_buf.chunk());
+                                            }
+                                            body_buf.reset();
+                                        }
+                                        if read_buf.is_empty() {break;}
+                                    }
+                                }
+
                             }
                         }
                     }
