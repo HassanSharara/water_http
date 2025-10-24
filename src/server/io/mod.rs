@@ -412,11 +412,14 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                             read_buf.clear();
                                         }
                                         else {
-                                            if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding"){
-                                                if h == b"chunked" {
-                                                    let _ = h;
-                                                    read_buf.clear();
-                                                    break;
+                                            #[cfg(feature = "safe_pass_chunked_encoding")]
+                                            {
+                                                if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding") {
+                                                    if h == b"chunked" {
+                                                        let _ = h;
+                                                        read_buf.clear();
+                                                        break;
+                                                    }
                                                 }
                                             }
                                             read_buf.advance(total_req_size);
