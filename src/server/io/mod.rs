@@ -412,13 +412,13 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                             read_buf.clear();
                                         }
                                         else {
-                                            if let Some(h) = context.get_from_headers("Transfer-Encoding"){
-                                                if h == "chunked" {
-                                                    drop(h);
-                                                    read_buf.clear();
-                                                    break;
-                                                }
-                                            }
+                                            // if let Some(h) = context.get_from_headers("Transfer-Encoding"){
+                                            //     if h == "chunked" {
+                                            //         drop(h);
+                                            //         read_buf.clear();
+                                            //         break;
+                                            //     }
+                                            // }
                                             read_buf.advance(total_req_size);
                                         }
                                     }
