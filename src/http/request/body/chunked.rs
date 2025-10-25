@@ -78,13 +78,13 @@ impl<'a> BodyChunkedReader<'a> {
 
                      match &chunk {
                          None => {
-                             match find_new_line(holder.left_bytes,16) {
+                             return  match find_new_line(holder.left_bytes,16) {
                                  Ok(index_option) => {
                                      #[cfg(feature = "debugging")]
                                      {
                                          debug!("trying to find chunk on {:?}",index_option)
                                      }
-                                     return match index_option {
+                                      match index_option {
                                          None => {
                                              #[cfg(feature = "debugging")]
                                              {
@@ -134,7 +134,7 @@ impl<'a> BodyChunkedReader<'a> {
                                          }
                                      }
                                  }
-                                 Err(_) => {}
+                                 Err(_) => {  Err(())}
                              }
                          }
                          Some(chunk_op) => {
@@ -162,7 +162,9 @@ impl<'a> BodyChunkedReader<'a> {
                                                      )
                                                  }
                                                  if holder.left_bytes.len() < 2 { return Err(()) }
-                                                 if i == 0 { holder.left_bytes = &holder.left_bytes[2..] }
+                                                 if i == 0 {
+                                                     holder.left_bytes = &holder.left_bytes[2..];
+                                                 }
                                                  #[cfg(feature = "debugging")]{
                                                      info!("after chunked payload proceed {:?}",
                                                        String::from_utf8_lossy(holder.left_bytes)

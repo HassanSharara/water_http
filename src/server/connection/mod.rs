@@ -9,9 +9,8 @@ use tokio::net::TcpStream;
 use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
-use crate::http::request::{FormingRequestResult, IncomingRequest};
-use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, HttpStream, READING_BUF_LEN, WaterTcpStream, WRITING_BUF_LEN};
-use crate::server::sr_context::{Http1Context, Http2Context, HttpContext, Protocol, ServingRequestResults};
+use crate::server::{CapsuleWaterController, HttpStream, READING_BUF_LEN, WaterTcpStream};
+use crate::server::sr_context::{Http2Context, HttpContext, Protocol, ServingRequestResults};
 
 
 pub enum WaterStream {
@@ -165,7 +164,7 @@ impl  ConnectionStream {
      controller:&'static  CapsuleWaterController<Holder,HS,QS>
 
     ){
-        _= WaterTcpStream::serve(stream,peer,controller).await;
+        WaterTcpStream::serve(stream,peer,controller).await;
 
        //  let mut each_request_body_reading_buffer =
        //      BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);

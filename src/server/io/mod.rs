@@ -1,20 +1,18 @@
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 use bytes::{Buf, BufMut, BytesMut};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
-use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, Http1Context, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WRITING_BUF_LEN};
+use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, Http1Context, HttpContext, HttpStream, READING_BUF_LEN, ServingRequestResults, WRITING_BUF_LEN};
 use crate::server::Protocol::Http1;
 
 pub struct WaterTcpStream<'a,'b> {
     stream: &'a mut HttpStream,
     read_buf: &'a mut ReadBuf<'b>,
     write_buf: &'a mut BytesMut,
-    body_reading_buffer: &'a mut BodyReadingBuffer,
-    peer:&'a SocketAddr,
 }
 
 
@@ -31,7 +29,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         self.write_buf.is_empty()
     }
     #[inline(always)]
-    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollWriteResults> {
+    fn poll_write( self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<PollWriteResults> {
         let this = unsafe { self.get_unchecked_mut() };
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
 
@@ -142,7 +140,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 },
                 HttpStream::Async(s) => match Pin::new_unchecked(s).poll_read(cx, this.read_buf) {
                     Poll::Ready(Ok(_)) => {
-                        let filled = unsafe {(&mut *this).read_buf.filled()};
+                        let filled =  (&mut *this).read_buf.filled();
                         #[cfg(feature = "debugging")]
                         {
                             println!("read {:?} ",String::from_utf8_lossy(filled));
@@ -154,20 +152,20 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 },
             }
         }}
-    #[inline(always)]
-    fn poll_read_ready(mut self:Pin<&mut Self>,cx:&mut Context<'_>)->Poll<PollReadResults>{
-        return match &mut self.stream {
-            #[cfg(feature = "support_tls")]
-            HttpStream::AsyncSecure(s) => {
-                _= s.get_ref().0.poll_read_ready(cx);
-                Poll::Pending
-            }
-            HttpStream::Async(s) => {
-                _= s.poll_read_ready(cx);
-                Poll::Pending
-            }
-        }
-    }
+    // #[inline(always)]
+    // fn poll_read_ready(mut self:Pin<&mut Self>,cx:&mut Context<'_>)->Poll<PollReadResults>{
+    //     return match &mut self.stream {
+    //         #[cfg(feature = "support_tls")]
+    //         HttpStream::AsyncSecure(s) => {
+    //             _= s.get_ref().0.poll_read_ready(cx);
+    //             Poll::Pending
+    //         }
+    //         HttpStream::Async(s) => {
+    //             _= s.poll_read_ready(cx);
+    //             Poll::Pending
+    //         }
+    //     }
+    // }
 
 }
 
@@ -180,15 +178,12 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
     pub(crate) fn new(stream: &'a mut HttpStream,
                       read_buf:&'a mut ReadBuf<'b>,
                       write_buf:&'a mut BytesMut,
-                      body_reading_buffer:&'a mut BodyReadingBuffer,
-                      peer:&'a SocketAddr,
+
     ) -> Self {
         Self {
             stream,
             read_buf,
             write_buf,
-            body_reading_buffer,
-            peer,
         }
     }
 
@@ -351,8 +346,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
             water_stream = WaterTcpStream::new(
                 hs, &mut rdr,
                 &mut write_buf,
-                &mut body_buf,
-                peer,
             );
 
             let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
@@ -379,8 +372,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     if ! (&mut *stream_ptr).is_write_buf_empty() {
                         match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
                             PollWriteResults::WriteSuccess(_) => {}
-                            PollWriteResults::WriteErr => {return;}
-                            PollWriteResults::Pending => {}
+                            PollWriteResults::WriteErr => {return}
                         };
                     }
                     continue;
@@ -429,7 +421,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
 
                                         let c = c.clone();
                                         read_buf.advance(total_req_size );
-                                        let mut rem = c;
+                                        rem = c;
                                         if body_buf.bytes_consumed > 0 {
                                             rem -= read_buf.len().min(rem);
                                             read_buf.clear();
@@ -572,7 +564,6 @@ pub (crate) struct  WaterTcpWriter<'a,'b>{
 pub enum PollWriteResults {
     WriteSuccess(usize),
     WriteErr,
-    Pending,
 }
 
 impl<'a,'b> Future for WaterTcpWriter<'a,'b> {
@@ -591,7 +582,6 @@ impl<'a,'b> Future for WaterTcpWriter<'a,'b> {
                    PollWriteResults::WriteErr => {
                          Poll::Ready(PollWriteResults::WriteErr)
                     },
-                   _=> Poll::Pending
                 }
             }
             Poll::Pending=> {}

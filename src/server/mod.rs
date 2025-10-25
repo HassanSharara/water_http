@@ -324,7 +324,7 @@ pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const 
         return;
     }
     let mut os_threads = vec![];
-    for tid in 0..conf.worker_threads_count {
+    for _ in 0..conf.worker_threads_count {
         for address in &conf.addresses {
             let address = address.clone();
             let controller = controller;
