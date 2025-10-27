@@ -84,7 +84,6 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
 
     /// for try parsing bytes into headers key and value
     pub  fn try_parse<const L: usize>(bytes: &[u8]) ->Option<(KeyValueList<'_,L>,usize)> {
-
         let mut key_list = KeyValueList::empty();
         let mut end_indicators = 0_u16;
         let mut last_index_used = 0_usize;
@@ -396,8 +395,8 @@ mod test_key_list {
                 println!("content-disposition:filename = {}",filename);
 
                 assert_eq!(cd,"attachment");
-                assert_eq!(name,"\"file1\"");
-                assert_eq!(filename,"\"example.txt\"");
+                assert_eq!(name,"file1");
+                assert_eq!(filename,"example.txt");
             }
         }
         assert!(v.is_some());

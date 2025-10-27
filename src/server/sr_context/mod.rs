@@ -45,7 +45,9 @@ pub (crate) struct  Http2Context<'a> {
     pub request_batch:(Request<RecvStream>,SendResponse<Bytes>),
     content_length:Option<usize>,
     reading_buffer:&'a mut BodyReadingBuffer,
-    path_query:Option<HashMap<String,String>>
+    path_query:Option<HashMap<String,String>>,
+    #[cfg(feature = "accept_transfer_chunked")]
+    to_advance:Option<usize>
 }
 
  fn parse_query_string_to_map(query:Option<&str>,map:&mut Option<HashMap<String,String>>){
@@ -58,7 +60,6 @@ pub (crate) struct  Http2Context<'a> {
              query = &query[1..];
          }
      }
-     println!("invoked {query}");
      let splitter = query.split("&");
      for q in splitter {
          let s :Vec<&str> = q.split("=").collect();
@@ -84,7 +85,10 @@ impl<'a> Http2Context<'a> {
             request_batch,
             content_length:None,
             reading_buffer,
-            path_query
+            path_query,
+            #[cfg(feature = "accept_transfer_chunked")]
+
+            to_advance:None
         }
     }
 
@@ -118,11 +122,16 @@ impl<'a> Http2Context<'a> {
     /// getter is for getting data from incoming request like body and request quires
     pub fn getter(&mut self)->Http2Getter<'_>{
         let  content_length = *self.content_length().unwrap_or(&0);
-         Http2Getter {
-             batch:&mut self.request_batch.0,
-             content_length,
-             reading_buffer:self.reading_buffer
-         }
+
+
+        Http2Getter {
+            batch:&mut self.request_batch.0,
+            content_length,
+            reading_buffer:self.reading_buffer,
+            #[cfg(feature = "accept_transfer_chunked")]
+            to_advance:&mut self.to_advance
+        }
+
     }
 }
 
@@ -138,7 +147,7 @@ pub struct HttpContext<
 {
     /// for holding data trough multiple middlewares and functions or handlers
     pub holder:Option<H>,
-    protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    pub(crate) protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
     peer:&'a SocketAddr,
     /// saving generic parameters injected with requested path
     pub path_params_map:Option<HashMap<String,String>>,
@@ -298,9 +307,10 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                                 Ok(None)
                             }
                         ).await .is_ok(){
-
+                            return Ok(DynamicBodyMap::FormField(fu))
                         }
                     }
+
                     _ =>{}
                 }
 
@@ -389,6 +399,13 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                HttpSender::H1( Http1Sender::new(h1))
             }
         }
+    }
+
+    /// for setting Date header in http response with the current timestamp efficiently
+    pub fn set_date_header(&mut self){
+        let mut sender = self.sender();
+        let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+        sender.set_header_ef("Date",date);
     }
 
     // pub(crate)  fn h1_response_buffer(&mut self,)->Result<&mut BytesMut,()>{
@@ -617,8 +634,9 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         } else {
             let mut sender = self.sender();
             sender.send_status_code(HttpStatusCode::NOT_FOUND);
-            _=sender.write_custom_bytes(&[]).await;
-            return  ServingRequestResults::Stop;
+            _=sender.send_str("").await;
+
+            return  ServingRequestResults::Done;
         }
 
         #[cfg(feature = "debugging")]
@@ -710,6 +728,7 @@ pub struct Http1Context<'a,const HEADERS_COUNT:usize
   pub (crate) body_reading_buffer:&'a mut BodyReadingBuffer,
   pub(crate)  response_buffer:&'a mut BytesMut,
   pub (crate) left_bytes:&'a [u8],
+  #[cfg(feature = "accept_transfer_chunked")]
   pub (crate) to_advance:Option<usize>
 }
 
@@ -730,6 +749,7 @@ impl <'a,const HEADERS_COUNT:usize
             response_buffer,
             stream,
             left_bytes,
+            #[cfg(feature = "accept_transfer_chunked")]
             to_advance:None
         }
     }
@@ -752,11 +772,26 @@ impl <'a,const HEADERS_COUNT:usize
 
     /// getter is for getting data from incoming request like body and request quires
     pub fn getter<'b>(&'b mut self)->Http1Getter<'b,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
-        Http1Getter {
-            body_reading_buffer:  self.body_reading_buffer,
-            left_bytes:self.left_bytes,
-            stream: self.stream,
-            request: &mut self.request,
+
+        #[cfg(feature = "accept_transfer_chunked")]
+        {
+            return   Http1Getter {
+                body_reading_buffer:  self.body_reading_buffer,
+                left_bytes:self.left_bytes,
+                stream: self.stream,
+                request: &mut self.request,
+                to_advance_bytes: &mut self.to_advance
+            }
+        }
+
+        #[cfg(not(feature = "accept_transfer_chunked"))]
+        {
+            return   Http1Getter {
+                body_reading_buffer:  self.body_reading_buffer,
+                left_bytes:self.left_bytes,
+                stream: self.stream,
+                request: &mut self.request,
+            }
         }
     }
 

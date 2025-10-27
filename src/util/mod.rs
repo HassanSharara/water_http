@@ -126,43 +126,73 @@ pub (crate) fn content_type_from_file_path(path: &&Path) -> Option<&'static str>
 
 
 #[inline]
-pub (crate) fn found_boundary_in(data:&[u8],pattern:&[u8])->PatternExistResult{
-    let pattern_length = pattern.len();
+pub(crate) fn found_boundary_in(data: &[u8], pattern: &[u8]) -> PatternExistResult {
+    let plen = pattern.len();
+    if data.len() < plen {
+        return PatternExistResult::None;
+    }
 
-    if data.len() < pattern_length {return PatternExistResult::None}
-    let mut find_counter = 0;
-    let mut start_sign_counter = 0_usize;
-    for (index,byte) in data.iter().enumerate() {
-        let target = pattern.get(find_counter).unwrap_or(&0);
-        if byte ==  target {
-            if start_sign_counter < 4 {
-                if start_sign_counter>=2 {
-                    start_sign_counter+=1;
-                }
-            } else if start_sign_counter == 4 {
-                find_counter=0;
-                start_sign_counter = 5;
-            }
-            find_counter+=1;
-            if find_counter >= pattern_length {
-                let res = index+1 - find_counter - (start_sign_counter-1);
+    let mut match_pos = 0;
+
+    for (i, &b) in data.iter().enumerate() {
+        if b == pattern[match_pos] {
+            match_pos += 1;
+            if match_pos == plen {
+                // Found full pattern
+                let res = i + 1 - plen;
                 return PatternExistResult::Some(res);
             }
-        }
-        else {
-            if byte == &b'\r' && start_sign_counter==0 {
-                start_sign_counter+=1;
-            } else if byte == &b'\n' && start_sign_counter == 1 {
-                start_sign_counter+=1;
-            }
-            find_counter = 0;
+        } else {
+            // Allow partial prefix match reuse (like KMP-lite)
+            match_pos = if b == pattern[0] { 1 } else { 0 };
         }
     }
-    if find_counter > 1 {
-        return  PatternExistResult::MaybeExistOnLastBytesFromLen(pattern_length-find_counter)
+
+    if match_pos > 0 {
+        PatternExistResult::MaybeExistOnLastBytesFromLen(plen - match_pos)
+    } else {
+        PatternExistResult::None
     }
-    PatternExistResult::None
 }
+
+// #[inline]
+// pub (crate) fn found_boundary_in(data:&[u8],pattern:&[u8])->PatternExistResult{
+//     let pattern_length = pattern.len();
+//
+//     if data.len() < pattern_length {return PatternExistResult::None}
+//     let mut find_counter = 0;
+//     let mut start_sign_counter = 0_usize;
+//     for (index,byte) in data.iter().enumerate() {
+//         let target = pattern.get(find_counter).unwrap_or(&0);
+//         if byte ==  target {
+//             if start_sign_counter < 4 {
+//                 if start_sign_counter>=2 {
+//                     start_sign_counter+=1;
+//                 }
+//             } else if start_sign_counter == 4 {
+//                 find_counter=0;
+//                 start_sign_counter = 5;
+//             }
+//             find_counter+=1;
+//             if find_counter >= pattern_length {
+//                 let res = index+1 - find_counter - (start_sign_counter-1);
+//                 return PatternExistResult::Some(res);
+//             }
+//         }
+//         else {
+//             if byte == &b'\r' && start_sign_counter==0 {
+//                 start_sign_counter+=1;
+//             } else if byte == &b'\n' && start_sign_counter == 1 {
+//                 start_sign_counter+=1;
+//             }
+//             find_counter = 0;
+//         }
+//     }
+//     if find_counter > 1 {
+//         return  PatternExistResult::MaybeExistOnLastBytesFromLen(pattern_length-find_counter)
+//     }
+//     PatternExistResult::None
+// }
 
 
 /// for extending data (bytes) to custom buffer or vector until we found some pattern or needle

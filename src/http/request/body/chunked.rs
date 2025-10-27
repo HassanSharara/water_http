@@ -1,16 +1,21 @@
+#[cfg(feature = "accept_transfer_chunked")]
 use bytes::{Buf, Bytes};
 #[cfg(feature = "debugging")]
 use tracing::{field::debug,debug, error, info};
+#[cfg(feature = "accept_transfer_chunked")]
 use crate::http::request::{FieldCallBackResult, H1StreamHolder, MultipartStreamHolder};
+#[cfg(feature = "accept_transfer_chunked")]
 use crate::server::connection::BodyReadingBuffer;
+#[cfg(feature = "accept_transfer_chunked")]
 use crate::util::hex_bytes_to_usize;
 
 
-
+#[cfg(feature = "accept_transfer_chunked")]
 /// check if reading bytes is going well or not
 pub type BodyChunksReadingResult = Result<Bytes,()>;
 
 /// incoming body chunked bytes
+#[cfg(feature = "accept_transfer_chunked")]
 
 #[derive(Debug)]
 /// for handling multipart from data in both protocols http1 and http2
@@ -18,6 +23,10 @@ pub struct BodyChunkedReader<'a> {
     stream_holder:MultipartStreamHolder<'a>,
     reading_buffer:&'a mut BodyReadingBuffer,
     chunk_indexes_count:usize,
+    #[cfg(feature = "accept_transfer_chunked")]
+    original_left_bytes_length:usize,
+    #[cfg(feature = "accept_transfer_chunked")]
+    to_advance_bytes: &'a mut Option<usize>
     // remaining:usize,
 }
 
@@ -33,6 +42,7 @@ pub struct  Chunk {
 
 
 
+#[cfg(feature = "accept_transfer_chunked")]
 
 macro_rules! try_call_back {
     ($callback:expr,$chunk:expr,$data:expr) => {
@@ -48,6 +58,8 @@ macro_rules! try_call_back {
                                }
     };
 }
+#[cfg(feature = "accept_transfer_chunked")]
+
 impl<'a> BodyChunkedReader<'a> {
 
 
@@ -56,12 +68,21 @@ impl<'a> BodyChunkedReader<'a> {
      pub (crate) fn new(
          stream_holder:MultipartStreamHolder<'a>,
          reading_buffer:&'a mut BodyReadingBuffer,
-
+         #[cfg(feature = "accept_transfer_chunked")]
+         to_advance_bytes:&'a mut Option<usize>
      )->BodyChunkedReader<'a>{
          BodyChunkedReader {
-             stream_holder,
+
              reading_buffer,
-             chunk_indexes_count:0
+             chunk_indexes_count:0,
+             #[cfg(feature = "accept_transfer_chunked")]
+             original_left_bytes_length:match &stream_holder {
+                 MultipartStreamHolder::H1(holder) => { holder.left_bytes.len() }
+                 MultipartStreamHolder::H2(_) => {0}
+             },
+             #[cfg(feature = "accept_transfer_chunked")]
+             to_advance_bytes,
+             stream_holder,
          }
      }
 
@@ -148,6 +169,7 @@ impl<'a> BodyChunkedReader<'a> {
                                      Ok(index_option) => {
                                          match index_option {
                                              None => {
+
                                                  h1_chunk_detecting_on_stream(
                                                      holder,
                                                      self.reading_buffer,
@@ -164,6 +186,14 @@ impl<'a> BodyChunkedReader<'a> {
                                                  if holder.left_bytes.len() < 2 { return Err(()) }
                                                  if i == 0 {
                                                      holder.left_bytes = &holder.left_bytes[2..];
+                                                     #[cfg(feature = "accept_transfer_chunked")]
+                                                     {
+                                                            if let Some(to_advance_bytes) = &mut self.to_advance_bytes {
+                                                             *to_advance_bytes = self.original_left_bytes_length - holder.left_bytes.len();
+                                                            } else {
+                                                                *self.to_advance_bytes = Some(self.original_left_bytes_length - holder.left_bytes.len());
+                                                            }
+                                                     }
                                                  }
                                                  #[cfg(feature = "debugging")]{
                                                      info!("after chunked payload proceed {:?}",
@@ -244,6 +274,7 @@ impl<'a> BodyChunkedReader<'a> {
  }
 
 
+#[cfg(feature = "accept_transfer_chunked")]
 
 async fn h1_chunk_detecting_on_stream(
     holder:& mut H1StreamHolder<'_>,
@@ -252,9 +283,11 @@ async fn h1_chunk_detecting_on_stream(
     mut callback:impl FnMut(&Chunk,&[u8])->FieldCallBackResult,
     mut chunk: Option<Chunk>,
 )->Result<(),()>{
+
     loop {
         match &mut chunk {
             None => {
+
                 if reader.is_empty()  {
                     if reader.read_buf(holder.stream).await.is_err() {return Err(())}
                 }
@@ -272,7 +305,13 @@ async fn h1_chunk_detecting_on_stream(
                                     Some(r) => {r}
                                 };
                                 chunk  = Some(Chunk { index:*chunk_index,chunk_size});
+                                *chunk_index+=1;
                                 reader.advance(index+2);
+                                if chunk_size == 0 {
+                                    if reader.len() < 2{return  Err(()) }
+                                    reader.advance(2);
+                                    return Ok(())
+                                }
                                 #[cfg(feature = "debugging")]
                                 {
                                     debug!("bytes after advanced {}",String::from_utf8_lossy(reader.chunk()))
@@ -290,7 +329,7 @@ async fn h1_chunk_detecting_on_stream(
                 let data = reader.chunk();
                 if data.is_empty() {return Err(())}
 
-                match find_new_line(data,chunk_oop.chunk_size) {
+                match find_new_line(data,chunk_oop.chunk_size  + 2 ) {
                     Ok(op) => {
                         match op {
                             None => {
@@ -312,7 +351,7 @@ async fn h1_chunk_detecting_on_stream(
                                         ) = future {
                                             if future.await.is_err()  { return Err(())}
                                         }
-                                        if data.len() <= i +2 { return Err(()) }
+                                        if data.len() < i + 2 { return Err(()) }
                                         else {reader.advance(i+2);}
                                         chunk = None;
                                     }
@@ -327,6 +366,8 @@ async fn h1_chunk_detecting_on_stream(
         }
     }
 }
+
+#[cfg(feature = "accept_transfer_chunked")]
 
 #[inline]
 fn find_new_line(data:&[u8],cap:usize)->Result<Option<usize>,()>{

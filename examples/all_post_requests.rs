@@ -1,0 +1,108 @@
+
+use std::collections::HashMap;
+use water_http::server::{ServerConfigurations};
+use water_http::{functions_builder, InitControllersRoot, WaterController};
+
+use water_http::http::request::{DynamicBodyMap, DynamicBodyMapTrait, HttpGetterTrait, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+use water_http::http::status_code::HttpStatusCode;
+
+
+InitControllersRoot! {
+    name:MAIN_ROOT,
+    holder_type:MainHolderType,
+}
+type MainHolderType = CHolder;
+
+#[derive(Debug)]
+pub struct CHolder {
+    pub user:Option<HashMap<String,String>>,
+
+}
+
+fn main() {
+    let  config = ServerConfigurations::bind("0.0.0.0",8084);
+    water_http::RunServer!(
+        config,
+        MAIN_ROOT,
+        MainController
+    );
+}
+
+WaterController! {
+    holder -> super::MainHolderType,
+    name -> MainController ,
+    functions -> {
+
+        hello(c){_=c.send_str("Hello, World!").await}
+
+        POST -> "submit-form" -> url_encoded(context)[super::url_encoded]
+        POST -> "upload" -> upload(context)[super::upload]
+        POST -> "transfer-chunked" -> handle_chunked(context) [super::handle_chunked]
+    }
+}
+
+functions_builder!{
+
+
+    fn upload(context) {
+        let mut  body = context.getter();
+        let b = body.get_body_by_mechanism(ParsingBodyMechanism::FormData).await;
+        if let ParsingBodyResults::Chunked(IBodyChunks::FormData(mut m)) = b {
+            _=m.on_field_detected(|f,data|{
+                println!("field detected {:?} while data is {:?}",f.content_disposition_name(),String::from_utf8_lossy(data));
+                Ok(None)
+            }).await;
+            println!("sending response  ");
+            _= context.send_str("success").await;
+            return
+        }
+        _= context.send_status_code_as_final_response(HttpStatusCode::INTERNAL_SERVER_ERROR).await;
+    }
+
+    fn url_encoded(context) {
+
+        let body = context.get_body_map().await;
+        if let Ok( body_map ) = body {
+            if let DynamicBodyMap::Xww(x_map ) = body_map {
+                println!("body is {:?}",x_map.all());
+                _= context.send_str("success").await;
+                return
+            }
+        }
+        _=context.send_status_code_as_final_response(HttpStatusCode::INTERNAL_SERVER_ERROR).await;
+    }
+
+    async fn handle_chunked(context){
+        #[cfg(not(feature = "accept_transfer_chunked"))]
+        {
+            _= context.send_str("you should apply feature ( accept_transfer_chunked ) ").await;
+            return
+        }
+        #[cfg(feature = "accept_transfer_chunked")]
+        {
+            use water_http::http::request::{ParsingBodyResults,IBodyChunks,HttpGetterTrait,ParsingBodyMechanism};
+        let mut getter = context.getter();
+        if let ParsingBodyResults::Chunked(IBodyChunks::Chunked(mut chunk_reader)) =  getter.get_body_by_mechanism(ParsingBodyMechanism::ChunkedTransferEncoding).await {
+            if             chunk_reader.on_chunk_detected(|chunk,data|{
+                println!("chunk index is {} while chunk size is {}",chunk.index,chunk.chunk_size);
+                println!("incoming chunk data length : {} for chunk index {} ",data.len(),chunk.index);
+                // if you not have async task on each chunk you could simply return Ok(None)
+                Ok(Some(Box::pin(async {
+                    Ok(())
+                })))
+            }).await.is_ok() {
+
+                _=context.send_str("success").await;
+
+                return
+            }
+        }
+        _= context.send_status_code_as_final_response(HttpStatusCode::INTERNAL_SERVER_ERROR).await;
+           return
+        }
+
+        }
+}
+
+
+

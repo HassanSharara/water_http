@@ -3,7 +3,7 @@ use tokio::io::AsyncWriteExt;
 use water_http::server::{HttpContext, ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
-use water_http::http::request::DynamicBodyMapTrait;
+use water_http::http::request::{DynamicBodyMapTrait,};
 
 
 InitControllersRoot! {
@@ -55,6 +55,8 @@ pub async fn upload_file<'a,H:Send + 'static ,const HS:usize,const Q:usize>(cont
     }
     _= context.send_str("hello world").await;
 }
+
+
 // you can use one style to make it your default and favorite one
 // my personal favorite one is
 // method -> path -> function_name(context) async {
@@ -67,11 +69,9 @@ WaterController! {
 
           // in this case path is "/" while method is GET
         "/" hello_world(context){
-
             let mut sender = context.sender();
             let date = httpdate::fmt_http_date(std::time::SystemTime::now());
             sender.set_header_ef("Date",date);
-            sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
             _= sender.send_str("Hello World").await;
         }
 

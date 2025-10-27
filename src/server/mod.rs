@@ -310,7 +310,7 @@ pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const 
                             debug!("count of running workers {workers_count}");
                         }
 
-                        let _ = crate::server::run_server_with_address(&address, controller).await;
+                         _= run_server_with_address(&address, controller).await;
                     })
                 );
             }

@@ -72,11 +72,16 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
 
         match &mut self.stream_holder {
             MultipartStreamHolder::H1(h1) => {
-                let left_bytes_len = h1.left_bytes.len();
-                if left_bytes_len < self.content_length {
-                    self.reading_buffer.bytes_consumed+=left_bytes_len;
-                }
+                 let left_bytes_len = h1.left_bytes.len();
+
+                // if left_bytes_len < self.content_length {
+                //     self.reading_buffer.bytes_consumed+=left_bytes_len;
+                // }
                 let boundary = self.boundary.as_bytes();
+                if h1.left_bytes.starts_with(boundary) {
+                    h1.left_bytes=&h1.left_bytes[boundary.len()..];
+                }
+
                 loop {
                     if h1.left_bytes == b"--\r\n" {
                         return Ok(())
@@ -84,9 +89,11 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
                     // when left bytes is not empty
                     if h1.left_bytes.is_empty()
                     {
-
-                        let res =   self.read_using_local_buffer(field,callback).await;
-
+                        if left_bytes_len+self.reading_buffer.bytes_consumed >= self.content_length {
+                            return Ok(())
+                        }
+                        let res =   self.read_using_local_buffer(field,callback,left_bytes_len).await;
+                        self.reading_buffer.extended_bytes = 0;
                         return  res;
                     }
                     else
@@ -95,9 +102,8 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
                         match &field {
                             None => {
                                 if let Some(f_field) = MultiPartFormDataField::new(h1.left_bytes) {
-                                    h1.left_bytes=& h1. left_bytes[f_field.field_header_length..];
-                                    // self.remaining -= f_field.field_header_length;
 
+                                    h1.left_bytes=& h1. left_bytes[f_field.field_header_length..];
                                     field = Some(f_field);
                                 } else {
                                     self.reading_buffer.extend_from_slice( h1.left_bytes);
@@ -109,13 +115,14 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
                                 match found_boundary_in( h1.left_bytes,boundary) {
                                     PatternExistResult::Some(index) => {
 
+
                                         if Self::handle_callback(
                                             f_field,
                                             & h1.left_bytes[..index],
                                             &mut callback
                                         ).await.is_err() { return Err(())}
 
-                                        let len = index + boundary.len() + 4;
+                                        let len = index + boundary.len() + 2;
                                         h1.left_bytes = & h1.left_bytes[len..];
                                         // self.remaining-=len;
                                         field = None;
@@ -157,12 +164,22 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
         }
     }
 
-    #[inline]
+
+    #[inline(always)]
+    fn shave_data(mut data:&[u8])->&[u8]{
+        while data.ends_with(b"\r\n") || data.ends_with(b"--") {
+            data = &data[..data.len()-2];
+        }
+        data
+    }
+
+    #[inline(always)]
     async fn handle_callback(field:&'_ MultiPartFormDataField<'_>,data:&[u8],
                                   callback:&mut impl FnMut (&'_ MultiPartFormDataField<'_> ,&'_[u8])
                                      ->FieldCallBackResult
     )->Result<(),()>{
-        match callback(field,data) {
+
+        match callback(field,Self::shave_data(data)) {
             Ok(future) => {
                 if let Some(future) = future {
                     if future.await.is_err() { return Err(())}
@@ -180,7 +197,8 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
       async fn read_using_local_buffer(
          &mut self,
          mut field:Option<MultiPartFormDataField<'_>>,
-         mut callback:impl FnMut (&'_ MultiPartFormDataField<'_> ,&'_[u8])->FieldCallBackResult
+         mut callback:impl FnMut (&'_ MultiPartFormDataField<'_> ,&'_[u8])->FieldCallBackResult,
+         left_bytes_len:usize
      )->Result<(),()>{
           let boundary = self.boundary.as_bytes();
           let boundary_length = boundary.len();
@@ -192,7 +210,7 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
           let mut end_reading_trigger = 0_u8;
           loop { // checking if the data is already close to end
 
-              if self.reading_buffer.bytes_consumed >= self.content_length {
+              if self.reading_buffer.bytes_consumed + left_bytes_len >= self.content_length {
                   if end_reading_trigger >= 8 { return Ok(())}
                   let chunk = self.reading_buffer.chunk();
                   if chunk.len() <= boundary_length+2  {
@@ -222,7 +240,7 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
                       match found_boundary_in(chunk,boundary) {
                           PatternExistResult::Some(index) => {
                               let data =&chunk[..index];
-                              if Self::handle_callback(r_field,chunk,&mut callback).await
+                              if Self::handle_callback(r_field,Self::shave_data(data),&mut callback).await
                                   .is_err() { return  Err(())}
                               let consumed = data.len() + boundary_length;
                               // self.remaining-=consumed;

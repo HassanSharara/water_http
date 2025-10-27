@@ -8,6 +8,8 @@ use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
 use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, Http1Context, HttpContext, HttpStream, READING_BUF_LEN, ServingRequestResults, WRITING_BUF_LEN};
 use crate::server::Protocol::Http1;
+#[cfg(feature = "accept_transfer_chunked")]
+use crate::server::Protocol;
 
 pub struct WaterTcpStream<'a,'b> {
     stream: &'a mut HttpStream,
@@ -325,11 +327,11 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         let mut body_buf = BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
         let mut water_stream;
         let mut rem = 0usize;
-        loop {
+       'main_loop: loop {
+
             // Only read if we need more data
             // Ensure we have space to read into
             reserve_buf(&mut read_buf);
-
             // Convert UninitSlice to [MaybeUninit<u8>]
             let uninit_slice = read_buf.chunk_mut();
             let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
@@ -356,11 +358,11 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     PollReadResults::ReadSuccess(u) => {
                         if u > 0 {
                             read_buf.advance_mut(u);
-                        }
-                        if rem >  0 {
-                            let to_advance = read_buf.len().min(rem);
-                            read_buf.advance(to_advance);
-                            rem -= to_advance;
+                            if rem >  0 {
+                                let to_advance = read_buf.len().min(rem);
+                                read_buf.advance(to_advance);
+                                rem -= to_advance;
+                            }
                         }
                     }
                     PollReadResults::ReadErr => break,
@@ -368,7 +370,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
 
                 if read_buf.is_empty() {
                     let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
-
                     if ! (&mut *stream_ptr).is_write_buf_empty() {
                         match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
                             PollWriteResults::WriteSuccess(_) => {}
@@ -386,6 +387,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     },
                     FormingRequestResult::Err(_) => return,
                     FormingRequestResult::Success(request) => {
+
                         let total_req_size = request.get_total_headers_length();
                         let left_bytes = &read_buf[total_req_size..];
 
@@ -393,7 +395,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                             Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
                             peer
                         );
-
                         match context.serve(controller).await {
                             ServingRequestResults::Stop => return,
                             ServingRequestResults::Done => {
@@ -404,11 +405,26 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                             read_buf.clear();
                                         }
                                         else {
-                                            #[cfg(feature = "safe_pass_chunked_encoding")]
+                                            #[cfg(feature = "accept_transfer_chunked")]
                                             {
                                                 if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding") {
                                                     if h == b"chunked" {
-                                                        let _ = h;
+                                                        match &context.protocol {
+                                                            Protocol::Http2(_) => {}
+                                                            Http1(h1) => {
+                                                                if let Some(to_advance ) = h1.to_advance {
+                                                                    read_buf.advance(total_req_size + to_advance);
+                                                                    continue;
+                                                                }
+                                                                 else if !body_buf.is_empty() {
+
+                                                                     read_buf.advance(total_req_size);
+                                                                     read_buf.extend_from_slice(body_buf.chunk());
+                                                                     body_buf.clear();
+                                                                     continue;
+                                                                 }
+                                                            }
+                                                        }
                                                         read_buf.clear();
                                                         break;
                                                     }
@@ -418,20 +434,35 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                         }
                                     }
                                     Some(c) => {
-
                                         let c = c.clone();
+
                                         read_buf.advance(total_req_size );
+                                        if read_buf.len() >= c {
+                                            read_buf.advance(c);
+                                            if read_buf.is_empty() {continue 'main_loop}
+                                            continue;
+                                        }
                                         rem = c;
                                         if body_buf.bytes_consumed > 0 {
-                                            rem -= read_buf.len().min(rem);
-                                            read_buf.clear();
+                                            rem-=read_buf.len();
+                                            if body_buf.extended_bytes > 0 {
+                                                body_buf.advance(body_buf.extended_bytes);
+                                                body_buf.extended_bytes = 0;
+                                            }
+
+                                            if rem > 0  {
+                                                let to_advance_body_buf = body_buf.len().min(rem);
+                                                body_buf.advance(to_advance_body_buf);
+                                            }
                                             rem -= body_buf.bytes_consumed.min(rem);
-                                            if !body_buf.is_empty() {
-                                                read_buf.extend_from_slice(body_buf.chunk());
+
+                                            read_buf.clear();
+                                            if  !body_buf.is_empty() {
+                                                read_buf.extend_from_slice(body_buf.chunk())
                                             }
                                             body_buf.reset();
                                         }
-                                        if read_buf.is_empty() {break;}
+                                        if read_buf.is_empty() {continue 'main_loop;}
                                     }
                                 }
 
@@ -540,7 +571,8 @@ impl Future for WaterTcpReader<'_, '_> {
                 _ => Poll::Pending,
             };
         }
-        if (unsafe {&mut *stream_ptr}).read_buf.filled().is_empty() {
+        let st = unsafe {&mut *stream_ptr};
+        if st.read_buf.filled().is_empty() && !st.write_buf.is_empty() {
            match unsafe {Pin::new_unchecked(&mut *stream_ptr)}.poll_write(cx) {
                Poll::Ready(r) => {
                    if let PollWriteResults::WriteErr = r {

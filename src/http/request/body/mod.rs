@@ -44,6 +44,7 @@ pub enum IBodyChunks<'a> {
     FormData(
         MultipartData<'a>
     ),
+    #[cfg(feature = "accept_transfer_chunked")]
     /// handling incoming body as chunked body
     Chunked(BodyChunkedReader<'a>)
 }
@@ -62,7 +63,7 @@ pub enum IBodyChunks<'a> {
     FormData,
     /// parse incoming body bytes to [XWWWFormUrlEncoded] struct
     XWWWFormData,
-
+    #[cfg(feature = "accept_transfer_chunked")]
     /// when body is chunked transfer-encoding
     ChunkedTransferEncoding
  }

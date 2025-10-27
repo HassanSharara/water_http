@@ -29,6 +29,10 @@ impl HeapXWWWFormUrlEncoded {
             data:all
         }
     }
+
+    pub fn all_ref(&self)->&HashMap<String,Bytes>{
+        &self.data
+    }
 }
 impl  DynamicBodyMapTrait for HeapXWWWFormUrlEncoded {
     fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
@@ -48,6 +52,7 @@ impl  DynamicBodyMapTrait for HeapXWWWFormUrlEncoded {
     fn all(&self) -> HashMap<String, Bytes> {
        self.data.clone()
     }
+
 }
 
 impl<'a> DynamicBodyMapTrait for XWWWFormUrlEncoded<'a> {
@@ -66,6 +71,8 @@ impl<'a> DynamicBodyMapTrait for XWWWFormUrlEncoded<'a> {
         }
         map
     }
+
+
 }
 /// crate self using implementations for framework
 impl <'a> XWWWFormUrlEncoded<'a> {
@@ -93,94 +100,118 @@ impl <'a> XWWWFormUrlEncoded<'a> {
         let mut map = HashMap::new();
         let mut key : Option<&'a [u8]> = None;
         let mut cursor = 0_usize;
-        loop {
+
+        for (index,byte) in payload.iter().enumerate() {
             match key {
-                None =>{
-                    if let Some(index) = twoway::find_bytes(payload,b"=") {
-                        cursor = index;
-                        key = Some(&payload[..index]);
-                    }else { break; }
-                }
-                Some(k)=>{
-                    if let Some(index) = twoway::find_bytes(payload,b",") {
-                        let n_index = cursor+1;
-                        if n_index > index {
-                            break;
+                None => {
+
+                    match byte {
+                        b'=' => {
+                            key = Some(&payload[cursor..index]);
+                            cursor = index +1;
                         }
-                        map.insert(k,&payload[n_index..index]);
-                        key = None;
-                        continue;
-                    }else {
-                        let n_index = cursor+1;
-                        if n_index > payload.len() {
-                            break;
-                        }
-                        map.insert(k,&payload[n_index..]);
-                        break;
+                        _=>{}
                     }
                 }
-            };
+                Some(k) => {
 
+                    match byte {
+                        b'&' | b'\r' => {
+                            map.insert(k,&payload[cursor..index]);
+                            cursor=index+1;
+                            key = None;
+                        }
+                        _=>{}
+                    }
+                }
+            }
+        }
+        if let Some(k) = key {
+            map.insert(k,&payload[cursor..]);
         }
         return XWWWFormUrlEncoded{ data:map}
     }
 
 
-    pub (crate) fn from_multiple_payloads(payloads:(&'a[u8],&'a[u8]))->XWWWFormUrlEncoded<'a>{
+
+
+    /*
+
+    pub fn from_multiple_payloads(payloads: (&'a [u8], &'a [u8])) -> XWWWFormUrlEncoded<'a> {
         let mut map = HashMap::new();
-        let mut key : Option<&'a [u8]> = None;
-        let mut cursor = 0_usize;
+        let mut key: Option<&'a [u8]> = None;
+        let mut part = 0;
         let mut payload = payloads.0;
-        let  mut is_first_end = false;
+        use twoway::find_bytes;
         loop {
-            match key {
-                None =>{
-                    if let Some(index) = twoway::find_bytes(payload,b"=") {
-                        cursor = index;
-                        key = Some(&payload[..index]);
-                    }else {
-                        if !is_first_end {
-                            is_first_end = true;
-                            cursor = 0;
-                            payload = payloads.1;
-                            continue;
-                        }
-                        break; }
+            if payload.is_empty() {
+                // move to next payload if available
+                if part == 0 {
+                    part = 1;
+                    payload = payloads.1;
+                    continue;
+                } else {
+                    break;
                 }
-                Some(k)=>{
-                    if let Some(index) = twoway::find_bytes(payload,b",") {
-                        let n_index = cursor+1;
-                        if n_index > index {
-                            break;
-                        }
-                        map.insert(k,&payload[n_index..index]);
-                        key = None;
+            }
+
+            if let Some(k) = key {
+                // find '&' for value end
+                if let Some(idx) = find_bytes(payload, b"&") {
+                    let value = &payload[..idx];
+                    map.insert(k, value);
+                    payload = &payload[idx + 1..];
+                    key = None;
+                    continue;
+                } else {
+                    // last pair in this payload
+                    map.insert(k, payload);
+                    if part == 0 {
+                        part = 1;
+                        payload = payloads.1;
                         continue;
-                    }else {
-                        let n_index = cursor+1;
-                        if n_index > payload.len() {
-                            if !is_first_end {
-                                is_first_end = true;
-                                cursor = 0;
-                                payload = payloads.1;
-                                continue;
-                            }
-                            break;
-                        }
-                        map.insert(k,&payload[n_index..]);
-                        if !is_first_end {
-                            is_first_end = true;
-                            cursor = 0;
-                            payload = payloads.1;
-                            continue;
-                        }
+                    } else {
                         break;
                     }
                 }
-            };
-
+            } else {
+                // find '=' for key
+                if let Some(idx) = find_bytes(payload, b"=") {
+                    key = Some(&payload[..idx]);
+                    payload = &payload[idx + 1..];
+                } else {
+                    if part == 0 {
+                        part = 1;
+                        payload = payloads.1;
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
         }
-        return XWWWFormUrlEncoded{ data:map}
+
+        XWWWFormUrlEncoded { data: map }
+    }
+    */
+}
+
+
+
+#[cfg(test)]
+mod test {
+    use super::XWWWFormUrlEncoded; // import XWWWFormUrlEncoded into this module
+
+
+
+
+    #[test]
+    fn test_xxx_form_url_encoded() {
+        let p1 = b"username=john&age=25&note=ok";
+        let parsed = XWWWFormUrlEncoded::new(p1);
+        assert_eq!(parsed.data.get(b"username".as_ref()), Some(&b"john".as_ref()));
+        assert_eq!(parsed.data.get(b"age".as_ref()), Some(&b"25".as_ref()));
+        assert_eq!(parsed.data.get(b"note".as_ref()), Some(&b"ok".as_ref()));
     }
 
 }

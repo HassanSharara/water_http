@@ -3,7 +3,9 @@ use std::future::Future;
 use bytes::Buf;
 use h2::RecvStream;
 use http::{ Request};
-use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller, BodyChunkedReader};
+use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller};
+#[cfg(feature = "accept_transfer_chunked")]
+use crate::http::request::BodyChunkedReader;
 use crate::http::request::MultipartStreamHolder::H1;
 use crate::http::status_code::HttpStatusCode;
 use crate::server::connection::BodyReadingBuffer;
@@ -30,6 +32,8 @@ const PATH_QUERY_COUNT:usize
     pub(crate)left_bytes:&'a [u8],
     pub(crate)stream:&'a mut HttpStream,
     pub(crate)request:&'a IncomingRequest<'request,HEADER_SIZE,PATH_QUERY_COUNT>,
+    #[cfg(feature = "accept_transfer_chunked")]
+    pub (crate)to_advance_bytes:&'a mut  Option<usize>,
 }
 
 
@@ -102,6 +106,7 @@ impl <'a:'request,'request
         ))
     }
 
+    #[cfg(feature = "accept_transfer_chunked")]
 
     pub (crate) async fn get_body_as_chunked_transferred(&'a mut self)->ParsingBodyResults<'a>{
 
@@ -114,7 +119,8 @@ impl <'a:'request,'request
         let r = BodyChunkedReader::new(
             holder,
             self.body_reading_buffer,
-
+            #[cfg(feature = "accept_transfer_chunked")]
+            self.to_advance_bytes
         );
         ParsingBodyResults::Chunked(
             IBodyChunks::Chunked(
@@ -153,8 +159,12 @@ impl <'a:'request,'request
     #[inline]
     pub (crate) async fn get_xxx_ff(&'a mut self,content_length:&usize)
     ->ParsingBodyResults<'a>{
-        let  remaining = *content_length - self.left_bytes.len();
+
+        let left_bytes_length = self.left_bytes.len();
+        let  remaining = *content_length - left_bytes_length ;
         let mut rem = remaining;
+
+        self.body_reading_buffer.extend_from_slice(self.left_bytes);
         while rem > 0 {
             match self.body_reading_buffer.read_buf(self.stream).await {
                 Ok(s) => {
@@ -170,10 +180,9 @@ impl <'a:'request,'request
             }
 
         }
-        let data = self.left_bytes;
-        let second_data = &self.body_reading_buffer[..remaining];
-        let data = XWWWFormUrlEncoded::from_multiple_payloads(
-            (data,second_data)
+        let data = &self.body_reading_buffer[..remaining+left_bytes_length];
+        let data = XWWWFormUrlEncoded::new(
+           data
         );
         return ParsingBodyResults::FullBody(
             IBody::XWWWFormUrlEncoded(data)
@@ -243,9 +252,12 @@ impl <'a:'request,'request
                                                 content_length
                         ).await
                     }
+                    #[cfg(feature = "accept_transfer_chunked")]
                     ParsingBodyMechanism::ChunkedTransferEncoding => {
                         return self.get_body_as_chunked_transferred().await
                     }
+
+
                 }
             }
             else {
@@ -307,12 +319,16 @@ impl <'a:'request,'request
                             )
                         )
                     }
+                    #[cfg(feature = "accept_transfer_chunked")]
+
                     ParsingBodyMechanism::ChunkedTransferEncoding => {
                         self.get_body_as_chunked_transferred().await
                     }
                 };
             }
         }
+        #[cfg(feature = "accept_transfer_chunked")]
+
         if let Some(transfer_encoding) = self.request.headers()
             .get_as_str("Transfer-Encoding") {
             if transfer_encoding.to_lowercase() == "chunked" {
@@ -341,6 +357,8 @@ pub  struct Http2Getter<'a> {
     pub(crate)batch:&'a mut Request<RecvStream>,
     pub(crate)content_length:usize,
     pub(crate)reading_buffer:&'a mut BodyReadingBuffer,
+    #[cfg(feature = "accept_transfer_chunked")]
+    pub(crate)to_advance:&'a mut Option<usize>
 }
 impl<'a>   Http2Getter<'a> {
 
@@ -468,6 +486,8 @@ impl<'a>   Http2Getter<'a> {
 
     }
 
+    #[cfg(feature = "accept_transfer_chunked")]
+
     pub (crate) async fn get_body_as_chunked_transferred(&'a mut self)->ParsingBodyResults<'a>{
 
         let holder  = MultipartStreamHolder::H2(
@@ -477,7 +497,9 @@ impl<'a>   Http2Getter<'a> {
         );
         let r = BodyChunkedReader::new(
             holder,
-            self.reading_buffer
+            self.reading_buffer,
+            #[cfg(feature = "accept_transfer_chunked")]
+            self.to_advance
         );
         ParsingBodyResults::Chunked(
             IBodyChunks::Chunked(
@@ -559,6 +581,8 @@ impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
             ParsingBodyMechanism::XWWWFormData => {
                 return self.get_body_as_xww().await;
             }
+            #[cfg(feature = "accept_transfer_chunked")]
+
             ParsingBodyMechanism::ChunkedTransferEncoding => {
                 self.get_body_as_chunked_transferred().await
             }

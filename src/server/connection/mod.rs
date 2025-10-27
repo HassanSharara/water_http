@@ -166,6 +166,7 @@ impl  ConnectionStream {
     ){
         WaterTcpStream::serve(stream,peer,controller).await;
 
+       /*
        //  let mut each_request_body_reading_buffer =
        //      BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
        //  let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
@@ -341,6 +342,7 @@ impl  ConnectionStream {
        //         break;
        //     }
        //  }
+       */
     }
 
 }
@@ -384,6 +386,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
 pub (crate) struct BodyReadingBuffer {
     buffer:BytesMut,
     pub (crate ) bytes_consumed:usize,
+    pub (crate ) extended_bytes:usize,
     pub (crate ) advanced_bytes:usize,
 }
 
@@ -401,7 +404,6 @@ impl BodyReadingBuffer {
 
 
 
-
     #[inline(always)]
     pub (crate) fn is_empty(&self) -> bool {
         self.buffer.is_empty()
@@ -412,6 +414,7 @@ impl BodyReadingBuffer {
         Self {
             buffer:BytesMut::with_capacity(len),
             bytes_consumed:0,
+            extended_bytes:0,
             advanced_bytes:0,
         }
     }
@@ -431,6 +434,7 @@ impl BodyReadingBuffer {
 
     #[inline(always)]
     pub (crate) fn extend_from_slice(&mut self,slice:&[u8]) {
+        self.extended_bytes += slice.len();
         self.buffer.extend_from_slice(slice);
     }
 
