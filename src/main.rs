@@ -1,9 +1,8 @@
 use std::collections::HashMap;
-use tokio::io::AsyncWriteExt;
-use water_http::server::{HttpContext, ServerConfigurations};
+use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
-use water_http::http::request::{DynamicBodyMapTrait,};
+// use water_http::http::request::{DynamicBodyMapTrait,};
 
 
 InitControllersRoot! {
@@ -12,7 +11,7 @@ InitControllersRoot! {
 }
 type MainHolderType = CHolder;
 
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct CHolder {
     pub user:Option<HashMap<String,String>>,
 
@@ -38,23 +37,23 @@ pub struct CHolder {
         MainController
     );
 }
-
-pub async fn upload_file<'a,H:Send + 'static ,const HS:usize,const Q:usize>(context:&mut HttpContext<'a,H,HS,Q>) {
-
-    let body = context.get_body_as_multipart().await;
-    if let Ok(body) = body {
-        let image = body.get_as_bytes("image");
-        if let Some(image) = image  {
-            let path = std::path::Path::new("./public/images/test.png");
-            let file = tokio::fs::File::create(path).await;
-            if let Ok(mut file) = file {
-             _= file.write_all(image).await;
-            }
-            _= context.send_str("success").await;
-        }
-    }
-    _= context.send_str("hello world").await;
-}
+//
+// pub async fn upload_file<'a,H:Send + 'static ,const HS:usize,const Q:usize>(context:&mut HttpContext<'a,H,HS,Q>) {
+//
+//     let body = context.get_body_as_multipart().await;
+//     if let Ok(body) = body {
+//         let image = body.get_as_bytes("image");
+//         if let Some(image) = image  {
+//             let path = std::path::Path::new("./public/images/test.png");
+//             let file = tokio::fs::File::create(path).await;
+//             if let Ok(mut file) = file {
+//              _= file.write_all(image).await;
+//             }
+//             _= context.send_str("success").await;
+//         }
+//     }
+//     _= context.send_str("hello world").await;
+// }
 
 
 // you can use one style to make it your default and favorite one
@@ -75,7 +74,7 @@ WaterController! {
             _= sender.send_str("Hello World").await;
         }
 
-        POST -> upload -> upload(context) [super::upload_file]
+        // POST -> upload -> upload(context) [super::upload_file]
          // in this case POST is Method and api/auth/login is path
         POST => api/auth/login => login_handler(context) async {
             response!(context -> "hello from login api endpoint");

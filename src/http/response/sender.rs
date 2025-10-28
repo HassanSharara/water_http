@@ -4,8 +4,11 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::future::Future;
 use std::io:: SeekFrom;
+#[cfg(not(feature = "use_only_http1"))]
 use bytes::Bytes;
+#[cfg(not(feature = "use_only_http1"))]
 use h2::SendStream;
+#[cfg(not(feature = "use_only_http1"))]
 use http::{HeaderName, HeaderValue, Response as H2Response, response::Builder as H2ResponseBuilder};
 use serde::de::Error;
 use serde::Serialize;
@@ -14,9 +17,9 @@ use crate::http::{FileRSender, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
 use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
-use crate::server::{get_server_config, Http1Context, Http2Context, WRITING_FILES_BUF_LEN};
-
-
+use crate::server::{get_server_config, Http1Context, WRITING_FILES_BUF_LEN};
+#[cfg(not(feature = "use_only_http1"))]
+use crate::server::Http2Context;
 
 
 /// for providing easy access and use for sends methods
@@ -62,6 +65,7 @@ pub  trait HttpSenderTrait {
 
 
 
+#[cfg(not(feature = "use_only_http1"))]
 
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 2 protocol to serve connections
 #[doc(hidden)]
@@ -70,6 +74,7 @@ pub struct  Http2Sender<'a,'b> {
     send_stream: Option<SendStream<Bytes>>,
     response_builder:Option<H2ResponseBuilder>
 }
+#[cfg(not(feature = "use_only_http1"))]
 
 impl <'a,'b> Http2Sender<'a,'b>{
     pub (crate) fn new(
@@ -110,6 +115,7 @@ impl <'a,'b> Http2Sender<'a,'b>{
         return Err(())
     }
 }
+#[cfg(not(feature = "use_only_http1"))]
 
 impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
     fn send_status_code(&mut self, http_status: StatusCode) {
@@ -352,6 +358,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
 /// for sending http response to all supported protocols by the crate
 pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> {
     H1(Http1Sender<'a,'context,HEADERS_COUNT,QUERY_COUNT>),
+    #[cfg(not(feature = "use_only_http1"))]
     H2(Http2Sender<'a,'context>),
 }
 
@@ -363,6 +370,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             HttpSender::H1(h1) => {
                 h1.send_status_code(http_status)
             }
+            #[cfg(not(feature = "use_only_http1"))]
             HttpSender::H2(h2) => {
                 h2.send_status_code(http_status)
             }
@@ -374,6 +382,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             HttpSender::H1(h1) => {
                 h1.send_data_partial(data)
             }
+            #[cfg(not(feature = "use_only_http1"))]
             HttpSender::H2(h2) => {
                 h2.send_data_partial(data)
             }
@@ -385,6 +394,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             HttpSender::H1(h1) => {
                 h1.send_data_as_final_response(data).await
             }
+            #[cfg(not(feature = "use_only_http1"))]
             HttpSender::H2(h2) => {
                 h2.send_data_as_final_response(data).await
             }
@@ -396,6 +406,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             HttpSender::H1(h1) => {
                 h1.set_header(key,value)
             }
+            #[cfg(not(feature = "use_only_http1"))]
             HttpSender::H2(h2) => {
                 h2.set_header(key,value)
             }
@@ -407,6 +418,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
                 HttpSender::H1(h1) => {
                     h1.set_header_ef(key,value)
                 }
+                #[cfg(not(feature = "use_only_http1"))]
                 HttpSender::H2(h2) => {
                     h2.set_header_ef(key,value)
                 }
@@ -416,6 +428,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
      async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
          match self {
              HttpSender::H1(h1) => {h1.send_json(value).await}
+             #[cfg(not(feature = "use_only_http1"))]
              HttpSender::H2(h2) => {h2.send_json(value).await}
          }
      }
@@ -426,6 +439,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             HttpSender::H1(h1) => {
                 h1.send_str(data).await
             }
+            #[cfg(not(feature = "use_only_http1"))]
             HttpSender::H2(h2) => {
                 h2.send_str(data).await
             }
@@ -435,6 +449,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
     async fn send_file(&mut self, pc: FileRSender<'_>) ->SendingFileResults {
         match self {
             HttpSender::H1(h1) => {h1.send_file(pc).await}
+            #[cfg(not(feature = "use_only_http1"))]
             HttpSender::H2(h2) => {h2.send_file(pc).await}
         }
     }
@@ -442,6 +457,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
      async fn flush(&mut self) -> Result<(), ()> {
          match self {
              HttpSender::H1(h1) => {h1.flush().await}
+             #[cfg(not(feature = "use_only_http1"))]
              HttpSender::H2(h2) => {h2.flush().await}
          }
      }
@@ -449,6 +465,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
      async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
          match self {
              HttpSender::H1(h1) => {h1.write_custom_bytes(bytes).await}
+             #[cfg(not(feature = "use_only_http1"))]
              HttpSender::H2(h2) => {h2.write_custom_bytes(bytes).await}
          }
      }

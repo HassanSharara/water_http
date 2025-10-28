@@ -10,6 +10,7 @@ use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
 use crate::server::{CapsuleWaterController, HttpStream, READING_BUF_LEN, WaterTcpStream};
+#[cfg(not(feature = "use_only_http1"))]
 use crate::server::sr_context::{Http2Context, HttpContext, Protocol, ServingRequestResults};
 
 
@@ -34,10 +35,23 @@ impl  ConnectionStream {
     }
 
     #[inline(always)]
-    pub (crate) async fn serve<Holder:Send + 'static ,const HS:usize,const QS:usize,>
-    (self,
-     controller:&'static  CapsuleWaterController<Holder,HS,QS>
+    pub (crate) async fn serve<
+        #[cfg(feature = "use_tokio_send")]
+        Holder:Send + 'static,
+        #[cfg(not(feature = "use_tokio_send"))]
+        Holder,
+        #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
+        SHARED:Clone,
 
+
+        #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
+        SHARED:Clone + Send + 'static,
+        const HS:usize,const QS:usize,>
+    (self,
+     #[cfg(feature = "thread_shared_struct")]
+     controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
+     #[cfg(not(feature = "thread_shared_struct"))]
+     controller:&'static  CapsuleWaterController<Holder,HS,QS>,
     ){
         #[cfg(feature = "debugging")]
         {
@@ -114,7 +128,22 @@ impl  ConnectionStream {
                             while let Some(Ok(batch)) = connection.accept().await {
                                 let mut reading_buffer =
                                     BodyReadingBuffer::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER);
-                                let mut context =
+                                #[cfg(feature = "thread_shared_struct")]
+                                    let mut context =
+                                    HttpContext::<'_,Holder,SHARED,HS,QS>::new(
+                                        Protocol::<'_,HS, QS>::from_http2_context(
+                                            Http2Context
+                                                ::<>
+                                            ::new(
+                                                batch,
+                                                &mut reading_buffer
+                                            )
+                                        ),
+                                        &self.address
+                                    );
+
+                                #[cfg(not(feature = "thread_shared_struct"))]
+                                    let mut context =
                                     HttpContext::new(
                                         Protocol::<'_,HS, QS>::from_http2_context(
                                             Http2Context
@@ -126,6 +155,7 @@ impl  ConnectionStream {
                                         ),
                                         &self.address
                                     );
+
                                 match  context.serve(controller).await {
                                     ServingRequestResults::Stop => {return;}
                                     ServingRequestResults::Done => {
@@ -157,12 +187,24 @@ impl  ConnectionStream {
 
     #[inline(always)]
     async fn handle_h1_connections
-    <Holder:Send + 'static,
+    <
+        #[cfg(feature = "use_tokio_send")]
+        Holder:Send + 'static,
+        #[cfg(not(feature = "use_tokio_send"))]
+        Holder,
+        #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
+        SHARED:Clone,
+
+
+        #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
+        SHARED:Clone + Send + 'static,
         const HS:usize,
         const QS:usize,>
     (stream:&mut HttpStream,peer:&SocketAddr,
-     controller:&'static  CapsuleWaterController<Holder,HS,QS>
-
+     #[cfg(feature = "thread_shared_struct")]
+     controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
+     #[cfg(not(feature = "thread_shared_struct"))]
+     controller:&'static  CapsuleWaterController<Holder,HS,QS>,
     ){
         WaterTcpStream::serve(stream,peer,controller).await;
 

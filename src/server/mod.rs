@@ -256,6 +256,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::Deref;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
+#[cfg(not(feature = "use_tokio_send"))]
 use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::TlsAcceptor;
@@ -274,13 +275,34 @@ pub (crate)  fn get_server_config()->&'static ServerConfigurations{
 
 
 /// running given server configurations with Controller Root
-pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const QS:usize,>(
+pub  fn run_server<
+    #[cfg(feature = "use_tokio_send")]
+    Holder:Send + 'static + std::fmt::Debug,
+    #[cfg(not(feature = "use_tokio_send"))]
+    Holder,
+
+
+    #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
+    SHARED:Clone,
+
+    #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
+    SHARED:Clone + Send + 'static,
+    const HS:usize,const QS:usize,
+
+ >(
     config:ServerConfigurations,
+    #[cfg(feature = "thread_shared_struct")]
+    controller:&'static mut CapsuleWaterController<Holder,SHARED,HS,QS>,
+    #[cfg(not(feature = "thread_shared_struct"))]
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
 ){
     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
     controller.set_up(String::new());
+    #[cfg(not(feature = "thread_shared_struct"))]
     let pointer = controller as *const CapsuleWaterController<Holder,HS,QS>;
+
+    #[cfg(feature = "thread_shared_struct")]
+    let pointer = controller as *const CapsuleWaterController<Holder,SHARED,HS,QS>;
     controller.____insure_binding();
 
     let controller = unsafe {pointer.as_ref().unwrap()};
@@ -310,7 +332,7 @@ pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const 
                             debug!("count of running workers {workers_count}");
                         }
 
-                         _= run_server_with_address(&address, controller).await;
+                         _= run_server_with_address(&address, controller,).await;
                     })
                 );
             }
@@ -321,42 +343,59 @@ pub  fn run_server<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const 
                 let _ = worker.await;
             }
         });
-        return;
     }
-    let mut os_threads = vec![];
-    for _ in 0..conf.worker_threads_count {
-        for address in &conf.addresses {
-            let address = address.clone();
-            let controller = controller;
-            let threads = std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .max_blocking_threads(90)
-                    .build()
-                    .unwrap();
+    #[cfg(not(feature = "use_tokio_send"))]
+    {
+        let mut os_threads = vec![];
+        for _ in 0..conf.worker_threads_count {
+            for address in &conf.addresses {
+                let address = address.clone();
+                let controller = controller;
+                let threads = std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .max_blocking_threads(90)
+                        .build()
+                        .unwrap();
 
-                let local = LocalSet::new();
+                    let local = LocalSet::new();
 
-                local.block_on(&rt, async move {
-                    let _ = run_server_with_address(&address,controller).await;
+                    local.block_on(&rt, async move {
+                        let _ = crate::server::run_server_with_address(&address, controller).await;
+                    });
                 });
-            });
-            os_threads.push(threads);
+                os_threads.push(threads);
 
+            }
         }
-    }
-    for thread in os_threads {
-        let _ = thread.join();
+        for thread in os_threads {
+            let _ = thread.join();
+        }
     }
 
 }
 
 
-async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const HS:usize,const QS:usize,>(
-    (address,port):&(String,u16),
-    controller:&'static  CapsuleWaterController<Holder,HS,QS>
+async fn run_server_with_address<
+    #[cfg(feature = "use_tokio_send")]
+    Holder:Send + 'static + std::fmt::Debug,
 
-)->stdio::Result<()>{
+    #[cfg(not(feature = "use_tokio_send"))]
+    Holder,
+
+
+
+    #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
+    SHARED:Clone,
+
+    #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
+    SHARED:Clone + Send + 'static,
+    const HS:usize,const QS:usize,>(
+    (address,port):&(String,u16),
+    #[cfg(feature = "thread_shared_struct")]
+    controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
+    #[cfg(not(feature = "thread_shared_struct"))]
+    controller:&'static  CapsuleWaterController<Holder,HS,QS>,)->stdio::Result<()>{
     // defining configuration object
     let server_config = get_server_config();
 
@@ -435,6 +474,61 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
                                     WaterStream::TLS(tls_stream),
                                     socket_address
                                 );
+                                serve_connection(connection, controller).await;
+                            }
+                            #[cfg(feature = "debugging")]
+                            {
+                                let mut con = connections_count.lock().await;
+                                debug!("last connections count where port is not secure {:?}",con.deref());
+                                let m = con.deref_mut();
+                                if *m == 1 {
+                                    *m = 0;
+                                } else {
+                                    *m -=1;
+                                }
+
+                            }
+                            return ;
+                        }
+                    }
+
+                    // handling connection normally
+                    let connection
+                        = ConnectionStream::new(WaterStream::TOStream(stream),socket);
+                    serve_connection(connection, controller).await;
+                    #[cfg(feature = "debugging")]
+                    {
+                        let mut con = connections_count.lock().await;
+                        debug!("last connections count {:?}",con.deref());
+                        let m = con.deref_mut();
+                        if *m == 1 {
+                            *m = 0;
+                        } else {
+                            *m -=1;
+                        }
+
+                    }
+                });
+
+
+            }
+
+            #[cfg(not(feature = "use_tokio_send"))]
+            {
+
+                tokio::task::spawn_local(async move {
+                    // checking if the current port should be handled
+                    // with tls configurations if it`s exist
+                    #[cfg(feature = "support_tls")]
+                    {
+                        if is_port_should_be_securely_handled {
+                            let tls = tls.unwrap();
+                            let tls_stream = tls.accept(stream).await;
+                            if let Ok(tls_stream) = tls_stream {
+                                let connection =  ConnectionStream::new(
+                                    WaterStream::TLS(tls_stream),
+                                    socket_address
+                                );
                                 crate::server::serve_connection(connection, controller).await;
                             }
                             #[cfg(feature = "debugging")]
@@ -470,59 +564,7 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
 
                     }
                 });
-
-                continue;
             }
-
-            tokio::task::spawn_local(async move {
-                // checking if the current port should be handled
-                // with tls configurations if it`s exist
-                #[cfg(feature = "support_tls")]
-                {
-                    if is_port_should_be_securely_handled {
-                        let tls = tls.unwrap();
-                        let tls_stream = tls.accept(stream).await;
-                        if let Ok(tls_stream) = tls_stream {
-                            let connection =  ConnectionStream::new(
-                                WaterStream::TLS(tls_stream),
-                                socket_address
-                            );
-                            serve_connection(connection, controller).await;
-                        }
-                        #[cfg(feature = "debugging")]
-                        {
-                            let mut con = connections_count.lock().await;
-                            debug!("last connections count where port is not secure {:?}",con.deref());
-                            let m = con.deref_mut();
-                            if *m == 1 {
-                                *m = 0;
-                            } else {
-                                *m -=1;
-                            }
-
-                        }
-                        return ;
-                    }
-                }
-
-                // handling connection normally
-                let connection
-                    = ConnectionStream::new(WaterStream::TOStream(stream),socket);
-                crate::server::serve_connection(connection, controller).await;
-                #[cfg(feature = "debugging")]
-                {
-                    let mut con = connections_count.lock().await;
-                    debug!("last connections count {:?}",con.deref());
-                    let m = con.deref_mut();
-                    if *m == 1 {
-                        *m = 0;
-                    } else {
-                        *m -=1;
-                    }
-
-                }
-            });
-
         }
     }
 }
@@ -530,10 +572,24 @@ async fn run_server_with_address<Holder:Send + 'static + std::fmt::Debug,const H
 
 
 #[inline(always)]
-async fn serve_connection<Holder:Send + 'static + std::fmt::Debug,
+async fn serve_connection<
+    #[cfg(feature = "use_tokio_send")]
+    Holder:Send + 'static,
+
+    #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
+    SHARED:Clone,
+
+
+    #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
+    SHARED:Clone + Send + 'static,
+    #[cfg(not(feature = "use_tokio_send"))]
+    Holder,
     const HS:usize,const QS:usize,>
 (connection:ConnectionStream,
- controller:&'static  CapsuleWaterController<Holder,HS,QS>
+ #[cfg(feature = "thread_shared_struct")]
+ controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
+ #[cfg(not(feature = "thread_shared_struct"))]
+ controller:&'static  CapsuleWaterController<Holder,HS,QS>,
 ){
     connection.serve(controller).await;
 }

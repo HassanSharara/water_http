@@ -3,16 +3,26 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use bytes::{Bytes, BytesMut};
+use bytes:: BytesMut;
+#[cfg(not(feature = "use_only_http1"))]
+use bytes::Bytes;
+
+#[cfg(not(feature = "use_only_http1"))]
 use h2::RecvStream;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+#[cfg(not(feature = "use_only_http1"))]
 use h2::server::SendResponse;
+#[cfg(not(feature = "use_only_http1"))]
 use http::Request;
 use serde::{Deserialize, Serialize};
 use serde::ser::Error;
 use tokio::net::TcpStream;
-use crate::http::{FileRSender, Http1Sender, Http2Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
-use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, Http2Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+#[cfg(not(feature = "use_only_http1"))]
+use crate::http::Http2Sender;
+#[cfg(not(feature = "use_only_http1"))]
+use crate::http::request::Http2Getter;
+use crate::http::{FileRSender, Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
+use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
 use crate::server::{CapsuleWaterController, MiddlewareCallback, MiddlewareResult};
@@ -21,6 +31,7 @@ use crate::server::errors::{ServerError, WaterErrors};
 
 pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>{
+    #[cfg(not(feature = "use_only_http1"))]
     Http2(Http2Context<'a,>),
     Http1(Http1Context<'a,HEADERS_COUNT,PATH_QUERY_COUNT>)
 }
@@ -32,7 +43,7 @@ impl <'a,const HEADERS_COUNT:usize
     //     Protocol::Http1(context)
     // }
 
-
+    #[cfg(not(feature = "use_only_http1"))]
     pub (crate) fn from_http2_context(context:Http2Context<'a,>)
     ->Protocol<'a, HEADERS_COUNT, PATH_QUERY_COUNT> {
         Protocol::Http2(context)
@@ -40,6 +51,7 @@ impl <'a,const HEADERS_COUNT:usize
 }
 
 
+#[cfg(not(feature = "use_only_http1"))]
 
 pub (crate) struct  Http2Context<'a> {
     pub request_batch:(Request<RecvStream>,SendResponse<Bytes>),
@@ -49,6 +61,7 @@ pub (crate) struct  Http2Context<'a> {
     #[cfg(feature = "accept_transfer_chunked")]
     to_advance:Option<usize>
 }
+#[cfg(not(feature = "use_only_http1"))]
 
  fn parse_query_string_to_map(query:Option<&str>,map:&mut Option<HashMap<String,String>>){
      let mut query = match query {
@@ -76,6 +89,8 @@ pub (crate) struct  Http2Context<'a> {
          }
      }
  }
+#[cfg(not(feature = "use_only_http1"))]
+
 impl<'a> Http2Context<'a> {
 
     pub (crate) fn new(request_batch:(Request<RecvStream>,SendResponse<Bytes>),reading_buffer:&'a mut BodyReadingBuffer)->Self{
@@ -136,7 +151,32 @@ impl<'a> Http2Context<'a> {
 }
 
 
+#[cfg(feature = "thread_shared_struct")]
+pub struct HttpContext<
+    'a,
+    #[cfg(feature = "use_tokio_send")]
+    H:Send + 'static,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone + Send + 'static,
+    const HEADERS_COUNT:usize
+    ,const PATH_QUERY_COUNT:usize>
+{
+    /// for holding data trough multiple middlewares and functions or handlers
+    pub holder:Option<H>,
+    pub(crate) protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    peer:&'a SocketAddr,
+    /// saving generic parameters injected with requested path
+    pub path_params_map:Option<HashMap<String,String>>,
+    body_bytes_holder:Option<Vec<u8>>,
+    pub thread_shared_struct:Option<SHARED>
+}
 
+
+#[cfg(not(feature = "thread_shared_struct"))]
 /// http context is a handler wrapper for http requests and operations
 /// that help providing very fast handling framework for all http requests types
 pub struct HttpContext<
@@ -151,23 +191,31 @@ pub struct HttpContext<
     peer:&'a SocketAddr,
     /// saving generic parameters injected with requested path
     pub path_params_map:Option<HashMap<String,String>>,
-    body_bytes_holder:Option<Vec<u8>>
+    body_bytes_holder:Option<Vec<u8>>,
 }
 
 
-impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
-    ,const PATH_QUERY_COUNT:usize> HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT> {
+#[cfg(not(feature = "thread_shared_struct"))]
+impl <'a,
+    #[cfg(feature = "use_tokio_send")]
+    H:Send + 'static,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H,
+    const HEADERS_COUNT:usize
+    ,const PATH_QUERY_COUNT:usize>
+HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
     /// for getting connected socket Address
     /// # return `&SocketAddr`
     pub fn get_peer_socket(&self)->&SocketAddr {
         self.peer
     }
+
     pub (crate) fn new(
         protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
         socket:&'a SocketAddr
     )->
-    HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>
+        HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
         HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None}
     }
@@ -177,6 +225,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// for making a less ram usage for better performance
     pub fn getter<'f>(&'f mut self)->HttpGetter<'f,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         match &mut self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {HttpGetter::H2(h2.getter())}
             Protocol::Http1(h1) => {HttpGetter::H1(h1.getter())}
         }
@@ -232,9 +281,9 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             }
             ParsingBodyResults::None => {return  Ok(None)}
             ParsingBodyResults::Err(_) => { return
-             Err(
-                 WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR)
-             )
+                Err(
+                    WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR)
+                )
             }
         }
         return Err( WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR))
@@ -252,7 +301,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
                         (data.as_ref() as *const [u8]).as_ref().unwrap()
                     }
                 );
-                 return res
+                return res
             }
             _ => {Err(serde_json::Error::custom("can not retrieve incoming body bytes"))}
         }
@@ -265,7 +314,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         let  body = body.get_body_by_mechanism(
             ParsingBodyMechanism::FormData
         ).await;
-         match body {
+        match body {
             Chunked(a)=>{
                 if let IBodyChunks::FormData( data) = a {
 
@@ -347,6 +396,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// it is very fast and memory safe function ,and it has zero allocation for data
     pub fn get_from_headers_as_bytes(&self,key:&str)->Option<&[u8]>{
         match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {
                 return  h2.get_from_headers(key)
             }
@@ -355,6 +405,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             }
         }
     }
+
 
     /// this function just convert the bytes that come from [self.get_from_headers]
     /// to `Cow<'_,str>`
@@ -374,6 +425,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// else it's returning [None]
     pub fn content_length(&mut self) ->Option<&usize>{
         match &mut self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {
                 h2.content_length()
             }
@@ -392,11 +444,12 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// getting sender for sending all types of data to client
     pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         return match &mut self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {
                 HttpSender::H2(Http2Sender::new(h2))
             }
             Protocol::Http1(h1) => {
-               HttpSender::H1( Http1Sender::new(h1))
+                HttpSender::H1( Http1Sender::new(h1))
             }
         }
     }
@@ -503,13 +556,15 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
             file.set_bytes_range(start,end);
         }
         let mut  sender = self.sender();
-         sender.send_file(file).await
+        sender.send_file(file).await
     }
 
 
     /// getting the path from incoming request
     pub fn path(&self)->&str{
         match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
                 request.uri().path()
@@ -524,12 +579,13 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// getting incoming request method
     pub fn method(&self)->&str{
         match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
                 request.method().as_str()
             }
             Protocol::Http1(h1) => {
-               h1.request.method()
+                h1.request.method()
             }
         }
     }
@@ -552,6 +608,7 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
     /// here you can get id value using this method
     pub  fn get_from_path_query(&self,key:&str)->Option<Cow<'_,str>>{
         match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {
                 if let Some(pq)  = h2.path_query.as_ref() {
                     if let Some(v) = pq.get(key){
@@ -566,12 +623,14 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
         }
     }
 
+
+
     pub (crate) async fn serve(
         &mut self,
         controller:&'static  CapsuleWaterController<H,HEADERS_COUNT,PATH_QUERY_COUNT>
 
     )->
-    ServingRequestResults
+        ServingRequestResults
     {
 
         // {
@@ -649,6 +708,519 @@ impl <'a,H:Send + 'static,const HEADERS_COUNT:usize
 
 
 
+
+
+
+}
+
+
+#[cfg(feature = "thread_shared_struct")]
+impl <'a,
+    #[cfg(feature = "use_tokio_send")]
+    H:Send + 'static,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone + Send + 'static,
+    const HEADERS_COUNT:usize
+    ,const PATH_QUERY_COUNT:usize>
+HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
+
+    /// for getting connected socket Address
+    /// # return `&SocketAddr`
+    pub fn get_peer_socket(&self)->&SocketAddr {
+        self.peer
+    }
+
+    pub (crate) fn new(
+        protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
+        socket:&'a SocketAddr
+    )->
+        HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
+    {
+        HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None,thread_shared_struct:None}
+    }
+
+
+    /// returning getter struct for getting info from incoming request very easley and
+    /// for making a less ram usage for better performance
+    pub fn getter<'f>(&'f mut self)->HttpGetter<'f,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
+        match &mut self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {HttpGetter::H2(h2.getter())}
+            Protocol::Http1(h1) => {HttpGetter::H1(h1.getter())}
+        }
+    }
+
+
+
+    /// getting the full body bytes from stream
+    /// this function will make context allocate heap memory for holding bytes together
+    /// and not use the same buffer bytes because the buffer would be busy handling another request and
+    /// can not be interpreted by the current thread, and also we need to hold the body bytes for you
+    /// to the next use
+    /// # Note :
+    /// this function is generate body bytes in heap and it`s less efficient than using getter() function
+    /// but also using getter is much more code you need to write , and also you need to know what are you doing
+    /// to make it super efficient
+    /// [HttpGetter]
+    ///
+    /// to use getter you can call
+    /// ```shell
+    /// context.getter()
+    /// ```
+    pub async fn get_body_full_bytes(&mut self)->Result<Option<&Vec<u8>>,WaterErrors<'_>>{
+        if self.body_bytes_holder.is_some() {
+            return Ok(self.body_bytes_holder.as_ref())
+        }
+        let mut getter = self.getter();
+        let puller = getter.get_body_by_mechanism(
+            ParsingBodyMechanism::JustBytes
+        ).await;
+        match puller {
+            Chunked(chunks) => {
+                if let IBodyChunks::Bytes(mut puller) = chunks {
+                    let mut bytes = vec![];
+                    if let Ok(()) = puller.on_chunk(
+                        |c| {
+                            bytes.extend_from_slice(c);
+                            return Ok(())
+                        }
+                    ).await {
+                        self.body_bytes_holder = Some(bytes);
+                        return  Ok(self.body_bytes_holder.as_ref())
+                    }
+                }
+
+            }
+            FullBody(body) => {
+                if let IBody::Bytes(body_bytes) = body {
+                    self.body_bytes_holder = Some(body_bytes.to_vec());
+                    return  Ok(self.body_bytes_holder.as_ref())
+                }
+                return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST))
+            }
+            ParsingBodyResults::None => {return  Ok(None)}
+            ParsingBodyResults::Err(_) => { return
+                Err(
+                    WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR)
+                )
+            }
+        }
+        return Err( WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR))
+    }
+
+
+    /// for getting the body parsed as [Deserialize] json struct
+    pub async fn get_body_as_json<'b,V:Deserialize<'b>>(&mut self)->Result<V,serde_json::Error>{
+        let body = self.get_body_full_bytes().await;
+        match body {
+            Ok(Some(data)) => {
+
+                let res = serde_json::from_slice(
+                    unsafe  {
+                        (data.as_ref() as *const [u8]).as_ref().unwrap()
+                    }
+                );
+                return res
+            }
+            _ => {Err(serde_json::Error::custom("can not retrieve incoming body bytes"))}
+        }
+    }
+
+
+    /// getting body as multipart form data [FormDataAll]
+    pub async fn get_body_as_multipart(&mut self)->Result<FormDataAll,WaterErrors<'_>>{
+        let mut body = self.getter();
+        let  body = body.get_body_by_mechanism(
+            ParsingBodyMechanism::FormData
+        ).await;
+        match body {
+            Chunked(a)=>{
+                if let IBodyChunks::FormData( data) = a {
+
+                    if let Ok( data) = data.to_form_data_all().await {
+                        return  Ok(data)
+                    }
+                }
+            }
+            FullBody(f)=> {
+                if let IBody::MultiPartFormData(data) = f {
+                    return Ok(data)
+                }
+            }
+            _ => {}
+        };
+
+        return  Err(
+            WaterErrors::Http(HttpStatusCode::BAD_REQUEST)
+        )
+
+    }
+
+
+
+    /// returning dynamic trait that would be for getting values from body using
+    /// keys
+    pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
+
+        let mut getter = self.getter();
+        match getter.get_body().await {
+            Chunked(bo) => {
+
+                match bo {
+                    IBodyChunks::FormData(mut multipart_form) => {
+                        let mut fu = FormDataAll::new();
+                        if multipart_form.on_field_detected(
+                            |field,data|{
+                                fu.push(field,data);
+                                Ok(None)
+                            }
+                        ).await .is_ok(){
+                            return Ok(DynamicBodyMap::FormField(fu))
+                        }
+                    }
+
+                    _ =>{}
+                }
+
+            }
+
+
+
+            FullBody(full_body) => {
+                match full_body {
+
+                    IBody::MultiPartFormData(data) => {
+                        return Ok(DynamicBodyMap::FormField(data))
+                    }
+                    IBody::XWWWFormUrlEncoded(data) => {
+                        return Ok(DynamicBodyMap::Xww(
+                            HeapXWWWFormUrlEncoded::new(
+                                &data
+                            )
+                        ))
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        };
+        Err::<DynamicBodyMap,WaterErrors<'_>>(
+            WaterErrors::Http(
+                HttpStatusCode::BAD_REQUEST
+            )
+        )
+    }
+
+    /// this function return the original data on the request buffer on memory ,and
+    /// it is very fast and memory safe function ,and it has zero allocation for data
+    pub fn get_from_headers_as_bytes(&self,key:&str)->Option<&[u8]>{
+        match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {
+                return  h2.get_from_headers(key)
+            }
+            Protocol::Http1(h1) => {
+                h1.request.headers().get_as_bytes(key)
+            }
+        }
+    }
+
+
+    /// this function just convert the bytes that come from [self.get_from_headers]
+    /// to `Cow<'_,str>`
+    ///  return [`Cow<'_,str>`]
+    ///
+    /// please note that rust could allocate new memory for holding [Cow] when it`s converted
+    /// from clean bytes
+    pub fn get_from_headers(&self,key:&str)->Option<Cow<'_,str>>{
+        if let Some(data) = self.get_from_headers_as_bytes(key) {
+            return Some(String::from_utf8_lossy(data))
+        }
+        None
+    }
+
+
+    /// getting content body length if request has body it will return [usize] as content length
+    /// else it's returning [None]
+    pub fn content_length(&mut self) ->Option<&usize>{
+        match &mut self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {
+                h2.content_length()
+            }
+            Protocol::Http1(h1) => {
+                h1.content_length()
+            }
+        }
+    }
+
+    // pub (crate) fn total_h1_request_headers_size(&self)->usize{
+    //     match &self.protocol {
+    //         Protocol::Http2(_) => {panic!("not supported in http2")}
+    //         Protocol::Http1(h1) => {h1.request.get_total_headers_length()}
+    //     }
+    // }
+    /// getting sender for sending all types of data to client
+    pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
+        return match &mut self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {
+                HttpSender::H2(Http2Sender::new(h2))
+            }
+            Protocol::Http1(h1) => {
+                HttpSender::H1( Http1Sender::new(h1))
+            }
+        }
+    }
+
+    /// for setting Date header in http response with the current timestamp efficiently
+    pub fn set_date_header(&mut self){
+        let mut sender = self.sender();
+        let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+        sender.set_header_ef("Date",date);
+    }
+
+    // pub(crate)  fn h1_response_buffer(&mut self,)->Result<&mut BytesMut,()>{
+    //     match &mut self.protocol {
+    //         Protocol::Http2(_) => {Err(())}
+    //         Protocol::Http1(h1) => {
+    //             Ok(h1.response_buffer)
+    //         }
+    //     }
+    // }
+    //
+    // pub(crate)  fn h1_stream(&mut self,)->Result<&mut HttpStream,()>{
+    //     match &mut self.protocol {
+    //         Protocol::Http2(_) => {Err(())}
+    //         Protocol::Http1(h1) => {
+    //             Ok(h1.stream)
+    //         }
+    //     }
+    // }
+
+    /// for sending [`&str`] values to the client
+    pub async fn send_str(&mut self,value:&'static str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_str(value).await
+    }
+
+    /// for sending back status code as final response
+    pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode<'_>){
+        let mut sender = self.sender();
+        sender.send_status_code(status);
+        _=sender.send_data_as_final_response(ResponseData::Str("")).await;
+    }
+
+
+    /// for sending html text
+    /// this function is basically set the content type of http response to text/html
+    /// to let the browsers or the client knows what is coming
+    pub async fn send_html_text(&mut self,value:&str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.set_header("Content-Type","Text/html");
+        sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
+    }
+
+    /// for sending json data
+    pub async fn send_json(&mut self,json:&impl Serialize)->serde_json::Result<()>{
+        let mut sender = self.sender();
+        return sender.send_json(json).await;
+    }
+
+
+    /// for sending normal str data without static lifetime
+    pub async fn send_string_slice(&mut self,value:&str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
+        sender.send_data_as_final_response(
+            ResponseData::Slice(value.as_bytes())
+        ).await
+    }
+
+
+    /// for returning redirect response to the client
+    pub async fn redirect(&mut self,url:&str)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::TEMPORARY_REDIRECT);
+        sender.set_header("Location",url);
+        sender.send_data_as_final_response(ResponseData::Slice(&[])).await
+    }
+
+
+
+    /// for sending files
+    /// this function auto support for sending videos
+    pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
+        if !file.path.exists() { return SendingFileResults::FileNotFound}
+        let range = self.get_from_headers("Range");
+        if let Some(range) = range {
+            let mut range = range.split("=").last().unwrap_or("").split("-");
+            let mut start = None;
+            let mut end = None;
+            if let Some(s) = range.next() {
+                if let Ok(s) = s.parse::<usize>() {
+                    start = Some(s);
+                }
+            } else {}
+            if let Some(e) = range.next() {
+                if let Ok(e) = e.parse::<usize>() {
+                    end = Some(e);
+                }
+            }
+            file.set_bytes_range(start,end);
+        }
+        let mut  sender = self.sender();
+        sender.send_file(file).await
+    }
+
+
+    /// getting the path from incoming request
+    pub fn path(&self)->&str{
+        match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {
+                let ref request = h2.request_batch.0;
+                request.uri().path()
+            }
+            Protocol::Http1(h1) => {
+                h1.request.path()
+            }
+        }
+    }
+
+
+    /// getting incoming request method
+    pub fn method(&self)->&str{
+        match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {
+                let ref request = h2.request_batch.0;
+                request.method().as_str()
+            }
+            Protocol::Http1(h1) => {
+                h1.request.method()
+            }
+        }
+    }
+
+
+    /// getting from path generic injected parameters
+    /// like <http://example.com/test/{id}>
+    /// here id is a generic parameter
+    pub fn get_from_path_params(&'a self,key:&str)->Option<&'a String>{
+        if let Some(p) = &self.path_params_map {
+            return p.get(key)
+        }
+        None
+    }
+
+
+    /// getting data from path query
+    ///
+    /// like <http://example.com/test?id=1>
+    /// here you can get id value using this method
+    pub  fn get_from_path_query(&self,key:&str)->Option<Cow<'_,str>>{
+        match &self.protocol {
+            #[cfg(not(feature = "use_only_http1"))]
+            Protocol::Http2(h2) => {
+                if let Some(pq)  = h2.path_query.as_ref() {
+                    if let Some(v) = pq.get(key){
+                        return Some(Cow::from(v.to_string()));
+                    }
+                }
+                None
+            }
+            Protocol::Http1(h1) => {
+                h1.request.get_from_path_query(key)
+            }
+        }
+    }
+
+
+    pub (crate) async fn serve(
+        &mut self,
+        controller:&'static  CapsuleWaterController<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
+
+    )->
+        ServingRequestResults
+    {
+
+        // {
+        //     let path = self.path();
+        //
+        //
+        //     if path == "/json" {
+        //         let mut sender = self.sender();
+        //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+        //         sender.set_header_ef("Date",date);
+        //         sender.set_header_ef("Server","water");
+        //         sender.set_header_ef("Content-Type","application/json");
+        //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
+        //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
+        //         return ServingRequestResults::Done;
+        //     }
+        //     let mut sender = self.sender();
+        //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+        //     sender.set_header_ef("Date",date);
+        //     sender.set_header_ef("Server","water");
+        //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
+        //     _= sender.send_str("Hello, World!").await;
+        //     return ServingRequestResults::Done;
+        // }
+
+        let method ;
+        if self.content_length().is_some() {
+            method = self.method();
+            if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
+                let mut sender = self.sender();
+                sender.send_status_code(HttpStatusCode::BAD_REQUEST);
+                _=sender.write_custom_bytes(&[]).await;
+                return  ServingRequestResults::Stop;
+            }
+        } else {
+            method = self.method();
+        }
+        let path = self.path();
+        let f = controller.find_function(path,method);
+        if let Some((controller,func,map)) = f {
+            if map.is_some() {
+                self.path_params_map = map;
+            }
+            if controller.apply_parents_middlewares && controller.middleware.is_some() {
+                let mut middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
+
+                controller.push_all_ancestors_middlewares(&mut middlewares);
+                for m in middlewares {
+                    match  m(self).await {
+                        MiddlewareResult::Pass => {
+                            continue;
+                        }
+                        MiddlewareResult::Stop => {
+                            return ServingRequestResults::Done
+                        }
+                    }
+                }
+            }
+            func(self).await;
+        } else {
+            let mut sender = self.sender();
+            sender.send_status_code(HttpStatusCode::NOT_FOUND);
+            _=sender.send_str("").await;
+
+            return  ServingRequestResults::Done;
+        }
+
+        #[cfg(feature = "debugging")]
+        {
+            use tracing::info;
+            info!("request has been served {:?}",self.peer);
+        }
+        ServingRequestResults::Done
+    }
 
 
 

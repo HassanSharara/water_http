@@ -7,8 +7,6 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
 use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, Http1Context, HttpContext, HttpStream, READING_BUF_LEN, ServingRequestResults, WRITING_BUF_LEN};
-use crate::server::Protocol::Http1;
-#[cfg(feature = "accept_transfer_chunked")]
 use crate::server::Protocol;
 
 pub struct WaterTcpStream<'a,'b> {
@@ -317,11 +315,25 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
     // }
 
     #[inline(always)]
-    pub (crate) async fn serve<Holder:Send + 'static, const HS:usize, const QS:usize>(
+    pub (crate) async fn serve<
+        #[cfg(feature = "use_tokio_send")]
+        Holder:Send + 'static,
+        #[cfg(not(feature = "use_tokio_send"))]
+        Holder,
+        #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
+        SHARED:Clone,
+
+
+        #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
+        SHARED:Clone + Send + 'static,
+        const HS:usize, const QS:usize>(
         hs: &mut HttpStream,
         peer: &SocketAddr,
+        #[cfg(feature = "thread_shared_struct")]
+        controller: &'static CapsuleWaterController<Holder,SHARED, HS, QS>,
+        #[cfg(not(feature = "thread_shared_struct"))]
         controller: &'static CapsuleWaterController<Holder, HS, QS>
-    ) {
+        ) {
         let mut read_buf = BytesMut::with_capacity(READING_BUF_LEN);
         let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
         let mut body_buf = BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);
@@ -391,8 +403,15 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                         let total_req_size = request.get_total_headers_length();
                         let left_bytes = &read_buf[total_req_size..];
 
-                        let mut context = HttpContext::<Holder, HS, QS>::new(
-                            Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+                        #[cfg(feature = "thread_shared_struct")]
+                            let mut context = HttpContext::<Holder,SHARED, HS, QS>::new(
+                            Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+                            peer
+                        );
+
+                        #[cfg(not(feature = "thread_shared_struct"))]
+                            let mut context = HttpContext::<Holder, HS, QS>::new(
+                            crate::server::sr_context::Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
                             peer
                         );
                         match context.serve(controller).await {
@@ -410,8 +429,9 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                                 if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding") {
                                                     if h == b"chunked" {
                                                         match &context.protocol {
+                                                            #[cfg(not(feature = "use_only_http1"))]
                                                             Protocol::Http2(_) => {}
-                                                            Http1(h1) => {
+                                                            Protocol:: Http1(h1) => {
                                                                 if let Some(to_advance ) = h1.to_advance {
                                                                     read_buf.advance(total_req_size + to_advance);
                                                                     continue;
