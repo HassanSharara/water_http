@@ -237,6 +237,8 @@ pub (crate) mod connection;
 mod configurations;
 mod tls;
 mod sr_context;
+
+use std::future::Future;
 pub  use sr_context::*;
 
 #[doc(hidden)]
@@ -254,6 +256,7 @@ use std::io as stdio;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
+use std::pin::Pin;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
 #[cfg(not(feature = "use_tokio_send"))]
@@ -296,7 +299,7 @@ pub  fn run_server<
     #[cfg(not(feature = "thread_shared_struct"))]
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
     #[cfg(feature = "thread_shared_struct")]
-    shared_factory:fn()->SHARED
+    shared_factory:fn()->Pin<Box<dyn Future<Output=SHARED>>>
 ){
     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
     controller.set_up(String::new());
@@ -399,7 +402,7 @@ async fn run_server_with_address<
     #[cfg(not(feature = "thread_shared_struct"))]
     controller:&'static  CapsuleWaterController<Holder,HS,QS>,
     #[cfg(feature = "thread_shared_struct")]
-    shared_factory:fn()->SHARED
+    shared_factory:fn()->Pin<Box<dyn Future<Output=SHARED>>>
 )->stdio::Result<()>{
     // defining configuration object
     let server_config = get_server_config();
@@ -425,7 +428,7 @@ async fn run_server_with_address<
 
     #[cfg(feature = "thread_shared_struct")]
     // create shared factory
-    let shared_struct:SHARED = shared_factory();
+    let shared_struct:SHARED = shared_factory().await;
 
     // building tls acceptor
     #[cfg(feature = "support_tls")]

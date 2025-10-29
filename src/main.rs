@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::rc::Rc;
 use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
@@ -43,8 +45,8 @@ pub struct CHolder {
 }
 
 
-fn shared_factory()->SharedType{
-    Rc::new(ThreadSharedStruct)
+ fn shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
+    Box::pin(async { Rc::new(ThreadSharedStruct) })
 }
 
 //
