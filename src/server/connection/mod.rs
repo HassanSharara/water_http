@@ -52,6 +52,8 @@ impl  ConnectionStream {
      controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
      #[cfg(not(feature = "thread_shared_struct"))]
      controller:&'static  CapsuleWaterController<Holder,HS,QS>,
+     #[cfg(feature = "thread_shared_struct")]
+     shared_factory:SHARED
     ){
         #[cfg(feature = "debugging")]
         {
@@ -100,7 +102,14 @@ impl  ConnectionStream {
                         }
                     }
 
-
+                    #[cfg(feature = "thread_shared_struct")]
+                    Self::handle_h1_connections(
+                        &mut HttpStream::AsyncSecure(stream)
+                        ,&self.address,
+                        controller,
+                        shared_factory
+                    ).await;
+                    #[cfg(not(feature = "thread_shared_struct"))]
                     Self::handle_h1_connections(
                         &mut HttpStream::AsyncSecure(stream)
                         ,&self.address,
@@ -141,6 +150,11 @@ impl  ConnectionStream {
                                         ),
                                         &self.address
                                     );
+                                #[cfg(feature = "thread_shared_struct")]
+                                {
+                                    context.thread_shared_struct = Some(shared_factory.clone());
+                                }
+
 
                                 #[cfg(not(feature = "thread_shared_struct"))]
                                     let mut context =
@@ -173,6 +187,11 @@ impl  ConnectionStream {
                 {
                     debug!("{:?} connection is using http1 protocol",self.address);
                 }
+
+                #[cfg(feature = "thread_shared_struct")]
+                Self::handle_h1_connections(
+                    &mut HttpStream::Async(stream),&self.address,controller,shared_factory).await;
+                #[cfg(not(feature = "thread_shared_struct"))]
                 Self::handle_h1_connections(
                     &mut HttpStream::Async(stream),&self.address,controller).await;
             }
@@ -205,9 +224,16 @@ impl  ConnectionStream {
      controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
      #[cfg(not(feature = "thread_shared_struct"))]
      controller:&'static  CapsuleWaterController<Holder,HS,QS>,
+     #[cfg(feature = "thread_shared_struct")]
+     shared_factory:SHARED
     ){
+
+        #[cfg(feature = "thread_shared_struct")]
+        WaterTcpStream::serve(stream,peer,controller,shared_factory).await;
+        #[cfg(not(feature = "thread_shared_struct"))]
         WaterTcpStream::serve(stream,peer,controller).await;
 
+        // old implementation
        /*
        //  let mut each_request_body_reading_buffer =
        //      BodyReadingBuffer::with_capacity(EACH_REQUEST_BODY_READING_BUFFER);

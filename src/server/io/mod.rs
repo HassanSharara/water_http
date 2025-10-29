@@ -332,7 +332,9 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         #[cfg(feature = "thread_shared_struct")]
         controller: &'static CapsuleWaterController<Holder,SHARED, HS, QS>,
         #[cfg(not(feature = "thread_shared_struct"))]
-        controller: &'static CapsuleWaterController<Holder, HS, QS>
+        controller: &'static CapsuleWaterController<Holder, HS, QS>,
+        #[cfg(feature = "thread_shared_struct")]
+        shared_factory:SHARED
         ) {
         let mut read_buf = BytesMut::with_capacity(READING_BUF_LEN);
         let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
@@ -408,6 +410,10 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                             Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
                             peer
                         );
+                        #[cfg(feature = "thread_shared_struct")]
+                        {
+                            context.thread_shared_struct = Some(shared_factory.clone());
+                        }
 
                         #[cfg(not(feature = "thread_shared_struct"))]
                             let mut context = HttpContext::<Holder, HS, QS>::new(

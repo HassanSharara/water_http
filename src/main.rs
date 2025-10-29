@@ -1,16 +1,19 @@
 use std::collections::HashMap;
+use std::rc::Rc;
 use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
-// use water_http::http::request::{DynamicBodyMapTrait,};
+
+pub struct ThreadSharedStruct ;
 
 
 InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
+    shared_type:SharedType,
 }
 type MainHolderType = CHolder;
-
+type SharedType = Rc<ThreadSharedStruct>;
 #[derive(Debug,Clone)]
 pub struct CHolder {
     pub user:Option<HashMap<String,String>>,
@@ -34,9 +37,16 @@ pub struct CHolder {
     water_http::RunServer!(
         config,
         MAIN_ROOT,
-        MainController
+        MainController,
+        shared_factory
     );
 }
+
+
+fn shared_factory()->SharedType{
+    Rc::new(ThreadSharedStruct)
+}
+
 //
 // pub async fn upload_file<'a,H:Send + 'static ,const HS:usize,const Q:usize>(context:&mut HttpContext<'a,H,HS,Q>) {
 //
@@ -63,6 +73,7 @@ pub struct CHolder {
 // }
 WaterController! {
     holder -> crate::MainHolderType,
+    shared -> crate::SharedType,
     name -> MainController,
     functions -> {
 

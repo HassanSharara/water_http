@@ -193,8 +193,38 @@ macro_rules! route {
 
 
 
+#[cfg(feature = "thread_shared_struct")]
+/// for running server in appropriate way,
+/// and it takes 3 arguments
+/// - the first one is config `ServerConfigurations`
+/// - the second one is Root which is a defining of holder of entry controller
+/// - the third one is the entry point of the server which is the start point controller
+/// # Note :
+///  you really need to make sure to not interrupt or change values in root holder or the second arguments
+/// it`s may lead to very unpredicted behavior cause it designed to provide a higher speed not for editing specially during
+/// multithreading and multiprocessing operations by the framework
+#[macro_export]
+macro_rules! RunServer {
+    (
+        $config:expr,
+        $controller:expr,
+        $entry:ident,
+        $shared_factory:expr
+    ) => {
+        #[allow(static_mut_refs)]
+        unsafe {
+            let co = $entry::build();
+            $controller = Some(co);
+           water_http::server::run_server(
+            $config,
+            $controller.as_mut().unwrap(),
+            $shared_factory
+            );
+        };
 
-
+    };
+}
+#[cfg(not(feature = "thread_shared_struct"))]
 /// for running server in appropriate way,
 /// and it takes 3 arguments
 /// - the first one is config `ServerConfigurations`

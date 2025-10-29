@@ -295,6 +295,8 @@ pub  fn run_server<
     controller:&'static mut CapsuleWaterController<Holder,SHARED,HS,QS>,
     #[cfg(not(feature = "thread_shared_struct"))]
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
+    #[cfg(feature = "thread_shared_struct")]
+    shared_factory:fn()->SHARED
 ){
     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
     controller.set_up(String::new());
@@ -332,7 +334,7 @@ pub  fn run_server<
                             debug!("count of running workers {workers_count}");
                         }
 
-                         _= run_server_with_address(&address, controller,).await;
+                         _= run_server_with_address(&address, controller,shared_factory).await;
                     })
                 );
             }
@@ -361,7 +363,7 @@ pub  fn run_server<
                     let local = LocalSet::new();
 
                     local.block_on(&rt, async move {
-                        let _ = crate::server::run_server_with_address(&address, controller).await;
+                        let _ = crate::server::run_server_with_address(&address, controller,shared_factory).await;
                     });
                 });
                 os_threads.push(threads);
@@ -395,7 +397,10 @@ async fn run_server_with_address<
     #[cfg(feature = "thread_shared_struct")]
     controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
     #[cfg(not(feature = "thread_shared_struct"))]
-    controller:&'static  CapsuleWaterController<Holder,HS,QS>,)->stdio::Result<()>{
+    controller:&'static  CapsuleWaterController<Holder,HS,QS>,
+    #[cfg(feature = "thread_shared_struct")]
+    shared_factory:fn()->SHARED
+)->stdio::Result<()>{
     // defining configuration object
     let server_config = get_server_config();
 
@@ -418,8 +423,9 @@ async fn run_server_with_address<
         server_config.backlog
     ).expect("");
 
-    //
-
+    #[cfg(feature = "thread_shared_struct")]
+    // create shared factory
+    let shared_struct:SHARED = shared_factory();
 
     // building tls acceptor
     #[cfg(feature = "support_tls")]
@@ -461,6 +467,8 @@ async fn run_server_with_address<
 
             #[cfg(feature = "use_tokio_send")]
             {
+                #[cfg(feature = "thread_shared_struct")]
+                    let shared_struct = shared_struct.clone();
                 tokio::spawn(async move {
                     // checking if the current port should be handled
                     // with tls configurations if it`s exist
@@ -474,6 +482,9 @@ async fn run_server_with_address<
                                     WaterStream::TLS(tls_stream),
                                     socket_address
                                 );
+                                #[cfg(feature = "thread_shared_struct")]
+                                 serve_connection(connection,controller,shared_struct).await;
+                                 #[cfg(not(feature = "thread_shared_struct"))]
                                 serve_connection(connection, controller).await;
                             }
                             #[cfg(feature = "debugging")]
@@ -495,6 +506,9 @@ async fn run_server_with_address<
                     // handling connection normally
                     let connection
                         = ConnectionStream::new(WaterStream::TOStream(stream),socket);
+                    #[cfg(feature = "thread_shared_struct")]
+                    serve_connection(connection,controller,shared_struct).await;
+                    #[cfg(not(feature = "thread_shared_struct"))]
                     serve_connection(connection, controller).await;
                     #[cfg(feature = "debugging")]
                     {
@@ -515,7 +529,8 @@ async fn run_server_with_address<
 
             #[cfg(not(feature = "use_tokio_send"))]
             {
-
+                #[cfg(feature = "thread_shared_struct")]
+                let shared_struct = shared_struct.clone();
                 tokio::task::spawn_local(async move {
                     // checking if the current port should be handled
                     // with tls configurations if it`s exist
@@ -529,7 +544,10 @@ async fn run_server_with_address<
                                     WaterStream::TLS(tls_stream),
                                     socket_address
                                 );
-                                crate::server::serve_connection(connection, controller).await;
+                                #[cfg(feature = "thread_shared_struct")]
+                                crate::server::serve_connection(connection, controller, shared_struct).await;
+                                #[cfg(not(feature = "thread_shared_struct"))]
+                                serve_connection(connection, controller).await;
                             }
                             #[cfg(feature = "debugging")]
                             {
@@ -550,7 +568,10 @@ async fn run_server_with_address<
                     // handling connection normally
                     let connection
                         = ConnectionStream::new(WaterStream::TOStream(stream),socket);
-                    crate::server::serve_connection(connection, controller).await;
+                    #[cfg(feature = "thread_shared_struct")]
+                    crate::server::serve_connection(connection, controller, shared_struct.clone()).await;
+                    #[cfg(not(feature = "thread_shared_struct"))]
+                    serve_connection(connection, controller).await;
                     #[cfg(feature = "debugging")]
                     {
                         let mut con = connections_count.lock().await;
@@ -590,6 +611,11 @@ async fn serve_connection<
  controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
  #[cfg(not(feature = "thread_shared_struct"))]
  controller:&'static  CapsuleWaterController<Holder,HS,QS>,
+ #[cfg(feature = "thread_shared_struct")]
+ shared_factory:SHARED
 ){
-    connection.serve(controller).await;
+    #[cfg(feature = "thread_shared_struct")]
+    connection.serve(controller,shared_factory.clone()).await;
+    #[cfg(not(feature = "thread_shared_struct"))]
+    connection.serve(controller, controller).await;
 }
