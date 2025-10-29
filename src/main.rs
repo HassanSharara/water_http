@@ -143,7 +143,7 @@ WaterController! {
         // in this example GET is the method and api/v23 is path
         #[GET,api/v23]
         get_profiles_v2(context) async {
-          super::get_response(context).await;
+         super::get_response(context).await;
         }
 
          // in this example GET is the method and api/v3 is path
@@ -207,7 +207,8 @@ water_http::functions_builder!{
 
     pub async fn send_files(context)  {
 
-           response!(context file -> "./public/text/test1.txt");
+
+         response!(context file -> "./public/text/test1.txt");
 
         // response!(context file -> "./public/text/test1.txt",|c|{
         //     // if we need to modify or encrypt every chunk sent to the user

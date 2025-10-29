@@ -1293,13 +1293,10 @@ macro_rules! FunctionsMacroBuilder {
      }
     ) => {
 
-        $(pub $async fn $fn_name<'context,CONTEXT_HOLDER:Send + 'static,
-        #[cfg(feature = "use_tokio_send")]
-        SHARED:Clone + Send + 'static,
-        #[cfg(not(feature = "use_tokio_send"))]
-        SHARED:Clone,
+        $(pub $async fn $fn_name<'context,
+
         const header_length:usize,const query_length:usize>
-        ($context:&mut water_http::server::HttpContext<'context,CONTEXT_HOLDER,SHARED,header_length,query_length>) {
+        ($context:&mut water_http::server::HttpContext<'context,Holder,Shared,header_length,query_length>) {
             water_http::path_setter!($context->$($path)/+);
             $($function_body_tokens)*
         }
@@ -1614,7 +1611,7 @@ macro_rules! CheckExtraCode {
 macro_rules! WaterController {
     {
      holder -> $holder:path,
-     shared -> $shared:path,
+     shared -> $shared:ty,
      name -> $name:ident,
      functions -> {$($function_tokens:tt)*}
 
