@@ -440,7 +440,6 @@ macro_rules! controller_impl {
                     continue;
                 }
                 let (result, params) = Self::check_if_paths_are_equals(path, Self::shave_path(cp));
-                println!("path is {path} while cp is {cp}");
                 if !result { continue; }
                 return Some((self, func, params));
             }
