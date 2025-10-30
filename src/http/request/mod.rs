@@ -199,6 +199,8 @@ mod test {
         match request {
             FormingRequestResult::Success( request ) => {
                 let data = &request_bytes[request.http_request.headers().headers_length+1..];
+                let s = request.http_request.path().split_to_path_and_query().1;
+                assert_eq!(s.get("id").unwrap(),"2")
             }
             _ =>  {}
         }

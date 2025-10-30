@@ -87,6 +87,13 @@ WaterController! {
             _= sender.send_str("Hello World").await;
         }
 
+        "queries" q(context){
+            let q = context.get_from_path_query("q").unwrap().parse::<usize>().unwrap();
+            println!("{q}");
+            _= context.send_str("hello").await;
+
+        }
+
         // POST -> upload -> upload(context) [super::upload_file]
          // in this case POST is Method and api/auth/login is path
         POST => api/auth/login => login_handler(context) async {

@@ -389,6 +389,11 @@ macro_rules! controller_impl {
             let mut map: Option<HashMap<String, String>> = None;
             for (index, part) in cp_splitter.iter().enumerate() {
                 let inc_part = inc_splitter[index];
+                 if index + 1 == cp_splitter.len() {
+                    if let Some(qi) = inc_part.find("?"){
+                        if &inc_part[..qi] == *part { return (true,None)}
+                    }
+                }
                 let containing_arcs = part.contains('{') && part.contains('}');
                 if part != &inc_part && !containing_arcs {
                     return ERR;
@@ -435,6 +440,7 @@ macro_rules! controller_impl {
                     continue;
                 }
                 let (result, params) = Self::check_if_paths_are_equals(path, Self::shave_path(cp));
+                println!("path is {path} while cp is {cp}");
                 if !result { continue; }
                 return Some((self, func, params));
             }
