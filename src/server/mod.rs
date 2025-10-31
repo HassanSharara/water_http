@@ -355,6 +355,8 @@ pub  fn run_server<
         for _ in 0..conf.worker_threads_count {
 
             for  address in conf.addresses.clone() {
+                let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
+                println!("listening on {}:{}",address.0,address.1);
                 workers.push(
                     rt.spawn(async move {
                         #[cfg(feature = "debugging")]
@@ -363,7 +365,7 @@ pub  fn run_server<
                             workers_count +=1;
                             debug!("count of running workers {workers_count}");
                         }
-                         _= run_server_with_address(&address, controller,shared_factory).await;
+                         _= run_server_with_address(&address, controller,shared_factory,matcher).await;
                     })
                 );
             }
