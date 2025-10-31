@@ -28,6 +28,7 @@ use crate::http::status_code::HttpStatusCode;
 use crate::server::{CapsuleWaterController, MiddlewareCallback, MiddlewareResult};
 use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
+use crate::server::matcher::Matcher;
 
 pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>{
@@ -157,13 +158,15 @@ pub struct HttpContext<
     #[cfg(feature = "use_tokio_send")]
     H:Send + 'static,
     #[cfg(not(feature = "use_tokio_send"))]
-    H,
+    H:'static,
     #[cfg(not(feature = "use_tokio_send"))]
-    SHARED:Clone,
+    SHARED:Clone + 'static,
     #[cfg(feature = "use_tokio_send")]
     SHARED:Clone + Send + 'static,
-    const HEADERS_COUNT:usize
-    ,const PATH_QUERY_COUNT:usize>
+    const HEADERS_COUNT:usize,
+    const PATH_QUERY_COUNT:usize,
+
+>
 {
     /// for holding data trough multiple middlewares and functions or handlers
     pub holder:Option<H>,
@@ -172,7 +175,7 @@ pub struct HttpContext<
     /// saving generic parameters injected with requested path
     pub path_params_map:Option<HashMap<String,String>>,
     body_bytes_holder:Option<Vec<u8>>,
-    pub thread_shared_struct:Option<SHARED>
+    pub thread_shared_struct:Option<SHARED>,
 }
 
 
@@ -181,7 +184,7 @@ pub struct HttpContext<
 /// that help providing very fast handling framework for all http requests types
 pub struct HttpContext<
     'a,
-    H,
+    H:'static,
     const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>
 {
@@ -192,6 +195,7 @@ pub struct HttpContext<
     /// saving generic parameters injected with requested path
     pub path_params_map:Option<HashMap<String,String>>,
     body_bytes_holder:Option<Vec<u8>>,
+    pub(crate) matcher:Option<Matcher< H,HEADERS_COUNT,PATH_QUERY_COUNT>>
 }
 
 
@@ -217,7 +221,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     )->
         HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
-        HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None}
+        HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None,matcher:None}
     }
 
 
@@ -618,13 +622,57 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 None
             }
             Protocol::Http1(h1) => {
-                h1.request.get_from_path_query(key)
+                if let Some(q) = h1.request.get_from_path_query(key) {
+                    return Some(Cow::Borrowed(q))
+                }
+                None
             }
         }
     }
 
 
+    pub(crate) async fn serve_ef(
+        &mut self,
+        controller: &'static CapsuleWaterController<H, HEADERS_COUNT, PATH_QUERY_COUNT>
+    ) -> ServingRequestResults {
+        // Get the match result
+        let path = self.path();
+        let r = self.matcher.as_ref().unwrap().match_path(path);
 
+        if let Some((holder,ref param)) = r {
+            let method = &holder.method;
+            let incoming_method = self.method();
+            if *method == incoming_method {
+                // Extract raw pointers to the data while we still have the borrow
+                let middlewares_ptr = holder.father_middlewares.as_ptr();
+                let middlewares_len = holder.father_middlewares.len();
+                let handler = holder.func;
+
+                // Drop the borrow by ending the scope
+                drop(r); // Explicitly drop to end borrow
+
+                // Now reconstruct the slice from raw pointer
+                // SAFETY: The middleware slice is part of the controller which is 'static,
+                // so it's guaranteed to outlive this function call
+                let middlewares = unsafe {
+                    std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+                };
+
+                // middleware chain
+                for m in middlewares {
+                    match m(self).await {
+                        MiddlewareResult::Pass => continue,
+                        MiddlewareResult::Stop => return ServingRequestResults::Done,
+                    }
+                }
+                // handler
+                handler(self).await;
+                return ServingRequestResults::Done;
+            }
+        }
+        self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
+        ServingRequestResults::Done
+    }
     pub (crate) async fn serve(
         &mut self,
         controller:&'static  CapsuleWaterController<H,HEADERS_COUNT,PATH_QUERY_COUNT>
@@ -633,6 +681,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         ServingRequestResults
     {
 
+        return  self.serve_ef(controller).await;
         // {
         //     let path = self.path();
         //
@@ -1135,19 +1184,69 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 None
             }
             Protocol::Http1(h1) => {
-                h1.request.get_from_path_query(key)
+                if let Some(q) = h1.request.get_from_path_query(key) {
+                    return Some(Cow::Borrowed(q))
+                }
+                None
             }
         }
+    }
+
+    #[cfg(feature = "thread_shared_struct")]
+    pub(crate) async fn serve_ef(
+        &mut self,
+        matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    ) -> ServingRequestResults {
+        // Get the match result
+        let path = self.path();
+        let r = matcher.match_path(path);
+        if let Some((holder,ref param)) = r {
+            let method = &holder.method;
+            let incoming_method = self.method();
+
+            if *method == incoming_method {
+                // Extract raw pointers to the data while we still have the borrow
+                let middlewares_ptr = holder.father_middlewares.as_ptr();
+                let middlewares_len = holder.father_middlewares.len();
+                let handler = holder.func;
+
+                // Drop the borrow by ending the scope
+                drop(r); // Explicitly drop to end borrow
+
+                // Now reconstruct the slice from raw pointer
+                // SAFETY: The middleware slice is part of the controller which is 'static,
+                // so it's guaranteed to outlive this function call
+                if holder.controller.apply_parents_middlewares {
+                    let middlewares = unsafe {
+                        std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+                    };
+
+                    // middleware chain
+                    for m in middlewares {
+                        match m(self).await {
+                            MiddlewareResult::Pass => continue,
+                            MiddlewareResult::Stop => return ServingRequestResults::Done,
+                        }
+                    }
+                }
+                // handler
+                handler(self).await;
+                return ServingRequestResults::Done;
+            }
+        }
+        self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
+        ServingRequestResults::Done
     }
 
 
     pub (crate) async fn serve(
         &mut self,
-        controller:&'static  CapsuleWaterController<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
-
+        matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
     )->
         ServingRequestResults
     {
+
+        return self.serve_ef(matcher).await;
 
         // {
         //     let path = self.path();
@@ -1171,55 +1270,55 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         //     _= sender.send_str("Hello, World!").await;
         //     return ServingRequestResults::Done;
         // }
-
-        let method ;
-        if self.content_length().is_some() {
-            method = self.method();
-            if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
-                let mut sender = self.sender();
-                sender.send_status_code(HttpStatusCode::BAD_REQUEST);
-                _=sender.write_custom_bytes(&[]).await;
-                return  ServingRequestResults::Stop;
-            }
-        } else {
-            method = self.method();
-        }
-        let path = self.path();
-        let f = controller.find_function(path,method);
-        if let Some((controller,func,map)) = f {
-            if map.is_some() {
-                self.path_params_map = map;
-            }
-            if controller.apply_parents_middlewares && controller.middleware.is_some() {
-                let mut middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
-
-                controller.push_all_ancestors_middlewares(&mut middlewares);
-                for m in middlewares {
-                    match  m(self).await {
-                        MiddlewareResult::Pass => {
-                            continue;
-                        }
-                        MiddlewareResult::Stop => {
-                            return ServingRequestResults::Done
-                        }
-                    }
-                }
-            }
-            func(self).await;
-        } else {
-            let mut sender = self.sender();
-            sender.send_status_code(HttpStatusCode::NOT_FOUND);
-            _=sender.send_str("").await;
-
-            return  ServingRequestResults::Done;
-        }
-
-        #[cfg(feature = "debugging")]
-        {
-            use tracing::info;
-            info!("request has been served {:?}",self.peer);
-        }
-        ServingRequestResults::Done
+        //
+        // let method ;
+        // if self.content_length().is_some() {
+        //     method = self.method();
+        //     if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
+        //         let mut sender = self.sender();
+        //         sender.send_status_code(HttpStatusCode::BAD_REQUEST);
+        //         _=sender.write_custom_bytes(&[]).await;
+        //         return  ServingRequestResults::Stop;
+        //     }
+        // } else {
+        //     method = self.method();
+        // }
+        // let path = self.path();
+        // let f = controller.find_function(path,method);
+        // if let Some((controller,func,map)) = f {
+        //     if map.is_some() {
+        //         self.path_params_map = map;
+        //     }
+        //     if controller.apply_parents_middlewares && controller.middleware.is_some() {
+        //         let mut middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
+        //
+        //         controller.push_all_ancestors_middlewares(&mut middlewares);
+        //         for m in middlewares {
+        //             match  m(self).await {
+        //                 MiddlewareResult::Pass => {
+        //                     continue;
+        //                 }
+        //                 MiddlewareResult::Stop => {
+        //                     return ServingRequestResults::Done
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     func(self).await;
+        // } else {
+        //     let mut sender = self.sender();
+        //     sender.send_status_code(HttpStatusCode::NOT_FOUND);
+        //     _=sender.send_str("").await;
+        //
+        //     return  ServingRequestResults::Done;
+        // }
+        //
+        // #[cfg(feature = "debugging")]
+        // {
+        //     use tracing::info;
+        //     info!("request has been served {:?}",self.peer);
+        // }
+        // ServingRequestResults::Done
     }
 
 

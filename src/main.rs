@@ -1,12 +1,9 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
-use std::rc::Rc;
 use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
-
-pub struct ThreadSharedStruct ;
 
 
 InitControllersRoot! {
@@ -15,7 +12,7 @@ InitControllersRoot! {
     shared_type:SharedType,
 }
 type MainHolderType = CHolder;
-type SharedType = Rc<ThreadSharedStruct>;
+type SharedType = u8;
 #[derive(Debug,Clone)]
 pub struct CHolder {
     pub user:Option<HashMap<String,String>>,
@@ -40,14 +37,17 @@ pub struct CHolder {
         config,
         MAIN_ROOT,
         MainController,
-        shared_factory
+        threads_shared_factory
     );
 }
 
 
- fn shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
-    Box::pin(async { Rc::new(ThreadSharedStruct) })
+pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
+    Box::pin(async {
+        return 0
+    })
 }
+
 
 //
 // pub async fn upload_file<'a,H:Send + 'static ,const HS:usize,const Q:usize>(context:&mut HttpContext<'a,H,HS,Q>) {
@@ -88,8 +88,6 @@ WaterController! {
         }
 
         "queries" q(context){
-            let q = context.get_from_path_query("q").unwrap().parse::<usize>().unwrap();
-            println!("{q}");
             _= context.send_str("hello").await;
 
         }
@@ -173,10 +171,11 @@ WaterController! {
         getFile(context) [super::send_files]
 
     }
-    extra_code->(..{
 
-    })
-
+    prefix -> ("hello"),
+    children -> ([
+        SecondController
+    ])
     // , middleware-> (context {
     //     println!("middleware function invoked");
     //
@@ -193,6 +192,15 @@ WaterController! {
     // })
 }
 
+WaterController! {
+    holder -> crate::MainHolderType,
+    shared -> crate::SharedType,
+    name -> SecondController,
+    functions -> {
+        get -> version2 -> g(context){_= context.send_str("go").await;}
+    }
+    prefix -> ("version2_prefix")
+}
 // notice that writing methods like POST,post,Post,posT,POst
 // it would give the same result cause the framework has auto under table requests handler
 

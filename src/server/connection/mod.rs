@@ -10,6 +10,7 @@ use tokio_rustls::server::TlsStream;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
 use crate::server::{CapsuleWaterController, HttpStream, READING_BUF_LEN, WaterTcpStream};
+use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::sr_context::{Http2Context, HttpContext, Protocol, ServingRequestResults};
 
@@ -42,8 +43,6 @@ impl  ConnectionStream {
         Holder,
         #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
         SHARED:Clone,
-
-
         #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
         SHARED:Clone + Send + 'static,
         const HS:usize,const QS:usize,>
@@ -53,7 +52,11 @@ impl  ConnectionStream {
      #[cfg(not(feature = "thread_shared_struct"))]
      controller:&'static  CapsuleWaterController<Holder,HS,QS>,
      #[cfg(feature = "thread_shared_struct")]
-     shared_factory:SHARED
+     shared_factory:SHARED,
+     #[cfg(feature = "thread_shared_struct")]
+     matcher:Matcher<Holder,SHARED,HS,QS>,
+     #[cfg(not(feature = "thread_shared_struct"))]
+     matcher:Matcher<Holder,HS,QS>
     ){
         #[cfg(feature = "debugging")]
         {
@@ -88,6 +91,7 @@ impl  ConnectionStream {
                                             ),
                                             &self.address
                                         );
+                                    context.macher = Some(matcher);
                                     match  context.serve(controller).await {
                                         ServingRequestResults::Stop => {
                                             return;
@@ -107,13 +111,15 @@ impl  ConnectionStream {
                         &mut HttpStream::AsyncSecure(stream)
                         ,&self.address,
                         controller,
-                        shared_factory
+                        shared_factory,
+                        matcher
                     ).await;
                     #[cfg(not(feature = "thread_shared_struct"))]
                     Self::handle_h1_connections(
                         &mut HttpStream::AsyncSecure(stream)
                         ,&self.address,
-                    controller
+                    controller,
+                        matcher.clone()
                     ).await;
 
                 }
@@ -169,8 +175,7 @@ impl  ConnectionStream {
                                         ),
                                         &self.address
                                     );
-
-                                match  context.serve(controller).await {
+                                match  context.serve(matcher.clone()).await {
                                     ServingRequestResults::Stop => {return;}
                                     ServingRequestResults::Done => {
                                         continue;
@@ -190,10 +195,10 @@ impl  ConnectionStream {
 
                 #[cfg(feature = "thread_shared_struct")]
                 Self::handle_h1_connections(
-                    &mut HttpStream::Async(stream),&self.address,controller,shared_factory).await;
+                    &mut HttpStream::Async(stream),&self.address,controller,shared_factory,matcher).await;
                 #[cfg(not(feature = "thread_shared_struct"))]
                 Self::handle_h1_connections(
-                    &mut HttpStream::Async(stream),&self.address,controller).await;
+                    &mut HttpStream::Async(stream),&self.address,controller,matcher).await;
             }
         };
 
@@ -225,13 +230,17 @@ impl  ConnectionStream {
      #[cfg(not(feature = "thread_shared_struct"))]
      controller:&'static  CapsuleWaterController<Holder,HS,QS>,
      #[cfg(feature = "thread_shared_struct")]
-     shared_factory:SHARED
+     shared_factory:SHARED,
+     #[cfg(feature = "thread_shared_struct")]
+     matcher:Matcher<Holder,SHARED,HS,QS>,
+     #[cfg(not(feature = "thread_shared_struct"))]
+     matcher:Matcher<Holder,HS,QS>
     ){
 
         #[cfg(feature = "thread_shared_struct")]
-        WaterTcpStream::serve(stream,peer,controller,shared_factory).await;
+        WaterTcpStream::serve(stream,peer,controller,shared_factory,matcher).await;
         #[cfg(not(feature = "thread_shared_struct"))]
-        WaterTcpStream::serve(stream,peer,controller).await;
+        WaterTcpStream::serve(stream,peer,controller,matcher).await;
 
         // old implementation
        /*

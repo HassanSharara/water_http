@@ -40,7 +40,10 @@ macro_rules! InitControllersRoot {
     headers_length:$hl:literal,
     queries_length:$ql:literal
      } => {
+             use water_http::server::matcher::*;
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$shared,$hl,$ql>> = None;
+        pub static mut STATIC_PATHS: Option<HashMap<String, PathHolder<$holder,$shared,$hl,$ql>>> = None;
+        pub static mut DYNAMIC_PATHS: Option<HashMap<usize, DynamicPathVec<$holder,$shared,$hl,$ql>>> = None;
     };
 
       {
@@ -126,7 +129,10 @@ macro_rules! InitControllersRoot {
     headers_length:$hl:literal,
     queries_length:$ql:literal
      } => {
+        use water_http::server::matcher::*;
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
+        pub static mut STATIC_PATHS: Option<HashMap<String, PathHolder<$holder,$hl,$ql>>> = None;
+        pub static mut DYNAMIC_PATHS: Option<HashMap<usize, DynamicPathVec<$holder,$hl,$ql>>> = None;
     };
 
       {
@@ -218,7 +224,9 @@ macro_rules! RunServer {
            water_http::server::run_server(
             $config,
             $controller.as_mut().unwrap(),
-            $shared_factory
+            $shared_factory,
+                    &mut STATIC_PATHS,
+                &mut  DYNAMIC_PATHS
             );
         };
 
@@ -244,10 +252,13 @@ macro_rules! RunServer {
         #[allow(static_mut_refs)]
         unsafe {
             let co = $entry::build();
+
             $controller = Some(co);
            water_http::server::run_server(
             $config,
             $controller.as_mut().unwrap(),
+                         &mut STATIC_PATHS,
+                &mut  DYNAMIC_PATHS
            );
         };
 

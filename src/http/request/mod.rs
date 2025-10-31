@@ -2,7 +2,6 @@ mod body;
 mod header;
 mod getter;
 pub use getter::*;
-use std::borrow::Cow;
 use std::fmt::{Display,  Formatter};
 pub use body::*;
 pub use crate::http::request::header::{KeyValueList};
@@ -126,11 +125,13 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     /// for examples
     /// - http:://examples.com/posts?id=1 the key is `id` and the value is `1`
     /// - http:://examples.com/posts?year=2024 the key is `year` and the value is `2024`
-    pub fn get_from_path_query(&self,key:&str)->Option<Cow<'_,str>>{
-      let (_,query) =    self.http_request.path().split_to_path_and_query();
-        if let Some(v) = query.get(key) {
-            return Some(Cow::Owned(v.into()));
-        }
+    pub fn get_from_path_query(&self,key:&str)->Option<&'a str>{
+      if let Some((_,q)) = self.http_request.path().to_query() {
+          let q = q.get(key);
+          if let Some(q) = q {
+              return Some(*q);
+          }
+      }
         None
     }
 
@@ -199,8 +200,9 @@ mod test {
         match request {
             FormingRequestResult::Success( request ) => {
                 let data = &request_bytes[request.http_request.headers().headers_length+1..];
-                let s = request.http_request.path().split_to_path_and_query().1;
-                assert_eq!(s.get("id").unwrap(),"2")
+                let s = request.http_request.path().to_query().unwrap();
+                let id  = s.1.get("id").unwrap();
+                assert_eq!(*id,"2");
             }
             _ =>  {}
         }

@@ -7,7 +7,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
 use crate::server::{CapsuleWaterController, EACH_REQUEST_BODY_READING_BUFFER, Http1Context, HttpContext, HttpStream, READING_BUF_LEN, ServingRequestResults, WRITING_BUF_LEN};
-use crate::server::Protocol;
+use crate::server::matcher::Matcher;
 
 pub struct WaterTcpStream<'a,'b> {
     stream: &'a mut HttpStream,
@@ -334,7 +334,11 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         #[cfg(not(feature = "thread_shared_struct"))]
         controller: &'static CapsuleWaterController<Holder, HS, QS>,
         #[cfg(feature = "thread_shared_struct")]
-        shared_factory:SHARED
+        shared_factory:SHARED,
+        #[cfg(feature = "thread_shared_struct")]
+        matcher:Matcher<Holder,SHARED,HS,QS>,
+        #[cfg(not(feature = "thread_shared_struct"))]
+        matcher:Matcher<Holder,HS,QS>
         ) {
         let mut read_buf = BytesMut::with_capacity(READING_BUF_LEN);
         let mut write_buf = BytesMut::with_capacity(WRITING_BUF_LEN);
@@ -407,7 +411,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
 
                         #[cfg(feature = "thread_shared_struct")]
                             let mut context = HttpContext::<Holder,SHARED, HS, QS>::new(
-                            Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+                            crate::server::sr_context::Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
                             peer
                         );
                         #[cfg(feature = "thread_shared_struct")]
@@ -420,7 +424,9 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                             crate::server::sr_context::Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
                             peer
                         );
-                        match context.serve(controller).await {
+
+
+                        match context.serve(matcher.clone()).await {
                             ServingRequestResults::Stop => return,
                             ServingRequestResults::Done => {
                                 let content_length = context.content_length();
@@ -436,8 +442,8 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                                     if h == b"chunked" {
                                                         match &context.protocol {
                                                             #[cfg(not(feature = "use_only_http1"))]
-                                                            Protocol::Http2(_) => {}
-                                                            Protocol:: Http1(h1) => {
+                                                            crate::server::sr_context::Protocol::Http2(_) => {}
+                                                            crate::server::sr_context::Protocol:: Http1(h1) => {
                                                                 if let Some(to_advance ) = h1.to_advance {
                                                                     read_buf.advance(total_req_size + to_advance);
                                                                     continue;

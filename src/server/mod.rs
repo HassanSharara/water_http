@@ -238,6 +238,8 @@ mod configurations;
 mod tls;
 mod sr_context;
 
+use std::collections::HashMap;
+#[cfg(feature = "thread_shared_struct")]
 use std::future::Future;
 pub  use sr_context::*;
 
@@ -256,7 +258,6 @@ use std::io as stdio;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
-use std::pin::Pin;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
 #[cfg(not(feature = "use_tokio_send"))]
@@ -267,6 +268,7 @@ use tokio_rustls::TlsAcceptor;
 use tracing::{debug};
 pub use configurations::*;
 use crate::server::connection::{ConnectionStream, WaterStream};
+use crate::server::matcher::{DynamicPathVec, Matcher, MatcherInitializer, PathHolder};
 
 pub (crate) static mut STATIC_SERVER_CONFIGURATION:Option<ServerConfigurations> = None;
 #[allow(static_mut_refs)]
@@ -296,23 +298,48 @@ pub  fn run_server<
     config:ServerConfigurations,
     #[cfg(feature = "thread_shared_struct")]
     controller:&'static mut CapsuleWaterController<Holder,SHARED,HS,QS>,
+
+
+
+
     #[cfg(not(feature = "thread_shared_struct"))]
     controller:&'static mut CapsuleWaterController<Holder,HS,QS>,
+
     #[cfg(feature = "thread_shared_struct")]
-    shared_factory:fn()->Pin<Box<dyn Future<Output=SHARED>>>
+    shared_factory:fn()->std::pin::Pin<Box<dyn Future<Output=SHARED>>>,
+    #[cfg(feature = "thread_shared_struct")]
+    static_path:&'static mut Option<HashMap<String,PathHolder<Holder,SHARED,HS,QS>>>,
+    #[cfg(feature = "thread_shared_struct")]
+    dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,SHARED,HS,QS>>>,
+
+    #[cfg(not(feature = "thread_shared_struct"))]
+    static_path:&'static mut Option<HashMap<String,PathHolder<Holder,HS,QS>>>,
+    #[cfg(not(feature = "thread_shared_struct"))]
+    dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,HS,QS>>>,
 ){
     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
     controller.set_up(String::new());
     #[cfg(not(feature = "thread_shared_struct"))]
     let pointer = controller as *const CapsuleWaterController<Holder,HS,QS>;
 
+
+    *static_path = Some(HashMap::new());
+    *dynamic_path = Some(HashMap::new());
+
+
+
     #[cfg(feature = "thread_shared_struct")]
     let pointer = controller as *const CapsuleWaterController<Holder,SHARED,HS,QS>;
     controller.____insure_binding();
+    let sp = static_path.as_mut().unwrap();
+    let dp = dynamic_path.as_mut().unwrap();
+
+    _=MatcherInitializer::serialize(sp,dp,controller);
+
+
 
     let controller = unsafe {pointer.as_ref().unwrap()};
     let conf = get_server_config();
-
 
     #[cfg(feature = "use_tokio_send")]
     {
@@ -336,7 +363,6 @@ pub  fn run_server<
                             workers_count +=1;
                             debug!("count of running workers {workers_count}");
                         }
-
                          _= run_server_with_address(&address, controller,shared_factory).await;
                     })
                 );
@@ -356,6 +382,8 @@ pub  fn run_server<
             for address in &conf.addresses {
                 let address = address.clone();
                 let controller = controller;
+                let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
+
                 let threads = std::thread::spawn(move || {
                     let rt = tokio::runtime::Builder::new_current_thread()
                         .enable_all()
@@ -366,7 +394,11 @@ pub  fn run_server<
                     let local = LocalSet::new();
 
                     local.block_on(&rt, async move {
-                        let _ = crate::server::run_server_with_address(&address, controller,shared_factory).await;
+                        #[cfg(feature = "thread_shared_struct")]
+                            let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
+
+                        #[cfg(not(feature = "thread_shared_struct"))]
+                            let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
                     });
                 });
                 os_threads.push(threads);
@@ -402,7 +434,12 @@ async fn run_server_with_address<
     #[cfg(not(feature = "thread_shared_struct"))]
     controller:&'static  CapsuleWaterController<Holder,HS,QS>,
     #[cfg(feature = "thread_shared_struct")]
-    shared_factory:fn()->Pin<Box<dyn Future<Output=SHARED>>>
+    shared_factory:fn()->std::pin::Pin<Box<dyn Future<Output=SHARED>>>,
+
+    #[cfg(feature = "thread_shared_struct")]
+    matcher:Matcher<Holder,SHARED,HS,QS>,
+    #[cfg(not(feature = "thread_shared_struct"))]
+    matcher:Matcher<Holder,HS,QS>
 )->stdio::Result<()>{
     // defining configuration object
     let server_config = get_server_config();
@@ -486,9 +523,9 @@ async fn run_server_with_address<
                                     socket_address
                                 );
                                 #[cfg(feature = "thread_shared_struct")]
-                                 serve_connection(connection,controller,shared_struct).await;
+                                 serve_connection(connection,controller,shared_struct,matcher).await;
                                  #[cfg(not(feature = "thread_shared_struct"))]
-                                serve_connection(connection, controller).await;
+                                serve_connection(connection, controller,matcher).await;
                             }
                             #[cfg(feature = "debugging")]
                             {
@@ -510,9 +547,9 @@ async fn run_server_with_address<
                     let connection
                         = ConnectionStream::new(WaterStream::TOStream(stream),socket);
                     #[cfg(feature = "thread_shared_struct")]
-                    serve_connection(connection,controller,shared_struct).await;
+                    serve_connection(connection,controller,shared_struct,matcher).await;
                     #[cfg(not(feature = "thread_shared_struct"))]
-                    serve_connection(connection, controller).await;
+                    serve_connection(connection, controller,matcher).await;
                     #[cfg(feature = "debugging")]
                     {
                         let mut con = connections_count.lock().await;
@@ -534,6 +571,7 @@ async fn run_server_with_address<
             {
                 #[cfg(feature = "thread_shared_struct")]
                 let shared_struct = shared_struct.clone();
+                let matcher = matcher.clone();
                 tokio::task::spawn_local(async move {
                     // checking if the current port should be handled
                     // with tls configurations if it`s exist
@@ -548,9 +586,9 @@ async fn run_server_with_address<
                                     socket_address
                                 );
                                 #[cfg(feature = "thread_shared_struct")]
-                                crate::server::serve_connection(connection, controller, shared_struct).await;
+                                crate::server::serve_connection(connection, controller, shared_struct,matcher).await;
                                 #[cfg(not(feature = "thread_shared_struct"))]
-                                serve_connection(connection, controller).await;
+                                serve_connection(connection, controller,matcher).await;
                             }
                             #[cfg(feature = "debugging")]
                             {
@@ -572,9 +610,9 @@ async fn run_server_with_address<
                     let connection
                         = ConnectionStream::new(WaterStream::TOStream(stream),socket);
                     #[cfg(feature = "thread_shared_struct")]
-                    crate::server::serve_connection(connection, controller, shared_struct.clone()).await;
+                    crate::server::serve_connection(connection, controller, shared_struct.clone(),matcher).await;
                     #[cfg(not(feature = "thread_shared_struct"))]
-                    serve_connection(connection, controller).await;
+                    serve_connection(connection, controller,matcher).await;
                     #[cfg(feature = "debugging")]
                     {
                         let mut con = connections_count.lock().await;
@@ -615,10 +653,14 @@ async fn serve_connection<
  #[cfg(not(feature = "thread_shared_struct"))]
  controller:&'static  CapsuleWaterController<Holder,HS,QS>,
  #[cfg(feature = "thread_shared_struct")]
- shared_factory:SHARED
+ shared_factory:SHARED,
+ #[cfg(feature = "thread_shared_struct")]
+ matcher:Matcher<Holder,SHARED,HS,QS>,
+ #[cfg(not(feature = "thread_shared_struct"))]
+ matcher:Matcher<Holder,HS,QS>
 ){
     #[cfg(feature = "thread_shared_struct")]
-    connection.serve(controller,shared_factory.clone()).await;
+    connection.serve(controller,shared_factory.clone(),matcher).await;
     #[cfg(not(feature = "thread_shared_struct"))]
-    connection.serve(controller, controller).await;
+    connection.serve(controller,matcher).await;
 }

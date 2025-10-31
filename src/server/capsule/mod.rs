@@ -1,5 +1,7 @@
 /// defining all the used and imported macros for building your app struct
 pub mod capsule_macros;
+/// providing matching tech
+pub mod matcher;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -107,10 +109,10 @@ pub struct CapsuleWaterController<
     #[cfg(feature = "use_tokio_send")]
     H: Send + 'static,
     #[cfg(not(feature = "use_tokio_send"))]
-    H,
+    H:'static,
 
     #[cfg(not(feature = "use_tokio_send"))]
-    SHARED:Clone,
+    SHARED:Clone + 'static,
 
     #[cfg(feature = "use_tokio_send")]
     SHARED:Clone + Send + 'static,
@@ -131,7 +133,7 @@ pub struct CapsuleWaterController<
     #[cfg(feature = "use_tokio_send")]
     H: Send + 'static,
     #[cfg(not(feature = "use_tokio_send"))]
-    H,
+    H:'static,
     const HEADER_SIZE: usize,
     const QUERY_SIZE: usize,
 > {
@@ -306,7 +308,7 @@ macro_rules! controller_impl {
         }
 
 
-        pub(crate) fn ____insure_binding(&'static mut self) {
+        pub(crate) fn ____insure_binding(& mut self) {
             let self_pointer: *const Self = self;
             for child in &mut self.children {
                 child.father = Some(self_pointer);
