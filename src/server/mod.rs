@@ -395,12 +395,14 @@ pub  fn run_server<
 
                     let local = LocalSet::new();
 
-                    local.block_on(&rt, async move {
-                        #[cfg(feature = "thread_shared_struct")]
-                            let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
+                    rt.block_on(async {
+                        local.run_until(async {
+                            #[cfg(feature = "thread_shared_struct")]
+                                let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
 
-                        #[cfg(not(feature = "thread_shared_struct"))]
-                            let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
+                            #[cfg(not(feature = "thread_shared_struct"))]
+                                let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
+                        }).await;
                     });
                 });
                 os_threads.push(threads);
