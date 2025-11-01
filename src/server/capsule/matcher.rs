@@ -227,7 +227,7 @@ impl <H:'static,const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
                     ,
                     vec![
                         (path,CapsuleHolder{
-                            method:method.to_string(),
+                            method:method.split("_").next().unwrap().to_uppercase(),
                             controller,
                             func,
                             father_controllers:controllers_vec,
@@ -241,7 +241,7 @@ impl <H:'static,const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
 
             controller.push_all_ancestors_middlewares(&mut father_middlewares);
             static_paths.insert(path,CapsuleHolder{
-                method:method.to_string(),
+                method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
                 father_controllers:controllers_vec,
@@ -388,7 +388,7 @@ impl <H:'static,SHARED:Clone+'static,const QS:usize,const HS:usize>  MatcherInit
                     ,
                     vec![
                         (path,CapsuleHolder{
-                            method:method.to_string(),
+                            method:method.split("_").next().unwrap().to_uppercase(),
                             controller,
                             func,
                             father_middlewares
@@ -401,7 +401,7 @@ impl <H:'static,SHARED:Clone+'static,const QS:usize,const HS:usize>  MatcherInit
 
             controller.push_all_ancestors_middlewares(&mut father_middlewares);
             static_paths.insert(path,CapsuleHolder{
-                method:method.to_string(),
+                method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
                 father_middlewares
