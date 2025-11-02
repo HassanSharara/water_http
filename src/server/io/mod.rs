@@ -330,9 +330,9 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         hs: &mut HttpStream,
         peer: &SocketAddr,
         #[cfg(feature = "thread_shared_struct")]
-        controller: &'static CapsuleWaterController<Holder,SHARED, HS, QS>,
+        _controller: &'static CapsuleWaterController<Holder,SHARED, HS, QS>,
         #[cfg(not(feature = "thread_shared_struct"))]
-        controller: &'static CapsuleWaterController<Holder, HS, QS>,
+        _controller: &'static CapsuleWaterController<Holder, HS, QS>,
         #[cfg(feature = "thread_shared_struct")]
         shared_factory:SHARED,
         #[cfg(feature = "thread_shared_struct")]
@@ -426,7 +426,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                         );
 
 
-                        match context.serve(matcher.clone()).await {
+                        match context.serve_ef(matcher.clone()).await {
                             ServingRequestResults::Stop => return,
                             ServingRequestResults::Done => {
                                 let content_length = context.content_length();

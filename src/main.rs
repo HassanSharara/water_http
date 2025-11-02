@@ -42,7 +42,8 @@ pub struct CHolder {
 }
 
 
-pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
+pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType> + Send>>{
+
     Box::pin(async {
         return 0
     })
@@ -75,7 +76,7 @@ pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
 // }
 WaterController! {
     holder -> crate::MainHolderType,
-    shared -> crate::SharedType,
+    shared ->   crate::SharedType,
     name -> MainController,
     functions -> {
 
@@ -104,8 +105,7 @@ WaterController! {
         // in this case GET is the method and 'api/v1/users/' the path
         // and this type could inject string parameter like
         // 'api/v1/users/t22' so t22 is now represented by id variable
-        GET -> api/v1/users/{id} -> get_user(context) async{
-            println!("user id is {id}");
+        GET -> api/v1/users/{_id} -> get_user(context) async{
             super::get_response(context).await;
         }
 
@@ -173,6 +173,7 @@ WaterController! {
     }
 
     prefix -> ("hello"),
+
     children -> ([
         SecondController
     ])
@@ -194,12 +195,18 @@ WaterController! {
 
 WaterController! {
     holder -> crate::MainHolderType,
-    shared -> crate::SharedType,
+    shared ->   crate::SharedType,
     name -> SecondController,
     functions -> {
         get -> version2 -> g(context){_= context.send_str("go").await;}
     }
-    prefix -> ("version2_prefix")
+    prefix -> ("version2_prefix"),
+     middleware -> (context {
+
+        _= context.send_str("middleware 2  stopping").await;
+     water_http::server::MiddlewareResult::Stop
+
+    })
 }
 // notice that writing methods like POST,post,Post,posT,POst
 // it would give the same result cause the framework has auto under table requests handler

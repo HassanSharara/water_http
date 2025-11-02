@@ -175,7 +175,7 @@ impl  ConnectionStream {
                                         ),
                                         &self.address
                                     );
-                                match  context.serve(matcher.clone()).await {
+                                match  context.serve_ef(matcher.clone()).await {
                                     ServingRequestResults::Stop => {return;}
                                     ServingRequestResults::Done => {
                                         continue;

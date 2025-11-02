@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::UnsafeCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -25,7 +26,7 @@ use crate::http::{FileRSender, Http1Sender, HttpSender, HttpSenderTrait, request
 use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
-use crate::server::{CapsuleWaterController, MiddlewareCallback, MiddlewareResult};
+use crate::server::{MiddlewareResult};
 use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::matcher::Matcher;
@@ -173,7 +174,7 @@ pub struct HttpContext<
     pub(crate) protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
     peer:&'a SocketAddr,
     /// saving generic parameters injected with requested path
-    pub path_params_map:Option<HashMap<String,String>>,
+    pub path_params_map:UnsafeCell<Option<HashMap<String,String>>>,
     body_bytes_holder:Option<Vec<u8>>,
     pub thread_shared_struct:Option<SHARED>,
 }
@@ -193,9 +194,8 @@ pub struct HttpContext<
     pub(crate) protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
     peer:&'a SocketAddr,
     /// saving generic parameters injected with requested path
-    pub path_params_map:Option<HashMap<String,String>>,
+    pub path_params_map:UnsafeCell<Option<HashMap<String,String>>>,
     body_bytes_holder:Option<Vec<u8>>,
-    pub(crate) matcher:Option<Matcher< H,HEADERS_COUNT,PATH_QUERY_COUNT>>
 }
 
 
@@ -221,7 +221,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     )->
         HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
-        HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None,matcher:None}
+        HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None}
     }
 
 
@@ -599,7 +599,8 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// like <http://example.com/test/{id}>
     /// here id is a generic parameter
     pub fn get_from_path_params(&'a self,key:&str)->Option<&'a String>{
-        if let Some(p) = &self.path_params_map {
+        let v = unsafe {&*self.path_params_map.get()};
+        if let Some(p) = v {
             return p.get(key)
         }
         None
@@ -631,17 +632,21 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
+    #[inline(always)]
     pub(crate) async fn serve_ef(
         &mut self,
-        controller: &'static CapsuleWaterController<H, HEADERS_COUNT, PATH_QUERY_COUNT>
+        matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults {
-        // Get the match result
         let path = self.path();
-        let r = self.matcher.as_ref().unwrap().match_path(path);
-
+        let r = matcher.match_path(path);
         if let Some((holder,ref param)) = r {
             let method = &holder.method;
             let incoming_method = self.method();
+            if let Some(p) = param {
+                let path_params_cell = unsafe{&mut *self.path_params_map.get()};
+                *path_params_cell = Some(p.clone()).into();
+            }
+
             if *method == incoming_method {
                 // Extract raw pointers to the data while we still have the borrow
                 let middlewares_ptr = holder.father_middlewares.as_ptr();
@@ -654,15 +659,17 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 // Now reconstruct the slice from raw pointer
                 // SAFETY: The middleware slice is part of the controller which is 'static,
                 // so it's guaranteed to outlive this function call
-                let middlewares = unsafe {
-                    std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
-                };
+                if holder.controller.apply_parents_middlewares {
+                    let middlewares = unsafe {
+                        std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+                    };
 
-                // middleware chain
-                for m in middlewares {
-                    match m(self).await {
-                        MiddlewareResult::Pass => continue,
-                        MiddlewareResult::Stop => return ServingRequestResults::Done,
+                    // middleware chain
+                    for m in middlewares {
+                        match m(self).await {
+                            MiddlewareResult::Pass => continue,
+                            MiddlewareResult::Stop => return ServingRequestResults::Done,
+                        }
                     }
                 }
                 // handler
@@ -671,89 +678,89 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
         }
         self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
-        ServingRequestResults::Done
+        ServingRequestResults::Stop
     }
-    pub (crate) async fn serve(
-        &mut self,
-        controller:&'static  CapsuleWaterController<H,HEADERS_COUNT,PATH_QUERY_COUNT>
-
-    )->
-        ServingRequestResults
-    {
-
-        return  self.serve_ef(controller).await;
-        // {
-        //     let path = self.path();
-        //
-        //
-        //     if path == "/json" {
-        //         let mut sender = self.sender();
-        //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-        //         sender.set_header_ef("Date",date);
-        //         sender.set_header_ef("Server","water");
-        //         sender.set_header_ef("Content-Type","application/json");
-        //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
-        //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
-        //         return ServingRequestResults::Done;
-        //     }
-        //     let mut sender = self.sender();
-        //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-        //     sender.set_header_ef("Date",date);
-        //     sender.set_header_ef("Server","water");
-        //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
-        //     _= sender.send_str("Hello, World!").await;
-        //     return ServingRequestResults::Done;
-        // }
-
-        let method ;
-        if self.content_length().is_some() {
-            method = self.method();
-            if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
-                let mut sender = self.sender();
-                sender.send_status_code(HttpStatusCode::BAD_REQUEST);
-                _=sender.write_custom_bytes(&[]).await;
-                return  ServingRequestResults::Stop;
-            }
-        } else {
-            method = self.method();
-        }
-        let path = self.path();
-        let f = controller.find_function(path,method);
-        if let Some((controller,func,map)) = f {
-            if map.is_some() {
-                self.path_params_map = map;
-            }
-            if controller.apply_parents_middlewares && controller.middleware.is_some() {
-                let mut middlewares:Vec<&'static MiddlewareCallback<H,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
-
-                controller.push_all_ancestors_middlewares(&mut middlewares);
-                for m in middlewares {
-                    match  m(self).await {
-                        MiddlewareResult::Pass => {
-                            continue;
-                        }
-                        MiddlewareResult::Stop => {
-                            return ServingRequestResults::Done
-                        }
-                    }
-                }
-            }
-            func(self).await;
-        } else {
-            let mut sender = self.sender();
-            sender.send_status_code(HttpStatusCode::NOT_FOUND);
-            _=sender.send_str("").await;
-
-            return  ServingRequestResults::Done;
-        }
-
-        #[cfg(feature = "debugging")]
-        {
-            use tracing::info;
-            info!("request has been served {:?}",self.peer);
-        }
-        ServingRequestResults::Done
-    }
+    // pub (crate) async fn serve(
+    //     &mut self,
+    //     matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    //
+    // )->
+    //     ServingRequestResults
+    // {
+    //
+    //     return  self.serve_ef(matcher).await;
+    //     // {
+    //     //     let path = self.path();
+    //     //
+    //     //
+    //     //     if path == "/json" {
+    //     //         let mut sender = self.sender();
+    //     //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+    //     //         sender.set_header_ef("Date",date);
+    //     //         sender.set_header_ef("Server","water");
+    //     //         sender.set_header_ef("Content-Type","application/json");
+    //     //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
+    //     //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
+    //     //         return ServingRequestResults::Done;
+    //     //     }
+    //     //     let mut sender = self.sender();
+    //     //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+    //     //     sender.set_header_ef("Date",date);
+    //     //     sender.set_header_ef("Server","water");
+    //     //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
+    //     //     _= sender.send_str("Hello, World!").await;
+    //     //     return ServingRequestResults::Done;
+    //     // }
+    //     //
+    //     // let method ;
+    //     // if self.content_length().is_some() {
+    //     //     method = self.method();
+    //     //     if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
+    //     //         let mut sender = self.sender();
+    //     //         sender.send_status_code(HttpStatusCode::BAD_REQUEST);
+    //     //         _=sender.write_custom_bytes(&[]).await;
+    //     //         return  ServingRequestResults::Stop;
+    //     //     }
+    //     // } else {
+    //     //     method = self.method();
+    //     // }
+    //     // let path = self.path();
+    //     // let f = controller.find_function(path,method);
+    //     // if let Some((controller,func,map)) = f {
+    //     //     if map.is_some() {
+    //     //         self.path_params_map = map;
+    //     //     }
+    //     //     if controller.apply_parents_middlewares && controller.middleware.is_some() {
+    //     //         let mut middlewares:Vec<&'static MiddlewareCallback<H,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
+    //     //
+    //     //         controller.push_all_ancestors_middlewares(&mut middlewares);
+    //     //         for m in middlewares {
+    //     //             match  m(self).await {
+    //     //                 MiddlewareResult::Pass => {
+    //     //                     continue;
+    //     //                 }
+    //     //                 MiddlewareResult::Stop => {
+    //     //                     return ServingRequestResults::Done
+    //     //                 }
+    //     //             }
+    //     //         }
+    //     //     }
+    //     //     func(self).await;
+    //     // } else {
+    //     //     let mut sender = self.sender();
+    //     //     sender.send_status_code(HttpStatusCode::NOT_FOUND);
+    //     //     _=sender.send_str("").await;
+    //     //
+    //     //     return  ServingRequestResults::Done;
+    //     // }
+    //     //
+    //     // #[cfg(feature = "debugging")]
+    //     // {
+    //     //     use tracing::info;
+    //     //     info!("request has been served {:?}",self.peer);
+    //     // }
+    //     // ServingRequestResults::Done
+    // }
 
 
 
@@ -789,7 +796,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     )->
         HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
-        HttpContext {holder:None,protocol,peer:socket,path_params_map:None,body_bytes_holder:None,thread_shared_struct:None}
+        HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None,thread_shared_struct:None}
     }
 
 
@@ -1161,7 +1168,8 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// like <http://example.com/test/{id}>
     /// here id is a generic parameter
     pub fn get_from_path_params(&'a self,key:&str)->Option<&'a String>{
-        if let Some(p) = &self.path_params_map {
+        let v = unsafe {&*self.path_params_map.get()};
+        if let Some(p) = v {
             return p.get(key)
         }
         None
@@ -1192,17 +1200,20 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         }
     }
 
-    #[cfg(feature = "thread_shared_struct")]
+    #[inline(always)]
     pub(crate) async fn serve_ef(
         &mut self,
         matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults {
-        // Get the match result
         let path = self.path();
         let r = matcher.match_path(path);
         if let Some((holder,ref param)) = r {
             let method = &holder.method;
             let incoming_method = self.method();
+            if let Some(p) = param {
+                let path_params_cell = unsafe{&mut *self.path_params_map.get()};
+                *path_params_cell = Some(p.clone()).into();
+            }
 
             if *method == incoming_method {
                 // Extract raw pointers to the data while we still have the borrow
@@ -1235,91 +1246,91 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
         }
         self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
-        ServingRequestResults::Done
+        ServingRequestResults::Stop
     }
 
 
-    pub (crate) async fn serve(
-        &mut self,
-        matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
-    )->
-        ServingRequestResults
-    {
-
-        return self.serve_ef(matcher).await;
-
-        // {
-        //     let path = self.path();
-        //
-        //
-        //     if path == "/json" {
-        //         let mut sender = self.sender();
-        //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-        //         sender.set_header_ef("Date",date);
-        //         sender.set_header_ef("Server","water");
-        //         sender.set_header_ef("Content-Type","application/json");
-        //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
-        //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
-        //         return ServingRequestResults::Done;
-        //     }
-        //     let mut sender = self.sender();
-        //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-        //     sender.set_header_ef("Date",date);
-        //     sender.set_header_ef("Server","water");
-        //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
-        //     _= sender.send_str("Hello, World!").await;
-        //     return ServingRequestResults::Done;
-        // }
-        //
-        // let method ;
-        // if self.content_length().is_some() {
-        //     method = self.method();
-        //     if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
-        //         let mut sender = self.sender();
-        //         sender.send_status_code(HttpStatusCode::BAD_REQUEST);
-        //         _=sender.write_custom_bytes(&[]).await;
-        //         return  ServingRequestResults::Stop;
-        //     }
-        // } else {
-        //     method = self.method();
-        // }
-        // let path = self.path();
-        // let f = controller.find_function(path,method);
-        // if let Some((controller,func,map)) = f {
-        //     if map.is_some() {
-        //         self.path_params_map = map;
-        //     }
-        //     if controller.apply_parents_middlewares && controller.middleware.is_some() {
-        //         let mut middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
-        //
-        //         controller.push_all_ancestors_middlewares(&mut middlewares);
-        //         for m in middlewares {
-        //             match  m(self).await {
-        //                 MiddlewareResult::Pass => {
-        //                     continue;
-        //                 }
-        //                 MiddlewareResult::Stop => {
-        //                     return ServingRequestResults::Done
-        //                 }
-        //             }
-        //         }
-        //     }
-        //     func(self).await;
-        // } else {
-        //     let mut sender = self.sender();
-        //     sender.send_status_code(HttpStatusCode::NOT_FOUND);
-        //     _=sender.send_str("").await;
-        //
-        //     return  ServingRequestResults::Done;
-        // }
-        //
-        // #[cfg(feature = "debugging")]
-        // {
-        //     use tracing::info;
-        //     info!("request has been served {:?}",self.peer);
-        // }
-        // ServingRequestResults::Done
-    }
+    // pub (crate) async fn serve(
+    //     &mut self,
+    //     matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
+    // )->
+    //     ServingRequestResults
+    // {
+    //
+    //     return self.serve_ef(matcher).await;
+    //
+    //     // {
+    //     //     let path = self.path();
+    //     //
+    //     //
+    //     //     if path == "/json" {
+    //     //         let mut sender = self.sender();
+    //     //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+    //     //         sender.set_header_ef("Date",date);
+    //     //         sender.set_header_ef("Server","water");
+    //     //         sender.set_header_ef("Content-Type","application/json");
+    //     //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
+    //     //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
+    //     //         return ServingRequestResults::Done;
+    //     //     }
+    //     //     let mut sender = self.sender();
+    //     //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
+    //     //     sender.set_header_ef("Date",date);
+    //     //     sender.set_header_ef("Server","water");
+    //     //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
+    //     //     _= sender.send_str("Hello, World!").await;
+    //     //     return ServingRequestResults::Done;
+    //     // }
+    //     //
+    //     // let method ;
+    //     // if self.content_length().is_some() {
+    //     //     method = self.method();
+    //     //     if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
+    //     //         let mut sender = self.sender();
+    //     //         sender.send_status_code(HttpStatusCode::BAD_REQUEST);
+    //     //         _=sender.write_custom_bytes(&[]).await;
+    //     //         return  ServingRequestResults::Stop;
+    //     //     }
+    //     // } else {
+    //     //     method = self.method();
+    //     // }
+    //     // let path = self.path();
+    //     // let f = controller.find_function(path,method);
+    //     // if let Some((controller,func,map)) = f {
+    //     //     if map.is_some() {
+    //     //         self.path_params_map = map;
+    //     //     }
+    //     //     if controller.apply_parents_middlewares && controller.middleware.is_some() {
+    //     //         let mut middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
+    //     //
+    //     //         controller.push_all_ancestors_middlewares(&mut middlewares);
+    //     //         for m in middlewares {
+    //     //             match  m(self).await {
+    //     //                 MiddlewareResult::Pass => {
+    //     //                     continue;
+    //     //                 }
+    //     //                 MiddlewareResult::Stop => {
+    //     //                     return ServingRequestResults::Done
+    //     //                 }
+    //     //             }
+    //     //         }
+    //     //     }
+    //     //     func(self).await;
+    //     // } else {
+    //     //     let mut sender = self.sender();
+    //     //     sender.send_status_code(HttpStatusCode::NOT_FOUND);
+    //     //     _=sender.send_str("").await;
+    //     //
+    //     //     return  ServingRequestResults::Done;
+    //     // }
+    //     //
+    //     // #[cfg(feature = "debugging")]
+    //     // {
+    //     //     use tracing::info;
+    //     //     info!("request has been served {:?}",self.peer);
+    //     // }
+    //     // ServingRequestResults::Done
+    // }
 
 
 

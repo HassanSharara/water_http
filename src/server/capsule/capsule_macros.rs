@@ -1570,9 +1570,17 @@ macro_rules! CheckupAutoGenerator {
     };
 
     ( $controller:path >> middleware-> $context:ident $block:block) => {
-        $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,header_length,query_length>| Box::pin( async move  $block)
-        );
+        #[cfg(not(feature = "thread_shared_struct"))]
+         {
+             $controller.middleware = Some(
+            |$context :&mut HttpContext<Holder,header_length,query_length>| Box::pin( async move  $block));
+         }
+
+           #[cfg(feature = "thread_shared_struct")]
+         {
+             $controller.middleware = Some(
+            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>| Box::pin( async move  $block));
+         }
     };
 
     ($controller:path >> children-> [$($child:ident),*] )=>{
@@ -2045,7 +2053,11 @@ macro_rules! hidden_functions_builder {
                     const query_length: usize
                 >(
                     $context: &mut $crate::server::HttpContext<
-                        'context, MainHolderType,Shared, header_length, query_length
+                        'context,
+                    MainHolderType,
+                    Shared,
+                    header_length,
+                    query_length
                     >
                     $(, $parameter_name: $typ)*
                 ) {
@@ -2271,7 +2283,9 @@ macro_rules! hidden_functions_builder {
                     const query_length: usize
                 >(
                     $context: &mut $crate::server::HttpContext<
-                        'context, MainHolderType, header_length, query_length
+                        'context,
+                    MainHolderType,
+                    header_length,query_length
                     >
                     $(, $parameter_name: $typ)*
                 ) {

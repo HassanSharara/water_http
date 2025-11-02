@@ -3,7 +3,6 @@ pub mod capsule_macros;
 /// providing matching tech
 pub mod matcher;
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use crate::server::{HttpContext, push_named_route};
@@ -349,146 +348,146 @@ macro_rules! controller_impl {
         pub fn push_controller(&mut self, controller: Self) {
             self.children.push(controller);
         }
-
-        pub(crate) fn get_prefix(&self) -> Option<&str> {
-            self.prefix.map(Self::shave_path)
-        }
-
-        pub(crate) fn shave_path(mut input: &str) -> &str {
-            while input.starts_with('/') {
-                input = &input[1..];
-            }
-            while input.ends_with('/') {
-                let len = input.len();
-                if len == 1 { return ""; }
-                input = &input[..len-1];
-            }
-            input
-        }
-
-        pub(crate) const fn all_rest_path_braces() -> &'static str {
-            "{allRestPath}"
-        }
-        pub(crate) const fn all_rest_path() -> &'static str {
-            "allRestPath"
-        }
-
-        pub(crate) fn check_if_paths_are_equals(incoming_path: &str, cp: &str) -> (bool, Option<HashMap<String, String>>) {
-            let _s_pattern = Self::all_rest_path_braces();
-            if let Some(index) = cp.find(_s_pattern) {
-                let first = Self::shave_path(&cp[..index]);
-                if incoming_path.starts_with(first) {
-                    let mut map: HashMap<String, String> = HashMap::new();
-                    map.insert(Self::all_rest_path().to_string(), (&incoming_path[first.len()..]).to_string());
-                    return (true, Some(map));
-                }
-            }
-
-            let inc_splitter: Vec<&str> = incoming_path.split('/').collect();
-            let cp_splitter: Vec<&str> = cp.split('/').collect();
-            const ERR: (bool, Option<HashMap<String, String>>) = (false, None);
-            if inc_splitter.len() != cp_splitter.len() { return ERR; }
-            let mut map: Option<HashMap<String, String>> = None;
-            for (index, part) in cp_splitter.iter().enumerate() {
-                let inc_part = inc_splitter[index];
-                 if index + 1 == cp_splitter.len() {
-                    if let Some(qi) = inc_part.find("?"){
-                        if &inc_part[..qi] == *part { return (true,None)}
-                    }
-                }
-                let containing_arcs = part.contains('{') && part.contains('}');
-                if part != &inc_part && !containing_arcs {
-                    return ERR;
-                }
-
-                if containing_arcs {
-                    match &mut map {
-                        None => {
-                            let mut n_map = HashMap::new();
-                            n_map.insert((&part[1..part.len()-1]).to_string(), inc_part.to_string());
-                            map = Some(n_map);
-                        }
-                        Some(ref mut m) => {
-                            m.insert((&part[1..part.len()-1]).to_string(), inc_part.to_string());
-                        }
-                    }
-                }
-            }
-            (true, map)
-        }
-
-        #[cfg(feature = "thread_shared_struct")]
-         pub(crate) fn find_function(
-            &'static self,
-            original_path: &str,
-            original_method: &str
-        ) -> Option<(
-            &'static Self,
-            &'static WaterSingleFunction<H,SHARED, HEADER_SIZE, QUERY_SIZE>,
-            Option<HashMap<String, String>>
-        )> {
-            let mut path = Self::shave_path(original_path);
-            if let Some(prefix) = self.get_prefix() {
-                if !path.starts_with(prefix) {
-                    return None;
-                }
-                let prefix_in_length = prefix.len() + 1;
-                if path.len() <= prefix_in_length { return None; }
-                path = &path[prefix_in_length..];
-            }
-
-            for (method, cp, func) in &self.functions {
-                if method != original_method && method.to_uppercase() != original_method {
-                    continue;
-                }
-                let (result, params) = Self::check_if_paths_are_equals(path, Self::shave_path(cp));
-                if !result { continue; }
-                return Some((self, func, params));
-            }
-
-            for child in &self.children {
-                if let Some(found) = child.find_function(path, original_method) {
-                    return Some(found);
-                }
-            }
-            None
-        }
-        #[cfg(not(feature = "thread_shared_struct"))]
-        pub(crate) fn find_function(
-            &'static self,
-            original_path: &str,
-            original_method: &str
-        ) -> Option<(
-            &'static Self,
-            &'static WaterSingleFunction<H, HEADER_SIZE, QUERY_SIZE>,
-            Option<HashMap<String, String>>
-        )> {
-            let mut path = Self::shave_path(original_path);
-            if let Some(prefix) = self.get_prefix() {
-                if !path.starts_with(prefix) {
-                    return None;
-                }
-                let prefix_in_length = prefix.len() + 1;
-                if path.len() <= prefix_in_length { return None; }
-                path = &path[prefix_in_length..];
-            }
-
-            for (method, cp, func) in &self.functions {
-                if method != original_method && method.to_uppercase() != original_method {
-                    continue;
-                }
-                let (result, params) = Self::check_if_paths_are_equals(path, Self::shave_path(cp));
-                if !result { continue; }
-                return Some((self, func, params));
-            }
-
-            for child in &self.children {
-                if let Some(found) = child.find_function(path, original_method) {
-                    return Some(found);
-                }
-            }
-            None
-        }
+        //
+        // pub(crate) fn get_prefix(&self) -> Option<&str> {
+        //     self.prefix.map(Self::shave_path)
+        // }
+        //
+        // pub(crate) fn shave_path(mut input: &str) -> &str {
+        //     while input.starts_with('/') {
+        //         input = &input[1..];
+        //     }
+        //     while input.ends_with('/') {
+        //         let len = input.len();
+        //         if len == 1 { return ""; }
+        //         input = &input[..len-1];
+        //     }
+        //     input
+        // }
+        //
+        // pub(crate) const fn all_rest_path_braces() -> &'static str {
+        //     "{allRestPath}"
+        // }
+        // pub(crate) const fn all_rest_path() -> &'static str {
+        //     "allRestPath"
+        // }
+        //
+        // pub(crate) fn check_if_paths_are_equals(incoming_path: &str, cp: &str) -> (bool, Option<HashMap<String, String>>) {
+        //     let _s_pattern = Self::all_rest_path_braces();
+        //     if let Some(index) = cp.find(_s_pattern) {
+        //         let first = Self::shave_path(&cp[..index]);
+        //         if incoming_path.starts_with(first) {
+        //             let mut map: HashMap<String, String> = HashMap::new();
+        //             map.insert(Self::all_rest_path().to_string(), (&incoming_path[first.len()..]).to_string());
+        //             return (true, Some(map));
+        //         }
+        //     }
+        //
+        //     let inc_splitter: Vec<&str> = incoming_path.split('/').collect();
+        //     let cp_splitter: Vec<&str> = cp.split('/').collect();
+        //     const ERR: (bool, Option<HashMap<String, String>>) = (false, None);
+        //     if inc_splitter.len() != cp_splitter.len() { return ERR; }
+        //     let mut map: Option<HashMap<String, String>> = None;
+        //     for (index, part) in cp_splitter.iter().enumerate() {
+        //         let inc_part = inc_splitter[index];
+        //          if index + 1 == cp_splitter.len() {
+        //             if let Some(qi) = inc_part.find("?"){
+        //                 if &inc_part[..qi] == *part { return (true,None)}
+        //             }
+        //         }
+        //         let containing_arcs = part.contains('{') && part.contains('}');
+        //         if part != &inc_part && !containing_arcs {
+        //             return ERR;
+        //         }
+        //
+        //         if containing_arcs {
+        //             match &mut map {
+        //                 None => {
+        //                     let mut n_map = HashMap::new();
+        //                     n_map.insert((&part[1..part.len()-1]).to_string(), inc_part.to_string());
+        //                     map = Some(n_map);
+        //                 }
+        //                 Some(ref mut m) => {
+        //                     m.insert((&part[1..part.len()-1]).to_string(), inc_part.to_string());
+        //                 }
+        //             }
+        //         }
+        //     }
+        //     (true, map)
+        // }
+        //
+        // #[cfg(feature = "thread_shared_struct")]
+        //  pub(crate) fn find_function(
+        //     &'static self,
+        //     original_path: &str,
+        //     original_method: &str
+        // ) -> Option<(
+        //     &'static Self,
+        //     &'static WaterSingleFunction<H,SHARED, HEADER_SIZE, QUERY_SIZE>,
+        //     Option<HashMap<String, String>>
+        // )> {
+        //     let mut path = Self::shave_path(original_path);
+        //     if let Some(prefix) = self.get_prefix() {
+        //         if !path.starts_with(prefix) {
+        //             return None;
+        //         }
+        //         let prefix_in_length = prefix.len() + 1;
+        //         if path.len() <= prefix_in_length { return None; }
+        //         path = &path[prefix_in_length..];
+        //     }
+        //
+        //     for (method, cp, func) in &self.functions {
+        //         if method != original_method && method.to_uppercase() != original_method {
+        //             continue;
+        //         }
+        //         let (result, params) = Self::check_if_paths_are_equals(path, Self::shave_path(cp));
+        //         if !result { continue; }
+        //         return Some((self, func, params));
+        //     }
+        //
+        //     for child in &self.children {
+        //         if let Some(found) = child.find_function(path, original_method) {
+        //             return Some(found);
+        //         }
+        //     }
+        //     None
+        // }
+        // #[cfg(not(feature = "thread_shared_struct"))]
+        // pub(crate) fn find_function(
+        //     &'static self,
+        //     original_path: &str,
+        //     original_method: &str
+        // ) -> Option<(
+        //     &'static Self,
+        //     &'static WaterSingleFunction<H, HEADER_SIZE, QUERY_SIZE>,
+        //     Option<HashMap<String, String>>
+        // )> {
+        //     let mut path = Self::shave_path(original_path);
+        //     if let Some(prefix) = self.get_prefix() {
+        //         if !path.starts_with(prefix) {
+        //             return None;
+        //         }
+        //         let prefix_in_length = prefix.len() + 1;
+        //         if path.len() <= prefix_in_length { return None; }
+        //         path = &path[prefix_in_length..];
+        //     }
+        //
+        //     for (method, cp, func) in &self.functions {
+        //         if method != original_method && method.to_uppercase() != original_method {
+        //             continue;
+        //         }
+        //         let (result, params) = Self::check_if_paths_are_equals(path, Self::shave_path(cp));
+        //         if !result { continue; }
+        //         return Some((self, func, params));
+        //     }
+        //
+        //     for child in &self.children {
+        //         if let Some(found) = child.find_function(path, original_method) {
+        //             return Some(found);
+        //         }
+        //     }
+        //     None
+        // }
     };
 }
 

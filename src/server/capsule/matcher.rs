@@ -4,18 +4,29 @@ use crate::server::capsule::WaterSingleFunction;
 use crate::server::{CapsuleWaterController, MiddlewareCallback};
 
 #[cfg(not(feature = "thread_shared_struct"))]
-pub struct CapsuleHolder<H:'static,const HS:usize,const QS:usize> {
+pub struct CapsuleHolder<
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+
+    const HS:usize,const QS:usize> {
     pub (crate) method:String,
     pub (crate)  controller:&'static CapsuleWaterController<H,HS,QS>,
     pub (crate)  func:&'static WaterSingleFunction<H, HS,QS >,
-    pub (crate)  father_controllers:Vec<&'static CapsuleWaterController<H,HS,QS>>,
     pub (crate) father_middlewares:Vec<&'static MiddlewareCallback<H,HS,QS>>
 }
 
 #[cfg(feature = "thread_shared_struct")]
 pub struct CapsuleHolder<
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
     H:'static,
-    SHARED:Clone+'static,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone+'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone+'static ,
     const HS:usize,
     const QS:usize> {
 
@@ -40,7 +51,16 @@ pub type DynamicPathVec<H,const QS:usize,const HS:usize> = Vec<(String, PathHold
 
 
 #[cfg(feature = "thread_shared_struct")]
-pub struct MatcherInitializer<'a,H:'static,SHARED:Clone + 'static,const QS:usize,const HS:usize> {
+pub struct MatcherInitializer<'a,
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone+'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone+'static ,
+    const QS:usize,const HS:usize> {
     static_paths:&'a mut HashMap<String,PathHolder<H,SHARED,QS,HS>>,
     dynamic_paths:&'a mut HashMap<usize,DynamicPathVec<H,SHARED,QS,HS>>,
 
@@ -48,7 +68,12 @@ pub struct MatcherInitializer<'a,H:'static,SHARED:Clone + 'static,const QS:usize
 
 
 #[cfg(not(feature = "thread_shared_struct"))]
-pub struct MatcherInitializer<'a,H:'static,const QS:usize,const HS:usize> {
+pub struct MatcherInitializer<'a,
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    const QS:usize,const HS:usize> {
     static_paths:&'a mut HashMap<String,PathHolder<H,QS,HS>>,
     dynamic_paths:&'a mut HashMap<usize,DynamicPathVec<H,QS,HS>>,
 }
@@ -56,7 +81,16 @@ pub struct MatcherInitializer<'a,H:'static,const QS:usize,const HS:usize> {
 
 #[cfg(feature = "thread_shared_struct")]
 #[derive(Clone)]
-pub (crate) struct Matcher<H:'static,SHARED:Clone + 'static,const QS:usize,const HS:usize> {
+pub (crate) struct Matcher<
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone+'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone+'static ,
+    const QS:usize,const HS:usize> {
     pub(crate) static_paths:&'static  HashMap<String,PathHolder<H,SHARED,QS,HS>>,
     pub(crate) dynamic_paths:&'static HashMap<usize,DynamicPathVec<H,SHARED,QS,HS>>,
 
@@ -64,7 +98,14 @@ pub (crate) struct Matcher<H:'static,SHARED:Clone + 'static,const QS:usize,const
 
 
 #[cfg(feature = "thread_shared_struct")]
-impl <H:'static,SHARED:Clone,const HS:usize,const QS:usize>  Matcher<H,SHARED,QS,HS> {
+impl < #[cfg(feature = "use_tokio_send")]
+H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone+'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone+'static ,const HS:usize,const QS:usize>  Matcher<H,SHARED,QS,HS> {
 
     pub fn clone(&self)->Matcher<H,SHARED,QS,HS>{
         Matcher {
@@ -85,7 +126,7 @@ impl <H:'static,SHARED:Clone,const HS:usize,const QS:usize>  Matcher<H,SHARED,QS
     pub fn match_path<'a>(
         &'a self,
         path: &'a str,
-    ) -> Option<(&'a PathHolder<H,SHARED, QS, HS>, Option<Vec<(&'a str, &'a str)>>)> {
+    ) -> Option<(&'a PathHolder<H,SHARED, QS, HS>, Option<HashMap<String,String>>)> {
         let path = path.trim_matches('/').split("?").next().unwrap();
         let segment_count = path.split('/').count();
 
@@ -97,7 +138,7 @@ impl <H:'static,SHARED:Clone,const HS:usize,const QS:usize>  Matcher<H,SHARED,QS
         // 2️⃣ dynamic
         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {
             'outer: for (original_path, holder) in dynamic_vec {
-                let mut params = Vec::new();
+                let mut params = HashMap::new();
                 let mut incoming_iter = path.split('/');
                 let mut original_iter = original_path.split('/');
 
@@ -106,7 +147,7 @@ impl <H:'static,SHARED:Clone,const HS:usize,const QS:usize>  Matcher<H,SHARED,QS
                 {
                     if opart.starts_with('{') && opart.ends_with('}') {
                         let name = &opart[1..opart.len() - 1];
-                        params.push((name, ipart));
+                        params.insert(name.to_string(),ipart.to_string());
                     } else if opart != ipart {
                         continue 'outer;
                     }
@@ -128,7 +169,12 @@ impl <H:'static,SHARED:Clone,const HS:usize,const QS:usize>  Matcher<H,SHARED,QS
 
 #[cfg(not(feature = "thread_shared_struct"))]
 #[derive(Clone)]
-pub struct Matcher<H:'static,const QS:usize,const HS:usize> {
+pub struct Matcher<
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    const QS:usize,const HS:usize> {
     pub(crate) static_paths:&'static  HashMap<String,PathHolder<H,QS,HS>>,
     pub(crate) dynamic_paths:&'static  HashMap<usize,DynamicPathVec<H,QS,HS>>,
 }
@@ -136,7 +182,12 @@ pub struct Matcher<H:'static,const QS:usize,const HS:usize> {
 
 
 #[cfg(not(feature = "thread_shared_struct"))]
-impl <H:'static,const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
+impl <
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
 
     pub fn clone(&self)->Matcher<H,QS,HS>{
         Matcher {
@@ -156,19 +207,19 @@ impl <H:'static,const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
     pub fn match_path<'a>(
         &'a self,
         path: &'a str,
-    ) -> Option<(&'a PathHolder<H, QS, HS>, Vec<(&'a str, &'a str)>)> {
+    ) -> Option<(&'a PathHolder<H, QS, HS>, Option<HashMap<String,String>>)> {
         let path = path.trim_matches('/').split("?").next().unwrap();
         let segment_count = path.split('/').count();
 
         // 1️⃣ static
         if let Some(holder) = self.static_paths.get(path) {
-            return Some((holder, Vec::new()));
+            return Some((holder, None));
         }
 
         // 2️⃣ dynamic
         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {
             'outer: for (original_path, holder) in dynamic_vec {
-                let mut params = Vec::new();
+                let mut params = HashMap::new();
                 let mut incoming_iter = path.split('/');
                 let mut original_iter = original_path.split('/');
 
@@ -177,7 +228,7 @@ impl <H:'static,const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
                 {
                     if opart.starts_with('{') && opart.ends_with('}') {
                         let name = &opart[1..opart.len() - 1];
-                        params.push((name, ipart));
+                        params.insert(name.to_string(),ipart.to_string());
                     } else if opart != ipart {
                         continue 'outer;
                     }
@@ -186,7 +237,7 @@ impl <H:'static,const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
                 if original_iter.next().is_none()
                     && incoming_iter.next().is_none()
                 {
-                    return Some((holder, params));
+                    return Some((holder, Some(params)));
                 }
             }
         }
@@ -196,7 +247,12 @@ impl <H:'static,const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
 }
 
 #[cfg(not(feature = "thread_shared_struct"))]
-impl <H:'static,const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
+impl <
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
 
     pub fn format(
         prefix_string:&mut String,
@@ -230,7 +286,7 @@ impl <H:'static,const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
                             method:method.split("_").next().unwrap().to_uppercase(),
                             controller,
                             func,
-                            father_controllers:controllers_vec,
+
                             father_middlewares
                         })
                     ]
@@ -244,7 +300,6 @@ impl <H:'static,const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
-                father_controllers:controllers_vec,
                 father_middlewares
             });
         }
@@ -360,7 +415,16 @@ impl <H:'static,const HS:usize,const QS:usize>  MatcherInitializer<'_,H,HS,QS> {
 
 
 #[cfg(feature = "thread_shared_struct")]
-impl <H:'static,SHARED:Clone+'static,const QS:usize,const HS:usize>  MatcherInitializer<'_,H,SHARED,HS,QS> {
+impl <
+    #[cfg(feature = "use_tokio_send")]
+    H:'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    H:'static,
+    #[cfg(feature = "use_tokio_send")]
+    SHARED:Clone+'static + Send,
+    #[cfg(not(feature = "use_tokio_send"))]
+    SHARED:Clone+'static ,
+    const QS:usize,const HS:usize>  MatcherInitializer<'_,H,SHARED,HS,QS> {
 
     pub fn format(
         prefix_string:&mut String,
@@ -374,8 +438,6 @@ impl <H:'static,SHARED:Clone+'static,const QS:usize,const HS:usize>  MatcherInit
             prefix_string.push_str(*p);}
 
         for (method,path,func) in &controller.functions {
-            let mut controllers_vec:Vec<&'static CapsuleWaterController<H,SHARED,HS,QS>> = vec![];
-
             let path = format!("{prefix_string}/{path}").replace("//","/").trim_matches(|c| c=='/').to_string();
             if path.contains("{") || path.contains("}") {
                 let s = path.split("/");
