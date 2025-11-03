@@ -452,39 +452,43 @@ pub  fn run_server<
 
 #[cfg(feature = "use_io_uring")]
 fn create_tokio_uring_listener(address: &str, port: &u16, backlog: u32) -> tokio_uring::net::TcpListener {
-    use tokio_uring::net::TcpListener;
-    use std::net::TcpListener as StdListener;
-    // Resolve address
-    let address_string = format!("{}:{}", address, port);
-    let socket_address: SocketAddr = address_string
-        .to_socket_addrs()
-        .unwrap()
-        .next()
-        .expect("error while parsing address");
-
-    // Create std listener
-    let std_listener = match socket_address {
-        SocketAddr::V4(_) => StdListener::bind(socket_address).expect("bind failed"),
-        SocketAddr::V6(_) => StdListener::bind(socket_address).expect("bind failed"),
-    };
-
-    // Configure options
-    std_listener
-        .set_nonblocking(true)
-        .expect("cannot set non-blocking");
-    std_listener
-        .set_reuse_address(true)
-        .expect("cannot set reuse address");
-    #[cfg(target_os = "linux")]
-    std_listener
-        .set_reuse_port(true)
-        .expect("cannot set reuse port");
-
-    // backlog is handled by bind+listen in std_listener
-    // On Rust 1.70+ TcpListener::bind already handles backlog internally
-
-    // Convert to tokio-uring listener
-    TcpListener::from_std(std_listener).expect("cannot convert to tokio-uring listener")
+    let ad = format!("{address}:{port}");
+    let listener = tokio_uring::net::TcpListener::bind(ad.into());
+    listener.unwrap()
+    // use tokio_uring::net::TcpListener;
+    // use std::net::TcpListener as StdListener;
+    // // Resolve address
+    // let address_string = format!("{}:{}", address, port);
+    // let socket_address: SocketAddr = address_string
+    //     .to_socket_addrs()
+    //     .unwrap()
+    //     .next()
+    //     .expect("error while parsing address");
+    //
+    // // Create std listener
+    // let std_listener = match socket_address {
+    //     SocketAddr::V4(_) => StdListener::bind(socket_address).expect("bind failed"),
+    //     SocketAddr::V6(_) => StdListener::bind(socket_address).expect("bind failed"),
+    // };
+    //
+    // // Configure options
+    // std_listener
+    //     .set_nonblocking(true)
+    //     .expect("cannot set non-blocking");
+    //
+    // std_listener
+    //     .set_reuse_address(true)
+    //     .expect("cannot set reuse address");
+    // #[cfg(target_os = "linux")]
+    // std_listener
+    //     .set_reuse_port(true)
+    //     .expect("cannot set reuse port");
+    //
+    // // backlog is handled by bind+listen in std_listener
+    // // On Rust 1.70+ TcpListener::bind already handles backlog internally
+    //
+    // // Convert to tokio-uring listener
+    // TcpListener::from_std(std_listener).expect("cannot convert to tokio-uring listener")
 }
 
 #[inline(always)]
