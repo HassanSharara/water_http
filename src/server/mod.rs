@@ -388,6 +388,7 @@ pub  fn run_server<
             }
         });
     }
+
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut os_threads = vec![];
@@ -396,27 +397,46 @@ pub  fn run_server<
                 let address = address.clone();
                 let controller = controller;
                 let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
+                #[cfg(feature = "use_io_uring")]
+                {
 
-                let threads = std::thread::spawn(move || {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .max_blocking_threads(90)
-                        .build()
-                        .unwrap();
+                    let thread = std::thread::spawn(move || {
+                        let rt = tokio_uring::Runtime::new().unwrap();
 
-                    let local = LocalSet::new();
+                        rt.block_on(async {
+                            tokio_uring::spawn(async move {
+                                #[cfg(feature = "thread_shared_struct")]
+                                    let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
 
-                    rt.block_on(async {
-                        local.run_until(async {
-                            #[cfg(feature = "thread_shared_struct")]
-                                let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
-
-                            #[cfg(not(feature = "thread_shared_struct"))]
-                                let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
-                        }).await;
+                                #[cfg(not(feature = "thread_shared_struct"))]
+                                    let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
+                            })
+                        });
                     });
-                });
-                os_threads.push(threads);
+                }
+                #[cfg(not(feature = "use_io_uring"))]
+                {
+                    let threads = std::thread::spawn(move || {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .max_blocking_threads(90)
+                            .build()
+                            .unwrap();
+
+                        let local = LocalSet::new();
+
+                        rt.block_on(async {
+                            local.run_until(async {
+                                #[cfg(feature = "thread_shared_struct")]
+                                    let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
+
+                                #[cfg(not(feature = "thread_shared_struct"))]
+                                    let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
+                            }).await;
+                        });
+                    });
+                    os_threads.push(threads);
+                }
 
             }
         }
@@ -428,6 +448,7 @@ pub  fn run_server<
 }
 
 
+#[inline(always)]
 async fn run_server_with_address<
     #[cfg(feature = "use_tokio_send")]
     Holder:Send + 'static + std::fmt::Debug,
