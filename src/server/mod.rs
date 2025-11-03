@@ -450,6 +450,43 @@ pub  fn run_server<
 }
 
 
+#[cfg(feature = "use_io_uring")]
+fn create_tokio_uring_listener(address: &str, port: &u16, backlog: u32) -> tokio_uring::net::TcpListener {
+    use tokio_uring::net::TcpListener;
+    use std::net::TcpListener as StdListener;
+    // Resolve address
+    let address_string = format!("{}:{}", address, port);
+    let socket_address: SocketAddr = address_string
+        .to_socket_addrs()
+        .unwrap()
+        .next()
+        .expect("error while parsing address");
+
+    // Create std listener
+    let std_listener = match socket_address {
+        SocketAddr::V4(_) => StdListener::bind(socket_address).expect("bind failed"),
+        SocketAddr::V6(_) => StdListener::bind(socket_address).expect("bind failed"),
+    };
+
+    // Configure options
+    std_listener
+        .set_nonblocking(true)
+        .expect("cannot set non-blocking");
+    std_listener
+        .set_reuse_address(true)
+        .expect("cannot set reuse address");
+    #[cfg(target_os = "linux")]
+    std_listener
+        .set_reuse_port(true)
+        .expect("cannot set reuse port");
+
+    // backlog is handled by bind+listen in std_listener
+    // On Rust 1.70+ TcpListener::bind already handles backlog internally
+
+    // Convert to tokio-uring listener
+    TcpListener::from_std(std_listener).expect("cannot convert to tokio-uring listener")
+}
+
 #[inline(always)]
 async fn run_server_with_address<
     #[cfg(feature = "use_tokio_send")]
@@ -485,23 +522,31 @@ async fn run_server_with_address<
     let server_config = get_server_config();
 
 
-    // building tcp listener with defined backlog
+    #[cfg(feature = "use_io_uring")]
+    let listener = create_tokio_uring_listener(address,port,server_config.backlog);
+
     let address_string = format!("{}:{}",address,port);
     let socket_address = (&address_string).to_socket_addrs()
         .unwrap().next()
         .expect("error while parsing address");
-    let socket = match &socket_address {
-        SocketAddr::V4(_) => { tokio::net::TcpSocket::new_v4()}
-        SocketAddr::V6(_) => {tokio::net::TcpSocket::new_v6()}
-    }.expect("can not create tcp socket from given address");
-    socket.set_reuseaddr(true).expect("can not set reuse address");
-    socket.set_nodelay(true).expect("");
-    #[cfg(target_os = "linux")]
-    socket.set_reuseport(true).expect("could not reuse port on linux");
-    socket.bind(socket_address).expect("can not bind to given address");
-    let listener = socket.listen(
-        server_config.backlog
-    ).expect("");
+
+    #[cfg(not(feature = "use_io_uring"))]
+    let listener = {
+        // building tcp listener with defined backlog
+
+        let socket = match &socket_address {
+            SocketAddr::V4(_) => { tokio::net::TcpSocket::new_v4()}
+            SocketAddr::V6(_) => {tokio::net::TcpSocket::new_v6()}
+        }.expect("can not create tcp socket from given address");
+        socket.set_reuseaddr(true).expect("can not set reuse address");
+        socket.set_nodelay(true).expect("");
+        #[cfg(target_os = "linux")]
+        socket.set_reuseport(true).expect("could not reuse port on linux");
+        socket.bind(socket_address).expect("can not bind to given address");
+        socket.listen(
+            server_config.backlog
+        ).expect("")
+    };
 
     #[cfg(feature = "thread_shared_struct")]
     // create shared factory

@@ -18,6 +18,10 @@ use crate::server::sr_context::{Http2Context, HttpContext, Protocol, ServingRequ
 pub enum WaterStream {
     #[cfg(feature = "support_tls")]
     TLS(TlsStream<TcpStream>),
+
+    #[cfg(feature = "use_io_uring")]
+    ToStream(tokio_uring::net::TcpStream),
+    #[cfg(not(feature = "use_io_uring"))]
     TOStream(TcpStream)
 }
 pub (crate) struct ConnectionStream {
