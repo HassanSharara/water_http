@@ -413,6 +413,8 @@ pub  fn run_server<
                             })
                         });
                     });
+                    os_threads.push(threads);
+
                 }
                 #[cfg(not(feature = "use_io_uring"))]
                 {
