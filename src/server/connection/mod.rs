@@ -11,6 +11,7 @@ use tokio_uring::net::TcpStream;
 use tokio::net::TcpStream;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::server::TlsStream;
+use tokio_uring::buf::BoundedBuf;
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
 use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WaterTcpStream};
@@ -100,7 +101,7 @@ impl  ConnectionStream {
                                             &self.address
                                         );
                                     context.macher = Some(matcher);
-                                    match  context.serve(controller).await {
+                                    match  context.serve_ef(controller).await {
                                         ServingRequestResults::Stop => {
                                             return;
                                         }
@@ -439,10 +440,18 @@ impl  ConnectionStream {
 }
 
 
+
+
+
+
 #[inline(always)]
-pub (crate) async fn handle_responding<'e,Stream:AsyncWrite+Unpin>(response_buf:&mut BytesMut,
-                                                          stream:&mut Stream)
-                                                          ->Result<(),&'e str>{
+pub (crate) async fn handle_responding<'e,
+    #[cfg(not(feature = "use_io_uring"))]
+    Stream:AsyncWrite+Unpin
+    #[cfg(feature = "use_io_uring")]
+    Stream:BoundedBuf
+>
+(response_buf:&mut BytesMut,stream:&mut Stream) ->Result<(),&'e str>{
     if let Err(_) = stream.write_all(&response_buf).await {
         return Err("can not write data to given buffer");
     }

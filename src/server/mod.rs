@@ -409,12 +409,12 @@ pub  fn run_server<
                                 let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
                         });
                     });
-                    os_threads.push(threads);
+                    os_threads.push(thread);
 
                 }
                 #[cfg(not(feature = "use_io_uring"))]
                 {
-                    let threads = std::thread::spawn(move || {
+                    let thread = std::thread::spawn(move || {
                         let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
                             .max_blocking_threads(90)
@@ -433,7 +433,7 @@ pub  fn run_server<
                             }).await;
                         });
                     });
-                    os_threads.push(threads);
+                    os_threads.push(thread);
                 }
 
             }

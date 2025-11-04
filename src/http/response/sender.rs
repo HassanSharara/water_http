@@ -239,8 +239,15 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
     async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
 
+        #[cfg(not(feature = "use_io_uring"))]
         // preparing file
         let mut file = match tokio::fs::File::open(pc.path).await {
+            Ok(f) => {f}
+            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+
+        #[cfg(feature = "use_io_uring")]
+            let mut file = match tokio_uring::fs::File::open(pc.path).await {
             Ok(f) => {f}
             Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
         };
@@ -618,8 +625,15 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
 
-        // preparing file
-        let mut file = match tokio::fs::File::open(pc.path).await {
+        #[cfg(not(feature = "use_io_uring"))]
+            // preparing file
+            let mut file = match tokio::fs::File::open(pc.path).await {
+            Ok(f) => {f}
+            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+
+        #[cfg(feature = "use_io_uring")]
+            let mut file = match tokio_uring::fs::File::open(pc.path).await {
             Ok(f) => {f}
             Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
         };
