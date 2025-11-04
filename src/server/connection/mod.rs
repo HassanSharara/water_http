@@ -551,9 +551,16 @@ impl BodyReadingBuffer {
 
     #[cfg(feature = "use_io_uring")]
     #[inline(always)]
-    pub (crate) async fn read_buf(&mut self,stream:&mut TcpStream) ->  Result<(),()>
+    pub (crate) async fn read_buf(&mut self,stream:&mut HttpStream) ->  Result<(),()>
+
     {
-        let res =  stream.read(&mut self.buffer).await;
+        let res = match  stream {
+            HttpStream::AsyncSecure(h) => {                h.read(&mut self.buffer)
+            }
+            HttpStream::Async(h) => {
+                h.read(&mut self.buffer)
+            }
+        };
         if let Ok(s) = res {
             #[cfg(feature = "debugging")]
             {
