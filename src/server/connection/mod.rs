@@ -11,7 +11,7 @@ use tokio_uring::net::TcpStream;
 use tokio::net::TcpStream;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::server::TlsStream;
-use tokio_uring::buf::BoundedBuf;
+use tokio_uring::buf::{BoundedBuf, BoundedBufMut};
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
 use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WaterTcpStream};
@@ -447,9 +447,9 @@ impl  ConnectionStream {
 #[inline(always)]
 pub (crate) async fn handle_responding<'e,
     #[cfg(not(feature = "use_io_uring"))]
-    Stream:AsyncWrite+Unpin
+    Stream:AsyncWrite+Unpin,
     #[cfg(feature = "use_io_uring")]
-    Stream:BoundedBuf
+    Stream:BoundedBuf,
 >
 (response_buf:&mut BytesMut,stream:&mut Stream) ->Result<(),&'e str>{
     if let Err(_) = stream.write_all(&response_buf).await {
@@ -545,9 +545,17 @@ impl BodyReadingBuffer {
     //     String::from_utf8_lossy(self.chunk())
     // }
 
+
+
+
     #[inline(always)]
-    pub (crate) async fn read_buf<Stream>(&mut self,stream:&mut Stream) ->  tokio::io::Result<usize>
-    where Stream:AsyncRead + Unpin {
+    pub (crate) async fn read_buf<
+        #[cfg(not(feature = "use_io_uring"))]
+        Stream:AsyncRead + Unpin,
+        #[cfg(feature = "use_io_uring")]
+        Stream:BoundedBufMut,
+    >(&mut self,stream:&mut Stream) ->  tokio::io::Result<usize>
+       {
         let res =  stream.read_buf(&mut self.buffer).await;
         if let Ok(s) = res {
             #[cfg(feature = "debugging")]
