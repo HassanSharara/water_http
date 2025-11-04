@@ -17,6 +17,9 @@ use h2::server::SendResponse;
 use http::Request;
 use serde::{Deserialize, Serialize};
 use serde::ser::Error;
+#[cfg(feature = "use_io_uring")]
+use tokio_uring::net::TcpStream;
+#[cfg(not(feature = "use_io_uring"))]
 use tokio::net::TcpStream;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::http::Http2Sender;

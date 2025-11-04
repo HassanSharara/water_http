@@ -4,6 +4,10 @@ use std::net::SocketAddr;
 use std::ops::Deref;
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+#[cfg(feature = "use_io_uring")]
+use tokio_uring::net::TcpStream;
+
+#[cfg(not(feature = "use_io_uring"))]
 use tokio::net::TcpStream;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::server::TlsStream;

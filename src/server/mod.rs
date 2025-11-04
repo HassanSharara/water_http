@@ -401,8 +401,8 @@ pub  fn run_server<
                 {
 
                     let thread = std::thread::spawn(move || {
-                        let rt = tokio_uring::Runtime::new().unwrap();
-
+                        let builder = tokio_uring::Builder::new();
+                        let rt = tokio_uring::Runtime::new(&builder).unwrap();
                         rt.block_on(async {
                             tokio_uring::spawn(async move {
                                 #[cfg(feature = "thread_shared_struct")]
