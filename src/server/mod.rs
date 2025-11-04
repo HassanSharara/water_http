@@ -401,16 +401,12 @@ pub  fn run_server<
                 {
 
                     let thread = std::thread::spawn(move || {
-                        let builder = tokio_uring::Builder::new();
-                        let rt = tokio_uring::Runtime::new(&builder).unwrap();
-                        rt.block_on(async {
-                            tokio_uring::spawn(async move {
-                                #[cfg(feature = "thread_shared_struct")]
-                                    let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
+                        tokio_uring::start(async move {
+                            #[cfg(feature = "thread_shared_struct")]
+                                let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
 
-                                #[cfg(not(feature = "thread_shared_struct"))]
-                                    let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
-                            })
+                            #[cfg(not(feature = "thread_shared_struct"))]
+                                let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
                         });
                     });
                     os_threads.push(threads);
