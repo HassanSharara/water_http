@@ -445,12 +445,31 @@ impl  ConnectionStream {
 
 
 
+#[cfg(feature = "use_io_uring")]
+#[inline(always)]
+pub (crate) async fn handle_responding<'e>
+(response_buf:&mut BytesMut,stream:&mut HttpStream) ->Result<(),&'e str>{
+
+    match stream {
+        HttpStream::AsyncSecure(h) => {
+            if h.write_all(&response_buf).await {
+                return Err("can not write data to given buffer");
+            }
+        }
+        HttpStream::Async(h) => {
+           let (r,_) =  h.write_all(response_buf).await;
+            if r.is_err() { return Err("can not write data to given buffer")}
+        }
+    };
+    Ok(())
+}
+
+
+#[cfg(not(feature = "use_io_uring"))]
 #[inline(always)]
 pub (crate) async fn handle_responding<'e,
-    #[cfg(not(feature = "use_io_uring"))]
     Stream:AsyncWrite+Unpin,
-    #[cfg(feature = "use_io_uring")]
-    Stream:BoundedBuf,
+
 >
 (response_buf:&mut BytesMut,stream:&mut Stream) ->Result<(),&'e str>{
     if let Err(_) = stream.write_all(&response_buf).await {
@@ -459,6 +478,8 @@ pub (crate) async fn handle_responding<'e,
     response_buf.clear();
     Ok(())
 }
+
+
 //
 #[inline(always)]
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
@@ -551,7 +572,7 @@ impl BodyReadingBuffer {
 
     #[cfg(feature = "use_io_uring")]
     #[inline(always)]
-    pub (crate) async fn read_buf(&mut self,stream:&mut HttpStream) ->  Result<(),()>
+    pub (crate) async fn read_buf(&mut self,stream:&mut HttpStream) ->  Result<usize,()>
 
     {
         let res = match  stream {
@@ -567,7 +588,7 @@ impl BodyReadingBuffer {
                 debug!("the red data from buffer is {} {} ",self.buffer.len(),String::from_utf8_lossy(&self.buffer))
             }
             self.bytes_consumed +=s;
-            return Ok(())
+            return Ok(s)
         }
         return Err(());
     }

@@ -47,6 +47,8 @@ pub  trait HttpSenderTrait {
    fn send_str(&mut self,data:&'static str)
     -> impl Future<Output=Result<(),()>>;
 
+
+    #[cfg(not(feature = "use_io_uring"))]
    /// to send files as response to client ,
    ///and it takes [FileRSender]
    fn send_file(&mut self,path:FileRSender<'_>)->
@@ -236,6 +238,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
+    #[cfg(not(feature = "use_io_uring"))]
     async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
 
@@ -453,6 +456,8 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
         }
     }
 
+     #[cfg(not(feature = "use_io_uring"))]
+
     async fn send_file(&mut self, pc: FileRSender<'_>) ->SendingFileResults {
         match self {
             HttpSender::H1(h1) => {h1.send_file(pc).await}
@@ -622,6 +627,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
 
 
+    #[cfg(not(feature = "use_io_uring"))]
     async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
 
