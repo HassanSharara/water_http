@@ -453,7 +453,7 @@ pub  fn run_server<
 #[cfg(feature = "use_io_uring")]
 fn create_tokio_uring_listener(address: &str, port: &u16, backlog: u32) -> tokio_uring::net::TcpListener {
     let ad = format!("{address}:{port}");
-    let listener = tokio_uring::net::TcpListener::bind(ad.into());
+    let listener = tokio_uring::net::TcpListener::bind(ad.parse().unwrap());
     listener.unwrap()
     // use tokio_uring::net::TcpListener;
     // use std::net::TcpListener as StdListener;
