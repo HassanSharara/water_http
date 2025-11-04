@@ -662,7 +662,7 @@ async fn run_server_with_address<
                 #[cfg(feature = "thread_shared_struct")]
                 let shared_struct = shared_struct.clone();
                 let matcher = matcher.clone();
-                tokio::task::spawn_local(async move {
+                let future = async move {
                     // checking if the current port should be handled
                     // with tls configurations if it`s exist
                     #[cfg(feature = "support_tls")]
@@ -715,7 +715,12 @@ async fn run_server_with_address<
                         }
 
                     }
-                });
+                };
+
+                #[cfg(feature = "use_io_uring")]
+                tokio_uring::spawn(future);
+                #[cfg(not(feature = "use_io_uring"))]
+                tokio::task::spawn_local(future);
             }
         }
     }
