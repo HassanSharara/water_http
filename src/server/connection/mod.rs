@@ -20,7 +20,7 @@ pub enum WaterStream {
     TLS(TlsStream<TcpStream>),
 
     #[cfg(feature = "use_io_uring")]
-    ToStream(tokio_uring::net::TcpStream),
+    TOStream(tokio_uring::net::TcpStream),
     #[cfg(not(feature = "use_io_uring"))]
     TOStream(TcpStream)
 }
