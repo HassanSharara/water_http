@@ -11,13 +11,14 @@ use tokio_uring::net::TcpStream;
 use tokio::net::TcpStream;
 #[cfg(feature = "support_tls")]
 use tokio_rustls::server::TlsStream;
-use tokio_uring::buf::{BoundedBuf, BoundedBufMut};
+
+
 #[cfg(feature = "debugging")]
 use tracing::{info,debug, trace};
 use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WaterTcpStream};
 use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
-use crate::server::sr_context::{Http2Context, HttpContext, Protocol, ServingRequestResults};
+use crate::server::sr_context::{Http2Context};
 
 
 pub enum WaterStream {
@@ -548,13 +549,25 @@ impl BodyReadingBuffer {
 
 
 
+    #[cfg(feature = "use_io_uring")]
     #[inline(always)]
-    pub (crate) async fn read_buf<
-        #[cfg(not(feature = "use_io_uring"))]
-        Stream:AsyncRead + Unpin,
-        #[cfg(feature = "use_io_uring")]
-        Stream:BoundedBufMut,
-    >(&mut self,stream:&mut Stream) ->  tokio::io::Result<usize>
+    pub (crate) async fn read_buf(&mut self,stream:&mut TcpStream) ->  Result<(),()>
+    {
+        let res =  stream.read(&mut self.buffer).await;
+        if let Ok(s) = res {
+            #[cfg(feature = "debugging")]
+            {
+                debug!("the red data from buffer is {} {} ",self.buffer.len(),String::from_utf8_lossy(&self.buffer))
+            }
+            self.bytes_consumed +=s;
+            return Ok(())
+        }
+        return Err(());
+    }
+
+    #[cfg(not(feature = "use_io_uring"))]
+    #[inline(always)]
+    pub (crate) async fn read_buf<Stream:AsyncRead + Unpin, >(&mut self,stream:&mut Stream) ->  tokio::io::Result<usize>
        {
         let res =  stream.read_buf(&mut self.buffer).await;
         if let Ok(s) = res {
