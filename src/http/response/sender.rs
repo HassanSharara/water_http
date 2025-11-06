@@ -493,6 +493,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
      fn extend_write_buffer(&mut self, bytes: &[u8]) {
          match self {
              HttpSender::H1(h1) => {h1.extend_write_buffer(bytes)}
+             #[cfg(not(feature = "use_only_http1"))]
              HttpSender::H2(h2) => {h2.extend_write_buffer(bytes)}
          }
      }
