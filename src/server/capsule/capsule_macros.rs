@@ -131,8 +131,8 @@ macro_rules! InitControllersRoot {
      } => {
         use water_http::server::matcher::*;
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
-        pub static mut STATIC_PATHS: Option<HashMap<String, PathHolder<$holder,$hl,$ql>>> = None;
-        pub static mut DYNAMIC_PATHS: Option<HashMap<usize, DynamicPathVec<$holder,$hl,$ql>>> = None;
+        pub static mut STATIC_PATHS: Option<std::collections::HashMap<String, PathHolder<$holder,$hl,$ql>>> = None;
+        pub static mut DYNAMIC_PATHS: Option<std::collections::HashMap<usize, DynamicPathVec<$holder,$hl,$ql>>> = None;
     };
 
       {
