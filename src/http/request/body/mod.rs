@@ -308,6 +308,7 @@ pub enum  HandlingChunkResult<'a> {
 /// ```
 /// ignore defining context because it would be ready for you by the framework
 /// and this is the wright way to get `HttpGetter`
+#[derive(Debug)]
 pub enum  DynamicBodyMap{
     /// form field
     FormField(FormDataAll),

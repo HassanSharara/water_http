@@ -14,7 +14,7 @@ use tokio_rustls::server::TlsStream;
 
 
 #[cfg(feature = "debugging")]
-use tracing::{info,debug, trace};
+use tracing::{debug};
 use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WaterTcpStream};
 use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
@@ -89,6 +89,7 @@ impl  ConnectionStream {
                             if let Ok(mut connection) = handshake {
                                 let mut reading_buffer =
                                     BodyReadingBuffer::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER);
+
                                 while let Some(
                                     Ok(batch))
                                     = connection.accept().await {

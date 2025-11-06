@@ -42,7 +42,7 @@ pub struct CHolder {
 }
 
 
-pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType> + Send>>{
+pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
 
     Box::pin(async {
         return 0

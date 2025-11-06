@@ -1,6 +1,6 @@
 
 use std::collections::HashMap;
-use water_http::server::{ServerConfigurations};
+use water_http::server::{HttpContext, ServerConfigurations};
 use water_http::{functions_builder, InitControllersRoot, WaterController};
 
 use water_http::http::request::{DynamicBodyMap, DynamicBodyMapTrait, HttpGetterTrait, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
@@ -38,7 +38,25 @@ WaterController! {
         POST -> "submit-form" -> url_encoded(context)[super::url_encoded]
         POST -> "upload" -> upload(context)[super::upload]
         POST -> "transfer-chunked" -> handle_chunked(context) [super::handle_chunked]
+        POST -> "upload-bin" -> upload_bin(context) [super::upload_bin]
     }
+}
+
+async fn upload_bin<H,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,HS,QS> ){
+    let mut gf = g.getter();
+    let puller = gf.get_body().await;
+    println!("res is {:?}",puller);
+    if let ParsingBodyResults::Chunked(IBodyChunks::Bytes(mut puller)) = puller {
+        if puller.on_chunk(|data|{
+             println!("binary data is {:?}",String::from_utf8_lossy(data));
+            return Ok(());
+        }).await.is_ok() {
+            println!("sending response from bytes puller");
+            _= g.send_str("success").await;
+            return;
+        }
+    }
+    _= g.send_str("Failed").await;
 }
 
 functions_builder!{
@@ -62,6 +80,8 @@ functions_builder!{
     fn url_encoded(context) {
 
         let body = context.get_body_map().await;
+
+        println!("url encoded called {:?}",body);
         if let Ok( body_map ) = body {
             if let DynamicBodyMap::Xww(x_map ) = body_map {
                 println!("body is {:?}",x_map.all());
@@ -71,6 +91,7 @@ functions_builder!{
         }
         _=context.send_status_code_as_final_response(HttpStatusCode::INTERNAL_SERVER_ERROR).await;
     }
+
 
     async fn handle_chunked(context){
         #[cfg(not(feature = "accept_transfer_chunked"))]

@@ -458,6 +458,7 @@ impl<'a>   Http2Getter<'a> {
         );
 
         while remaining > 0 {
+
             let data = body_mut.data().await;
             match data {
                 None => { break }
@@ -475,7 +476,6 @@ impl<'a>   Http2Getter<'a> {
                 }
             }
         }
-
         return ParsingBodyResults::FullBody(
             IBody::XWWWFormUrlEncoded(
                 XWWWFormUrlEncoded::new(

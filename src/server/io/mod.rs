@@ -33,6 +33,12 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
         let this = unsafe { self.get_unchecked_mut() };
         let stream_ptr: *mut HttpStream = this.stream as *mut _;
 
+        #[cfg(feature = "debugging")]
+        {
+            println!("\n Writing Response: \n trying to write response \n {:?} \n end -- ",
+                     String::from_utf8_lossy(this.write_buf)
+            );
+        }
         unsafe {
             match &mut *stream_ptr {
                 #[cfg(feature = "support_tls")]
@@ -52,14 +58,10 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 HttpStream::Async(stream) => {
                     match Pin::new_unchecked(stream).poll_write(cx, &this.write_buf) {
                         Poll::Ready(Ok(n)) => {
-                            if n >= this.write_buf.len() {
+                            this.write_buf.advance(n);
+                            if this.write_buf.is_empty() {
                                 this.write_buf.clear();
                             }
-                            else {
-                                this.write_buf.advance(n);
-                            }
-
-
                             Poll::Ready(PollWriteResults::WriteSuccess(n))
                         }
                         Poll::Ready(Err(_)) => Poll::Ready(PollWriteResults::WriteErr),
