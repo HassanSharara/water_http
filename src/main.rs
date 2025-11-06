@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use water_http::server::{ ServerConfigurations};
@@ -15,7 +14,7 @@ type MainHolderType = CHolder;
 type SharedType = u8;
 #[derive(Debug,Clone)]
 pub struct CHolder {
-    pub user:Option<HashMap<String,String>>,
+    pub user:Option<std::collections::HashMap<String,String>>,
 
 }
 
