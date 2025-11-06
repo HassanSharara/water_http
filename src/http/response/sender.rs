@@ -4,6 +4,7 @@ use std::ffi::OsStr;
 use std::fmt::Display;
 use std::future::Future;
 use std::io:: SeekFrom;
+
 #[cfg(not(feature = "use_only_http1"))]
 use bytes::Bytes;
 #[cfg(not(feature = "use_only_http1"))]
@@ -63,6 +64,8 @@ pub  trait HttpSenderTrait {
     fn write_custom_bytes(&mut self,bytes:&[u8])->
      impl Future<
      Output = Result<(),WaterErrors<'_>>> + Send;
+
+    fn extend_write_buffer(&mut self,bytes:&[u8]);
 }
 
 
@@ -128,6 +131,11 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         self.response_builder = Some(response);
     }
 
+    fn extend_write_buffer(&mut self,bytes:&[u8]){
+        if let Some(send_stream) = &mut self.send_stream {
+            _= send_stream.send_data(Bytes::copy_from_slice(bytes),false);
+        }
+    }
     fn send_data_partial(&mut self, data: ResponseData) {
         let data = data.as_bytes().to_vec();
         if let Some(ref mut stream) = self.send_stream {
@@ -481,6 +489,13 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
              HttpSender::H2(h2) => {h2.write_custom_bytes(bytes).await}
          }
      }
+
+     fn extend_write_buffer(&mut self, bytes: &[u8]) {
+         match self {
+             HttpSender::H1(h1) => {h1.extend_write_buffer(bytes)}
+             HttpSender::H2(h2) => {h2.extend_write_buffer(bytes)}
+         }
+     }
  }
 
 
@@ -527,6 +542,11 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
 }
 impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait for
 Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
+
+    #[inline(always)]
+    fn extend_write_buffer(&mut self,bytes:&[u8]){
+        self.context.response_buffer.extend_from_slice(bytes);
+    }
     #[inline(always)]
     fn send_status_code(&mut self, http_status: StatusCode) {
         if self.is_status_written {return;}
