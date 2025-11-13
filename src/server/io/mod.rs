@@ -388,16 +388,17 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     PollReadResults::ReadErr => break,
                 }
 
-                // if read_buf.is_empty() {
-                //     let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
-                //     if ! (&mut *stream_ptr).is_write_buf_empty() {
-                //         match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
-                //             PollWriteResults::WriteSuccess(_) => {}
-                //             PollWriteResults::WriteErr => {return}
-                //         };
-                //     }
-                //     continue;
-                // }
+                if read_buf.is_empty() {
+                    // let stream_ptr: *mut WaterTcpStream<'_, '_> = &mut water_stream;
+                    // if ! (&mut *stream_ptr).is_write_buf_empty() {
+                    //     match (WaterTcpWriter { stream: &mut *stream_ptr }).await {
+                    //         PollWriteResults::WriteSuccess(_) => {}
+                    //         PollWriteResults::WriteErr => {return}
+                    //     };
+                    // }
+                    //
+                    continue;
+                }
             }
             loop {
                 let req = IncomingRequest::<HS, QS>::new(&read_buf);
