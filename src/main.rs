@@ -1,5 +1,3 @@
-use std::future::Future;
-use std::pin::Pin;
 use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
@@ -8,10 +6,8 @@ use water_http::http::HttpSenderTrait;
 InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
-    shared_type:SharedType,
 }
 type MainHolderType = CHolder;
-type SharedType = u8;
 #[derive(Debug,Clone)]
 pub struct CHolder {
     pub user:Option<std::collections::HashMap<String,String>>,
@@ -35,18 +31,11 @@ pub struct CHolder {
     water_http::RunServer!(
         config,
         MAIN_ROOT,
-        MainController,
-        threads_shared_factory
+        MainController
     );
 }
 
 
-pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
-
-    Box::pin(async {
-        return 0
-    })
-}
 
 
 //
@@ -75,7 +64,6 @@ pub fn threads_shared_factory()->Pin<Box<dyn Future<Output=SharedType>>>{
 // }
 WaterController! {
     holder -> crate::MainHolderType,
-    shared ->   crate::SharedType,
     name -> MainController,
     functions -> {
 
@@ -194,7 +182,6 @@ WaterController! {
 
 WaterController! {
     holder -> crate::MainHolderType,
-    shared ->   crate::SharedType,
     name -> SecondController,
     functions -> {
         get -> version2 -> g(context){_= context.send_str("go").await;}
