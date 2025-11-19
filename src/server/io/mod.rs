@@ -24,6 +24,7 @@ pub enum PollReadResults {
 
 impl<'a,'b> WaterTcpStream<'a,'b> {
 
+    #[allow(unused)]
     #[inline(always)]
     fn is_write_buf_empty(&self)->bool{
         self.write_buf.is_empty()
@@ -622,13 +623,13 @@ impl Future for WaterTcpReader<'_, '_> {
 }
 
 
-
+#[allow(unused)]
 pub (crate) struct  WaterTcpWriter<'a,'b>{
     stream:&'a mut WaterTcpStream<'a,'b>,
 }
 
-
-pub enum PollWriteResults {
+#[allow(unused)]
+pub (crate) enum PollWriteResults {
     WriteSuccess(usize),
     WriteErr,
 }
