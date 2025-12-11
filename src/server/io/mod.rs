@@ -353,7 +353,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
 
             // Only read if we need more data
             // Ensure we have space to read into
-            reserve_buf(&mut read_buf);
+            // reserve_buf(&mut read_buf);
             // Convert UninitSlice to [MaybeUninit<u8>]
             // let uninit_slice = read_buf.chunk_mut();
             let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = read_buf.chunk_mut_maybeunint();
@@ -437,11 +437,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                 let content_length = context.content_length();
                                 match content_length {
                                     None => {
-                                        if total_req_size >= read_buf.chunk().len() {
-                                            read_buf.clear();
-
-                                        }
-                                        else {
+                                        {
                                             #[cfg(feature = "accept_transfer_chunked")]
                                             {
                                                 if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding") {
@@ -454,13 +450,13 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                                                     read_buf.advance(total_req_size + to_advance);
                                                                     continue;
                                                                 }
-                                                                 else if !body_buf.is_empty() {
+                                                                else if !body_buf.is_empty() {
 
-                                                                     read_buf.advance(total_req_size);
-                                                                     read_buf.extend_from_slice(body_buf.chunk());
-                                                                     body_buf.clear();
-                                                                     continue;
-                                                                 }
+                                                                    read_buf.advance(total_req_size);
+                                                                    read_buf.extend_from_slice(body_buf.chunk());
+                                                                    body_buf.clear();
+                                                                    continue;
+                                                                }
                                                             }
                                                         }
                                                         read_buf.clear();
@@ -470,6 +466,39 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                             }
                                             read_buf.advance(total_req_size);
                                         }
+                                        // if total_req_size >= read_buf.chunk().len() {
+                                        //     read_buf.clear();
+                                        //
+                                        // }
+                                        // else {
+                                        //     #[cfg(feature = "accept_transfer_chunked")]
+                                        //     {
+                                        //         if let Some(h) = context.get_from_headers_as_bytes("Transfer-Encoding") {
+                                        //             if h == b"chunked" {
+                                        //                 match &context.protocol {
+                                        //                     #[cfg(not(feature = "use_only_http1"))]
+                                        //                     crate::server::sr_context::Protocol::Http2(_) => {}
+                                        //                     crate::server::sr_context::Protocol:: Http1(h1) => {
+                                        //                         if let Some(to_advance ) = h1.to_advance {
+                                        //                             read_buf.advance(total_req_size + to_advance);
+                                        //                             continue;
+                                        //                         }
+                                        //                          else if !body_buf.is_empty() {
+                                        //
+                                        //                              read_buf.advance(total_req_size);
+                                        //                              read_buf.extend_from_slice(body_buf.chunk());
+                                        //                              body_buf.clear();
+                                        //                              continue;
+                                        //                          }
+                                        //                     }
+                                        //                 }
+                                        //                 read_buf.clear();
+                                        //                 break;
+                                        //             }
+                                        //         }
+                                        //     }
+                                        //     read_buf.advance(total_req_size);
+                                        // }
                                     }
                                     Some(c) => {
                                         let c = c.clone();
