@@ -218,9 +218,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.7.2"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "428d9aa8fbc0670b7b8d6030a7fadd0f86151cae55e4dbbece15f3780a3dfaf3"
+checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
 name = "bzip2"
@@ -1304,8 +1304,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "water_buffer"
+version = "1.0.1-Beta.1.6"
+source = "git+https://github.com/HassanSharara/water_buffer#2bbe8d4df9a658c85348b16720e637e11a4227fd"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "water_http"
-version = "3.1.1"
+version = "3.1.1-Beta.1"
 dependencies = [
  "askama",
  "brotli",
@@ -1331,6 +1339,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "twoway",
+ "water_buffer",
  "water_http_utils",
  "zstd",
 ]

@@ -2,7 +2,8 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut};
+use water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
@@ -354,13 +355,14 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
             // Ensure we have space to read into
             reserve_buf(&mut read_buf);
             // Convert UninitSlice to [MaybeUninit<u8>]
-            let uninit_slice = read_buf.chunk_mut();
-            let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
-                std::slice::from_raw_parts_mut(
-                    uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
-                    uninit_slice.len()
-                )
-            };
+            // let uninit_slice = read_buf.chunk_mut();
+            let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = read_buf.chunk_mut_maybeunint();
+           // let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
+           //      std::slice::from_raw_parts_mut(
+           //          uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
+           //          uninit_slice.len()
+           //      )
+           //  };
 
             let mut rdr = ReadBuf::uninit(uninit_buf);
 
@@ -409,7 +411,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     },
                     FormingRequestResult::Err(_) => return,
                     FormingRequestResult::Success(request) => {
-
                         let total_req_size = request.get_total_headers_length();
                         let left_bytes = &read_buf[total_req_size..];
 
@@ -429,15 +430,16 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                             peer
                         );
 
-
                         match context.serve_ef(matcher.clone()).await {
                             ServingRequestResults::Stop => return,
                             ServingRequestResults::Done => {
+
                                 let content_length = context.content_length();
                                 match content_length {
                                     None => {
                                         if total_req_size >= read_buf.chunk().len() {
                                             read_buf.clear();
+
                                         }
                                         else {
                                             #[cfg(feature = "accept_transfer_chunked")]
