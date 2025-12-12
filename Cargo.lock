@@ -1305,15 +1305,15 @@ dependencies = [
 
 [[package]]
 name = "water_buffer"
-version = "1.0.1-Beta.1.6"
-source = "git+https://github.com/HassanSharara/water_buffer#2bbe8d4df9a658c85348b16720e637e11a4227fd"
+version = "1.0.1-Beta.1.8"
+source = "git+https://github.com/HassanSharara/water_buffer#84987d2ae7de254023fe4e84c3ae6625f37523e4"
 dependencies = [
  "bytes",
 ]
 
 [[package]]
 name = "water_http"
-version = "3.1.1-Beta.4"
+version = "3.1.1-Beta.6"
 dependencies = [
  "askama",
  "brotli",
