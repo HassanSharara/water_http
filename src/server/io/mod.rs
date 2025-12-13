@@ -3,7 +3,9 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut};
+use water_buffer::WaterBuffer as BM;  type BytesMut = BM<u8>;
+
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
@@ -663,7 +665,7 @@ impl<'a,'b> Future for WaterTcpWriter<'a,'b> {
 
 
 
-
+//// sperator
 
 
 
@@ -1359,7 +1361,7 @@ impl<'a,'b> Future for WaterTcpWriter<'a,'b> {
 // use std::pin::Pin;
 // use std::task::{Context, Poll};
 // use bytes::{Buf, BufMut};
-// use bytes::BytesMut as BM; type BytesMut = BM;
+// use water_buffer::WaterBuffer as BM;  type BytesMut = BM<u8>;
 // use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 // use crate::http::request::{FormingRequestResult, IncomingRequest};
 // use crate::server::connection::{BodyReadingBuffer, reserve_buf};
