@@ -474,7 +474,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                     }
                                     Some(c) => {
                                         let c = c.clone();
-
                                         read_buf.advance(total_req_size );
                                         if read_buf.len() >= c {
                                             read_buf.advance(c);
