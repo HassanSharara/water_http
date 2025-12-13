@@ -1304,16 +1304,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "water_buffer"
-version = "1.0.1-Beta.1.13"
-source = "git+https://github.com/HassanSharara/water_buffer#6b02383fc5a37fbcc14dd7bd2af4ab063e8b6d48"
-dependencies = [
- "bytes",
-]
-
-[[package]]
 name = "water_http"
-version = "3.1.1-Beta.19"
+version = "3.1.1-Beta.20"
 dependencies = [
  "askama",
  "brotli",
@@ -1339,7 +1331,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "twoway",
- "water_buffer",
  "water_http_utils",
  "zstd",
 ]

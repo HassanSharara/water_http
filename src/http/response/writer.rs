@@ -1,6 +1,6 @@
 use std::fmt::{Display};
 // use bytes::{BytesMut};
-use water_buffer::WaterBuffer as BM;  type BytesMut = BM<u8>;
+use bytes::BytesMut as BM; type BytesMut = BM;
 use crate::http::status_code::HttpStatusCode as StatusCode;
 
 
@@ -89,7 +89,7 @@ unsafe impl<'a>  Send for ResponseData<'a> {
 #[cfg(test)]
 mod test_buffer {
     // use bytes::BytesMut;
-    use water_buffer::WaterBuffer as BM;  type BytesMut = BM<u8>;
+    use bytes::BytesMut as BM; type BytesMut = BM;
     use crate::http::status_code::HttpStatusCode as StatusCode;
     use crate::http::HttpVersion;
 
