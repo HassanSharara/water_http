@@ -1313,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "3.1.1-Beta.11"
+version = "3.1.1-Beta.12"
 dependencies = [
  "askama",
  "brotli",

@@ -3,7 +3,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use bytes::{Buf, BufMut};
-use water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
+use bytes::BytesMut as BM; type BytesMut = BM;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
@@ -353,16 +353,17 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
 
             // Only read if we need more data
             // Ensure we have space to read into
+             reserve_buf(&mut read_buf);
             // read_buf.reserve(1024);
             // Convert UninitSlice to [MaybeUninit<u8>]
-            // let uninit_slice = read_buf.chunk_mut();
-            let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = read_buf.chunk_mut_maybeunint();
-           // let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
-           //      std::slice::from_raw_parts_mut(
-           //          uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
-           //          uninit_slice.len()
-           //      )
-           //  };
+            let uninit_slice = read_buf.chunk_mut();
+           //  let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = read_buf.chunk_mut_maybeunint();
+           let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
+                std::slice::from_raw_parts_mut(
+                    uninit_slice.as_mut_ptr() as *mut std::mem::MaybeUninit<u8>,
+                    uninit_slice.len()
+                )
+            };
 
             let mut rdr = ReadBuf::uninit(uninit_buf);
 
