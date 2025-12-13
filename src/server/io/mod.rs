@@ -353,7 +353,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
 
             // Only read if we need more data
             // Ensure we have space to read into
-            // reserve_buf(&mut read_buf);
+            // read_buf.reserve(1024);
             // Convert UninitSlice to [MaybeUninit<u8>]
             // let uninit_slice = read_buf.chunk_mut();
             let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = read_buf.chunk_mut_maybeunint();
