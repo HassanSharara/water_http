@@ -360,6 +360,7 @@ impl  ConnectionStream {
                                               let br = total_request_size >= buf_bytes.len();
                                               if br { reading_buffer.clear(); break ;}
                                               else {
+                                                  #[cfg(feature = "accept_transfer_chunked")]
                                                   if let Some(h) = context.get_from_headers("Transfer-Encoding"){
                                                       if h == "chunked" {
                                                           drop(h);
@@ -395,7 +396,10 @@ impl  ConnectionStream {
                                                   rem -= to_advance;
                                               }
 
-                                              if reading_buffer.is_empty() {break;}
+                                              if reading_buffer.is_empty() {
+                                                  reading_buffer.clear();
+                                                  break;
+                                              }
 
                                           }
                                       }
