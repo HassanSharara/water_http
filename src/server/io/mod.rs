@@ -397,7 +397,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     //         PollWriteResults::WriteErr => {return}
                     //     };
                     // }
-
+                    read_buf.clear();
                     continue;
                 }
             }
