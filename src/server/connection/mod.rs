@@ -16,7 +16,7 @@ use tokio_rustls::server::TlsStream;
 
 #[cfg(feature = "debugging")]
 use tracing::{debug};
-use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WaterTcpStream};
+use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults, WaterTcpStream};
 use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::sr_context::{Http2Context};
