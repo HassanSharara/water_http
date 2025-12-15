@@ -496,21 +496,6 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     }
 }
 
-// #[inline(always)]
-// pub(crate) fn reserve_buf(buffer: &mut BytesMut) {
-//     const MIN_RESERVE: usize = 1024;
-//     let remaining = buffer.capacity() - buffer.len();
-//     if remaining < MIN_RESERVE {
-//         buffer.reserve(READING_BUF_LEN);
-//     }
-// }
-
-// #[inline(always)]
-// pub(crate) fn reserve_buf(buffer: &mut BytesMut) {
-//     if buffer.remaining_mut() < 1024 {
-//         buffer.reserve(1024);
-//     }
-// }
 #[derive(Debug)]
 pub (crate) struct BodyReadingBuffer {
     buffer:BytesMut,
@@ -521,13 +506,6 @@ pub (crate) struct BodyReadingBuffer {
 
 
 impl BodyReadingBuffer {
-
-
-
-    // #[inline]
-    // pub (crate) fn len(&self) -> usize {
-    //     self.buffer.len()
-    // }
 
 
 

@@ -409,10 +409,10 @@ impl Future for WaterTcpReader<'_, '_> {
         // Try read first
         let read_results = unsafe { Pin::new_unchecked(mut_stream) }.poll_read(cx);
         if let Poll::Ready(r) = read_results {
-            return match r {
-                PollReadResults::ReadSuccess(n) if n > 0 => Poll::Ready(PollReadResults::ReadSuccess(n)),
-                PollReadResults::ReadErr => Poll::Ready(PollReadResults::ReadErr),
-                _ => Poll::Pending,
+             match r {
+                PollReadResults::ReadSuccess(n) if n > 0 => {return Poll::Ready(PollReadResults::ReadSuccess(n))},
+                PollReadResults::ReadErr => {return Poll::Ready(PollReadResults::ReadErr)},
+                _ => {  },
             };
         }
         let st = unsafe {&mut *stream_ptr};

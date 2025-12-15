@@ -789,7 +789,7 @@ impl SendingFileResults {
     }
 }
 
-
+/// for constructing efficient bytes injector
 pub enum HeaderBytes<'a> {
     Str(&'static str),
     StringSlice(&'a str),
@@ -800,7 +800,9 @@ pub enum HeaderBytes<'a> {
 }
 
 impl<'a> HeaderBytes<'a> {
+    /// convert any type of supported data to &[u8]
     pub fn as_bytes(&self)->&'_ [u8] {
+
         match self {
             HeaderBytes::Str(s) => {s.as_bytes()}
             HeaderBytes::Slice(s) => {s}
