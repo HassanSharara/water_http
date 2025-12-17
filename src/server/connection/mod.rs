@@ -16,7 +16,7 @@ use tokio_rustls::server::TlsStream;
 
 #[cfg(feature = "debugging")]
 use tracing::{debug};
-use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults, WaterTcpStream};
+use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults, WaterTcpStream};
 use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::sr_context::{Http2Context};
@@ -491,9 +491,9 @@ pub (crate) async fn handle_responding<'e,
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     const MIN_RESERVE: usize = 1024;
 
-    let remaining = buffer.capacity() - buffer.len();
+    let remaining = buffer.capacity() ;
     if remaining < MIN_RESERVE {
-        buffer.reserve(MIN_RESERVE * 6);
+        buffer.reserve(READING_BUF_LEN);
     }
 }
 
