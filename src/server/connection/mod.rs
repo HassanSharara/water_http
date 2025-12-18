@@ -493,7 +493,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
 
     let remaining = buffer.capacity() - buffer.len();
     if remaining < MIN_RESERVE {
-        buffer.reserve(READING_BUF_LEN );
+        buffer.reserve( remaining );
     }
 }
 
