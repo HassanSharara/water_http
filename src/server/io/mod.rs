@@ -46,9 +46,10 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 HttpStream::AsyncSecure(stream) => {
                     match stream.poll_write(cx, this.write_buf) {
                         Poll::Ready(Ok(n)) => {
-                            this.write_buf.advance(n);
-                            if this.write_buf.is_empty() {
+                            if this.write_buf.len() <= n {
                                 this.write_buf.clear();
+                            } else {
+                                this.write_buf.advance(n);
                             }
                             Poll::Ready(PollWriteResults::WriteSuccess(n))
                         }
@@ -59,9 +60,10 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                 HttpStream::Async(stream) => {
                     match Pin::new_unchecked(stream).poll_write(cx, &this.write_buf) {
                         Poll::Ready(Ok(n)) => {
-                            this.write_buf.advance(n);
-                            if this.write_buf.is_empty() {
+                            if this.write_buf.len() <= n {
                                 this.write_buf.clear();
+                            } else {
+                                this.write_buf.advance(n);
                             }
                             Poll::Ready(PollWriteResults::WriteSuccess(n))
                         }
@@ -346,7 +348,7 @@ impl Future for WaterTcpReader<'_, '_> {
             };
         }
         let st = unsafe {&mut *stream_ptr};
-        if  !st.write_buf.is_empty() {
+        if  !st.write_buf.is_empty() && st.read_buf.filled().is_empty() {
             match unsafe {Pin::new_unchecked(&mut *stream_ptr)}.poll_write(cx) {
                 Poll::Ready(r) => {
                     if let PollWriteResults::WriteErr = r {
