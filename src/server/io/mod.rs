@@ -353,7 +353,7 @@ impl Future for WaterTcpReader<'_, '_> {
             };
         }
         let st = unsafe {&mut *stream_ptr};
-        if   st.read_buf.filled().is_empty() && !st.write_buf.is_empty()  {
+        if   !st.write_buf.is_empty()  {
             match unsafe {Pin::new_unchecked(&mut *stream_ptr)}.poll_write(cx) {
                 Poll::Ready(r) => {
                     if let PollWriteResults::WriteErr = r {
