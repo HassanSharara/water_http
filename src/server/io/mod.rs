@@ -208,6 +208,8 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                                     rem = 0;
                                 }
                             }
+                        } else {
+                            return
                         }
                     }
                     PollReadResults::ReadErr => break,
@@ -347,13 +349,9 @@ impl Future for WaterTcpReader<'_, '_> {
         // Try read first
         let read_results = unsafe { Pin::new_unchecked(mut_stream) }.poll_read(cx);
         if let Poll::Ready(r) = read_results {
-             match r {
-                PollReadResults::ReadSuccess(n) if n > 0 => {return Poll::Ready(PollReadResults::ReadSuccess(n))},
-                PollReadResults::ReadSuccess(n) if n == 0 => {
-                    return Poll::Ready(PollReadResults::ReadErr);
-                },
-                PollReadResults::ReadErr => {return Poll::Ready(PollReadResults::ReadErr)},
-                _ => { },
+             return match r {
+                PollReadResults::ReadSuccess(n)=> { Poll::Ready(PollReadResults::ReadSuccess(n))},
+                PollReadResults::ReadErr => { Poll::Ready(PollReadResults::ReadErr)},
             };
         }
         let st = unsafe {&mut *stream_ptr};
