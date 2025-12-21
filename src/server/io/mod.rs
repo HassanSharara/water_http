@@ -215,7 +215,6 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                     PollReadResults::ReadErr => break,
                 }
 
-
             }
 
             loop {
