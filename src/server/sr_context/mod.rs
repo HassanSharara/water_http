@@ -507,7 +507,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// to let the browsers or the client knows what is coming
     pub async fn send_html_text(&mut self,value:&str)->Result<(),()>{
         let mut sender = self.sender();
-        sender.set_header("Content-Type","Text/html");
+        sender.set_header_ef("Content-Type","Text/html");
         sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
     }
 
@@ -532,19 +532,18 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     pub async fn redirect(&mut self,url:&str)->Result<(),()>{
         let mut sender = self.sender();
         sender.send_status_code(HttpStatusCode::TEMPORARY_REDIRECT);
-        sender.set_header("Location",url);
+        sender.set_header_ef("Location",url.as_bytes());
         sender.send_data_as_final_response(ResponseData::Slice(&[])).await
     }
 
 
-    /// getter is for getting data from incoming request like body and request quires
+    // getter is for getting data from incoming request like body and request quires
     // pub fn  getter<'b>(&'b mut self) ->HttpGetter<'b,'a,Stream, HEADERS_COUNT, PATH_QUERY_COUNT> {
     //     HttpGetter::new(&mut self.protocol)
     // }
 
 
-    /// for sending files
-    /// this function auto support for sending videos
+    /// for sending files this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
         if !file.path.exists() { return SendingFileResults::FileNotFound}
         let range = self.get_from_headers("Range");
