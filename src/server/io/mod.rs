@@ -349,7 +349,7 @@ impl Future for WaterTcpReader<'_, '_> {
              match r {
                 PollReadResults::ReadSuccess(n) if n > 0 => {return Poll::Ready(PollReadResults::ReadSuccess(n))},
                 PollReadResults::ReadErr => {return Poll::Ready(PollReadResults::ReadErr)},
-                _ => {return Poll::Pending},
+                _ => {},
             };
         }
         let st = unsafe {&mut *stream_ptr};
