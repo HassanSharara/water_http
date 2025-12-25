@@ -475,6 +475,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "integer_to_bytes"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d80593da947a0982be2b9ff99e124ee7f20401db1db57c6174095bfe1299c40"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "io-uring"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1246,7 +1255,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "3.1.1-Beta.71"
+version = "3.1.1-Beta.72"
 dependencies = [
  "askama",
  "brotli",
@@ -1258,6 +1267,7 @@ dependencies = [
  "http",
  "httparse",
  "httpdate",
+ "integer_to_bytes",
  "itoa",
  "lz4",
  "pin-project",

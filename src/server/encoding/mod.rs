@@ -21,6 +21,7 @@ pub struct EncodingConfigurations {
 
 impl EncodingConfigurations {
 
+    #[inline]
     pub (crate) fn is_not_none(&self)->bool {self.logic.is_not_none()}
 
     /// creating new [EncodingConfigurations] with default values
@@ -306,6 +307,7 @@ pub enum EncodingLogic{
 
 impl EncodingLogic {
 
+    #[inline]
     pub (crate) fn is_not_none(&self)->bool{
         if let EncodingLogic::None = self {return false}
         return  true

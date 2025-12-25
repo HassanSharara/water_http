@@ -7,10 +7,12 @@ use std::io:: SeekFrom;
 
 #[cfg(not(feature = "use_only_http1"))]
 use bytes::Bytes;
+// use bytes::{BufMut, BytesMut};
 #[cfg(not(feature = "use_only_http1"))]
 use h2::SendStream;
 #[cfg(not(feature = "use_only_http1"))]
 use http::{HeaderName, HeaderValue, Response as H2Response, response::Builder as H2ResponseBuilder};
+use integer_to_bytes::HumanInt;
 use serde::de::Error;
 use serde::Serialize;
 use tokio::io::{ AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -21,6 +23,8 @@ use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::{get_server_config, Http1Context, WRITING_FILES_BUF_LEN};
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::Http2Context;
+
+
 
 
 /// for providing easy access and use for sends methods
@@ -553,9 +557,10 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         if self.is_status_written {return;}
         let buf = &mut self.context.response_buffer;
         buf.extend_from_slice(b"HTTP/1.1 ");
-        let mut iota_buffer = itoa::Buffer::new();
-        let num_str = iota_buffer.format(http_status.status.get());
-        buf.extend_from_slice(num_str.as_bytes());
+        // let mut iota_buffer = itoa::Buffer::new();
+        // let num_str = iota_buffer.format(http_status.status.get());
+        let v = http_status.status.get();
+        v.put_into(*buf);
         buf.extend_from_slice(b" ");
         buf.extend_from_slice(http_status.label.as_bytes());
         buf.extend_from_slice(b"\r\n");
@@ -575,7 +580,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         let ref en_configurations = get_server_config().responding_encoding_configurations;
 
         let data = data.as_bytes();
-
+        let len = data.len();
         if en_configurations.is_not_none() && data.len() >= en_configurations.threshold_for_encoding_response  {
             let accept_encoding = self.context
                 .request.headers().get_as_str("Accept-Encoding");
@@ -594,9 +599,11 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             }
 
         }
-        let mut buffer = itoa::Buffer::new();
+        // let mut buffer = itoa::Buffer::new();
         self.context.response_buffer.extend_from_slice(b"Content-Length: ");
-        self.context.response_buffer.extend_from_slice(buffer.format(data.len()).as_bytes());
+        // self.context.response_buffer.extend_from_slice(buffer.format(data.len()).as_bytes());
+        // extend_with_int_human(self.context.response_buffer,data.len());
+        len.put_into(self.context.response_buffer);
         self.context.response_buffer.extend_from_slice(b"\r\n\r\n");
         self.context.response_buffer.extend_from_slice(data);
         Ok(())
@@ -613,15 +620,17 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         let value_bytes = value.into();
 
         if let HeaderBytes::Usize(u) = key_bytes {
-            let mut buffer = itoa::Buffer::new();
-            self.context.response_buffer.extend_from_slice(buffer.format(u).as_bytes());
+            // let mut buffer = itoa::Buffer::new();
+            // self.context.response_buffer.extend_from_slice(buffer.format(u).as_bytes());
+            u.put_into(self.context.response_buffer);
         } else {
             self.context.response_buffer.extend_from_slice(key_bytes.as_bytes());
         }
         self.context.response_buffer.extend_from_slice(b": ");
         if let HeaderBytes::Usize(v) = value_bytes {
-            let mut bb = itoa::Buffer::new();
-            self.context.response_buffer.extend_from_slice(bb.format(v).as_bytes());
+            // let mut bb = itoa::Buffer::new();
+            // self.context.response_buffer.extend_from_slice(bb.format(v).as_bytes());
+            v.put_into(self.context.response_buffer);
         } else {
             self.context.response_buffer.extend_from_slice(value_bytes.as_bytes());
         }
