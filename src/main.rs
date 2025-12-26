@@ -190,8 +190,7 @@ WaterController! {
      middleware -> (context {
 
         _= context.send_str("middleware 2  stopping").await;
-     water_http::server::MiddlewareResult::Stop
-
+        server::MiddlewareResult::Stop
     })
 }
 // notice that writing methods like POST,post,Post,posT,POst
@@ -216,7 +215,7 @@ water_http::functions_builder!{
     pub async fn send_files(context)  {
 
 
-         response!(context file -> "./public/text/test1.txt");
+         response!(context download -> "./public/text/test1.txt");
 
         // response!(context file -> "./public/text/test1.txt",|c|{
         //     // if we need to modify or encrypt every chunk sent to the user

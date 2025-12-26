@@ -1806,6 +1806,26 @@ macro_rules! response {
             _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
         }
     };
+
+     ($context:ident download -> $res:expr) => {
+        let mut sender = $context.sender();
+        let mut __f = water_http::http::FileRSender::new($res);
+        __f.set_content_disposition("attachment");
+            let sending_result= sender.send_file(__f).await;
+           if !sending_result.is_success() {
+            _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
+        }
+    };
+  ($context:ident download -> $res:expr , $($function_tokens:tt)*) => {
+        let mut __sender = $context.sender();
+        let mut __f = water_http::http::FileRSender::new($res);
+        __f.set_content_disposition("attachment");
+        __f.set_edit_each_chunk( $($function_tokens)*);
+            let sending_result= __sender.send_file(__f).await;
+           if !sending_result.is_success() {
+            _= __sender.send_status_code(water_http::http::status_code::HttpStatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
     ($context:ident file -> $res:expr , $($function_tokens:tt)*) => {
         let mut __sender = $context.sender();
         let mut __f = water_http::http::FileRSender::new($res);

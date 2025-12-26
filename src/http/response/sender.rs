@@ -96,14 +96,17 @@ impl <'a,'b> Http2Sender<'a,'b>{
         }
     }
 
-    fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr){
+    fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr,content_disposition:Option<&String>){
         match file_content_type {
             None => {
                 self.set_header_ef("Content-Type","Application/octet-stream");
-                self.set_header_ef("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
+                self.set_header_ef("Content-Disposition",format!("attachment; filename=\"{}\"",file_name.to_str().unwrap_or("")));
             }
             Some(content_type) => {
                 self.set_header("Content-Type",content_type);
+                if let Some(cd) = content_disposition {
+                    self.set_header_ef("Content-Disposition",format!("{cd}; filename=\"{}\"",file_name.to_str().unwrap_or("")));
+                }
             }
         }
     }
@@ -297,7 +300,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
                 }
             }
         }
-        self.handle_content_type_while_sending_file(&file_content_type,file_name);
+        self.handle_content_type_while_sending_file(&file_content_type,file_name,pc.content_disposition.as_ref());
         if end >= file_size { end = file_size;}
         if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size)}
         if  start == end || start > end || end > file_size {
@@ -533,14 +536,17 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
         }
     }
 
-    fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr){
+    fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr,content_disposition:Option<&String>){
         match file_content_type {
             None => {
-                self.set_header("Content-Type","Application/octet-stream");
-                self.set_header("Content-Disposition",format!("attachment; filename={}",file_name.to_str().unwrap_or("")));
+                self.set_header_ef("Content-Type","Application/octet-stream");
+                self.set_header_ef("Content-Disposition",format!("attachment; filename=\"{}\"",file_name.to_str().unwrap_or("")));
             }
             Some(content_type) => {
                 self.set_header("Content-Type",content_type);
+                if let Some(cd) = content_disposition {
+                    self.set_header_ef("Content-Disposition",format!("{cd}; filename=\"{}\"",file_name.to_str().unwrap_or("")));
+                }
             }
         }
     }
@@ -706,7 +712,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             }
         }
 
-        self.handle_content_type_while_sending_file(&file_content_type,file_name);
+        self.handle_content_type_while_sending_file(&file_content_type,file_name,pc.content_disposition.as_ref());
 
 
         if end >= file_size { end = file_size;}
