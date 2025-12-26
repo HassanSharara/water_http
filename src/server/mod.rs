@@ -258,10 +258,10 @@ use std::io as stdio;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
+#[cfg(feature = "cpu_affinity")]
 use std::ops::DerefMut;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
-use std::sync::Mutex;
 #[cfg(not(feature = "use_tokio_send"))]
 use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
@@ -394,14 +394,17 @@ pub  fn run_server<
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut os_threads = vec![];
-        let cores = std::sync::Arc::new(
+
+            #[cfg(feature = "cpu_affinity")]
+            let cores = std::sync::Arc::new(
             if conf.core_affinity  {
                 core_affinity::get_core_ids()
             } else {
                 None
             }
         );
-        let  core_index = std::sync::Arc::new(Mutex::new(0_usize));
+        #[cfg(feature = "cpu_affinity")]
+        let  core_index = std::sync::Arc::new(std::sync::Mutex::new(0_usize));
         for _ in 0..conf.worker_threads_count {
             for address in &conf.addresses {
                 let address = address.clone();
@@ -424,11 +427,13 @@ pub  fn run_server<
                 }
                 #[cfg(not(feature = "use_io_uring"))]
                 {
-
+                    #[cfg(feature = "cpu_affinity")]
                     let core_index = core_index.clone();
-                    let  value = cores.clone();
+                    #[cfg(feature = "cpu_affinity")]
+                        let  value = cores.clone();
                     let thread = std::thread::spawn(move || {
-                       if let Some(core) = value.as_ref() {
+                        #[cfg(feature = "cpu_affinity")]
+                        if let Some(core) = value.as_ref() {
                            let mut core_index_guard = core_index.lock();
                            let core_index = core_index_guard.as_mut().unwrap();
                            let m = core_index.deref_mut();
