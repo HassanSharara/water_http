@@ -158,7 +158,7 @@ impl <'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize> FormingRequestR
 
 #[cfg(test)]
 mod test {
-    use bytes::BytesMut as BM; type BytesMut = BM;
+    use ntex_bytes::BytesMut as BM; type BytesMut = BM;
     // use bytes::{ BytesMut};
     use crate::http::request::{FormingRequestResult, IncomingRequest};
     #[allow(unused_variables)]

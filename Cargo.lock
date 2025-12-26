@@ -493,11 +493,12 @@ dependencies = [
 
 [[package]]
 name = "integer_to_bytes"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d80593da947a0982be2b9ff99e124ee7f20401db1db57c6174095bfe1299c40"
+checksum = "419062e3fea6e91610a7a8081079a247d8a32a00d9f315c9bd4b767f5d01433a"
 dependencies = [
  "bytes",
+ "ntex-bytes",
 ]
 
 [[package]]
@@ -651,6 +652,16 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "ntex-bytes"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4eb9eb0e05f22d68cae27049eb6ec055cae3e7e5e459ece774b11d03369a6ae3"
+dependencies = [
+ "bytes",
+ "serde",
 ]
 
 [[package]]
@@ -1282,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "3.2.1-beta.9"
+version = "3.2.1-beta.10"
 dependencies = [
  "askama",
  "brotli",
@@ -1298,6 +1309,7 @@ dependencies = [
  "integer_to_bytes",
  "itoa",
  "lz4",
+ "ntex-bytes",
  "pin-project",
  "rustls",
  "rustls-pemfile",
