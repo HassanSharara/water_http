@@ -27,8 +27,8 @@ pub struct CHolder {
     }
 
 
-    let  config = ServerConfigurations::bind("0.0.0.0",8084);
-    water_http::RunServer!(
+    let config = ServerConfigurations::bind("0.0.0.0",8084);
+     water_http::RunServer!(
         config,
         MAIN_ROOT,
         MainController

@@ -153,6 +153,11 @@ pub struct ServerConfigurations {
     /// the fastest results
     pub tls_certificate:Option<TLSCertificate>,
 
+    /// by enabling core affinity it is simply let every single thread bind to single core without
+    /// letting operating system scheduling across multiple cores which decrease cache usage and increase performance depending on
+    /// the env that you are working on
+    pub core_affinity:bool,
+
     #[cfg(feature = "support_tls")]
     /// - specify where should the system apply tls protocol on which ports
     /// the default value is ['443']
@@ -204,6 +209,7 @@ impl ServerConfigurations {
             addresses:vec![("0.0.0.0".to_string(),80),],
             #[cfg(feature = "support_tls")]
             tls_certificate:None,
+            core_affinity:false,
             restricted_ips:None,
             responding_encoding_configurations:EncodingConfigurations::default(),
             #[cfg(feature = "support_tls")]
@@ -238,6 +244,10 @@ impl ServerConfigurations {
         self.restricted_ips = Some(roll);
     }
 
+    /// enable cpu affinity or core affinity which pin every single thread to single core from available cores
+    pub fn enable_core_affinity(&mut self){
+        self.core_affinity = true;
+    }
     #[cfg(feature = "support_tls")]
 
     /// # creating [TLSCertificate] from certificate path and private key path

@@ -394,7 +394,13 @@ pub  fn run_server<
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut os_threads = vec![];
-        let cores = std::sync::Arc::new(core_affinity::get_core_ids());
+        let cores = std::sync::Arc::new(
+            if conf.core_affinity  {
+                core_affinity::get_core_ids()
+            } else {
+                None
+            }
+        );
         let  core_index = std::sync::Arc::new(Mutex::new(0_usize));
         for _ in 0..conf.worker_threads_count {
             for address in &conf.addresses {
@@ -427,7 +433,6 @@ pub  fn run_server<
                            let core_index = core_index_guard.as_mut().unwrap();
                            let m = core_index.deref_mut();
                            core_affinity::set_for_current((core[*m]).clone());
-                           println!("pinning cores {}",*m);
                            if *m + 1 >= core.len() {
                                *m = 0;
                            } else {
