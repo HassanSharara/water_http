@@ -1293,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "3.2.1-beta.10"
+version = "3.2.1-beta.14"
 dependencies = [
  "askama",
  "brotli",
@@ -1309,7 +1309,6 @@ dependencies = [
  "integer_to_bytes",
  "itoa",
  "lz4",
- "ntex-bytes",
  "pin-project",
  "rustls",
  "rustls-pemfile",
