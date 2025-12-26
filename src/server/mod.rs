@@ -258,8 +258,10 @@ use std::io as stdio;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
+use std::ops::DerefMut;
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
+use std::sync::Mutex;
 #[cfg(not(feature = "use_tokio_send"))]
 use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
@@ -392,6 +394,8 @@ pub  fn run_server<
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut os_threads = vec![];
+        let cores = std::sync::Arc::new(core_affinity::get_core_ids());
+        let  core_index = std::sync::Arc::new(Mutex::new(0_usize));
         for _ in 0..conf.worker_threads_count {
             for address in &conf.addresses {
                 let address = address.clone();
@@ -414,7 +418,17 @@ pub  fn run_server<
                 }
                 #[cfg(not(feature = "use_io_uring"))]
                 {
+
+                    let core_index = core_index.clone();
+                    let  value = cores.clone();
                     let thread = std::thread::spawn(move || {
+                       if let Some(core) = value.as_ref() {
+                           let mut core_index_guard = core_index.lock();
+                           let core_index = core_index_guard.as_mut().unwrap();
+                           let m = core_index.deref_mut();
+                           core_affinity::set_for_current((core[*m]).clone());
+                           println!("pinning cores");
+                       }
                         let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
                             .max_blocking_threads(90)
@@ -426,10 +440,10 @@ pub  fn run_server<
                         rt.block_on(async {
                             local.run_until(async {
                                 #[cfg(feature = "thread_shared_struct")]
-                                    let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
+                                    let _ = run_server_with_address(&address, controller,shared_factory,matcher).await;
 
                                 #[cfg(not(feature = "thread_shared_struct"))]
-                                    let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
+                                    let _ = run_server_with_address(&address, controller,matcher).await;
                             }).await;
                         });
                     });
