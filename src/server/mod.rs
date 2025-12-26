@@ -427,7 +427,12 @@ pub  fn run_server<
                            let core_index = core_index_guard.as_mut().unwrap();
                            let m = core_index.deref_mut();
                            core_affinity::set_for_current((core[*m]).clone());
-                           println!("pinning cores");
+                           println!("pinning cores {}",*m);
+                           if *m + 1 >= core.len() {
+                               *m = 0;
+                           } else {
+                               *m+=1;
+                           }
                        }
                         let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
