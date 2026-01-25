@@ -493,12 +493,13 @@ dependencies = [
 
 [[package]]
 name = "integer_to_bytes"
-version = "0.1.1"
+version = "0.1.4-Beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "419062e3fea6e91610a7a8081079a247d8a32a00d9f315c9bd4b767f5d01433a"
+checksum = "81a5c3401deb2879e31904ced9b88f8f6d8fe4f0f812821fc894cf14dec1a33b"
 dependencies = [
  "bytes",
  "ntex-bytes",
+ "water_buffer",
 ]
 
 [[package]]
@@ -1292,8 +1293,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "water_buffer"
+version = "1.2.2-Beta.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df0ef30a0030e3452c4bbf38b41f79e20892abbba36c60dd2dd92157bfdbbfb4"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "water_http"
-version = "3.2.1-beta.14"
+version = "3.2.1-beta.16"
 dependencies = [
  "askama",
  "brotli",
@@ -1321,6 +1331,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "twoway",
+ "water_buffer",
  "water_http_utils",
  "zstd",
 ]

@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::ops::Deref;
 use bytes::{Buf};
-use bytes::BytesMut as BM; type BytesMut = BM;
+use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "use_io_uring")]
 use tokio_uring::net::TcpStream;
@@ -489,12 +489,12 @@ pub (crate) async fn handle_responding<'e,
 //
 #[inline(always)]
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
-    const MIN_RESERVE: usize = 1024 * 1  ;
-
-    let remaining = buffer.capacity() - buffer.len();
-    if remaining < MIN_RESERVE {
-        buffer.reserve( (MIN_RESERVE * 16) - remaining );
-    }
+    // const MIN_RESERVE: usize = 1024 * 1  ;
+    //
+    // let remaining = buffer.capacity() - buffer.len();
+    // if remaining < MIN_RESERVE {
+    //     buffer.reserve( (MIN_RESERVE * 16) - remaining );
+    // }
 }
 
 #[derive(Debug)]

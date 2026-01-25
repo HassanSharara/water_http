@@ -6,7 +6,8 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use bytes::{Buf, BufMut};
-use bytes::BytesMut as BM; type BytesMut = BM;
+// use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
+use  water_buffer::WaterBuffer as BM;type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::connection::{BodyReadingBuffer, reserve_buf};
@@ -174,6 +175,7 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
             reserve_buf(&mut read_buf);
             // Convert UninitSlice to [MaybeUninit<u8>]
             let uninit_buf = read_buf.spare_capacity_mut();
+
             // let uninit_slice = read_buf.chunk_mut();
             // let uninit_buf: &mut [std::mem::MaybeUninit<u8>] = unsafe {
             //     std::slice::from_raw_parts_mut(

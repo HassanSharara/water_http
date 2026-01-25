@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 // use bytes:: BytesMut;
-use bytes::BytesMut as BM; type BytesMut = BM;
+use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 #[cfg(not(feature = "use_only_http1"))]
 use bytes::Bytes;
 
