@@ -52,6 +52,8 @@ WaterController! {
     name -> MainController,
     functions -> {
         GET => / => main(context)async {
+            let x = context.thread_shared_struct.clone().unwrap();
+            println!("invoked {:?}",x);
             response!(context -> "hello world")
         }
     }

@@ -356,6 +356,11 @@ impl  ConnectionStream {
                                       peer
                                   );
 
+                              #[cfg(feature = "thread_shared_struct")]
+                              {
+                                  context.thread_shared_struct = Some(shared_factory.clone());
+                              }
+
                               #[cfg( feature = "count_connection_parsing_speed")]
                                   let t1 = std::time::SystemTime::now();
 
