@@ -21,7 +21,9 @@ use crate::http::{FileRSender, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
 use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
-use crate::server::{get_server_config, Http1Context, HttpStream, WRITING_FILES_BUF_LEN};
+use crate::server::{get_server_config, Http1Context, WRITING_FILES_BUF_LEN};
+#[cfg(feature = "use_io_uring")]
+use crate::server::HttpStream;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::Http2Context;
 

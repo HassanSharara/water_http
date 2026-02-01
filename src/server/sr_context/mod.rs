@@ -571,6 +571,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
             return sender.send_file(file).await
         }
+        #[cfg(feature = "use_io_uring")]
         return  SendingFileResults::ErrorWhileOpeningTheFile
     }
 
@@ -1374,7 +1375,6 @@ impl HttpStream {
     // }
 }
 
-#[cfg(feature = "use_io_uring")]
 
 
 #[cfg(not(feature = "use_io_uring"))]
