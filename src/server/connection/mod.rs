@@ -374,15 +374,7 @@ impl  ConnectionStream {
                                                    end.duration_since(t1)
                                           );
                                       }
-                                      // if context.method() == "GET" {
-                                      //     if total_request_size >= buf_bytes.len() {
-                                      //         reading_buffer.clear();
-                                      //         break;
-                                      //     } else {
-                                      //         reading_buffer.advance(total_request_size);
-                                      //         continue;
-                                      //     }
-                                      // }
+
                                       let content_length = context.content_length().copied();
 
                                       match content_length {

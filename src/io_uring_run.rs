@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
@@ -6,6 +8,7 @@ use water_http::http::HttpSenderTrait;
 InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
+    shared_type:u8,
 }
 type MainHolderType = CHolder;
 #[derive(Debug,Clone)]
@@ -31,16 +34,21 @@ fn main() {
     water_http::RunServer!(
         config,
         MAIN_ROOT,
-        MainController
+        MainController,
+        build_shared
     );
 }
 
+fn build_shared()->Pin<Box<dyn Future<Output = u8>>>{
+    Box::pin( async { 0 })
+}
 
 
 
 
 WaterController! {
     holder -> crate::MainHolderType,
+    shared -> u8,
     name -> MainController,
     functions -> {
         GET => / => main(context)async {
