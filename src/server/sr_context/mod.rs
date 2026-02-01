@@ -544,6 +544,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     // }
 
 
+    #[cfg(not(feature = "use_io_uring"))]
     /// for sending files this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
         if !file.path.exists() { return SendingFileResults::FileNotFound}
@@ -1120,7 +1121,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
-
+    #[cfg(not(feature = "use_io_uring"))]
     /// for sending files
     /// this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
