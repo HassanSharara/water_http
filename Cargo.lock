@@ -493,9 +493,8 @@ dependencies = [
 
 [[package]]
 name = "integer_to_bytes"
-version = "0.1.4-Beta.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81a5c3401deb2879e31904ced9b88f8f6d8fe4f0f812821fc894cf14dec1a33b"
+version = "0.1.4-Beta.4"
+source = "git+https://github.com/HassanSharara/integer_to_bytes#d85c527db1fe0f0ae8dd47c8463de77e07feab20"
 dependencies = [
  "bytes",
  "ntex-bytes",
@@ -1294,16 +1293,16 @@ dependencies = [
 
 [[package]]
 name = "water_buffer"
-version = "1.2.2-Beta.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df0ef30a0030e3452c4bbf38b41f79e20892abbba36c60dd2dd92157bfdbbfb4"
+version = "1.2.2-Beta.21"
+source = "git+https://github.com/HassanSharara/water_buffer#139157ff3b62a0751325556c3898a5574a0a4bd2"
 dependencies = [
  "bytes",
+ "tokio-uring",
 ]
 
 [[package]]
 name = "water_http"
-version = "3.2.1-beta.16"
+version = "3.4.1-beta.16"
 dependencies = [
  "askama",
  "brotli",

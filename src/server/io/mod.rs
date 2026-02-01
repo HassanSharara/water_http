@@ -5,7 +5,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use bytes::{Buf, BufMut};
+use bytes::{Buf};
 // use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 use  water_buffer::WaterBuffer as BM;type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
@@ -243,9 +243,16 @@ impl<'a,'b> WaterTcpStream<'a,'b> {
                             context.thread_shared_struct = Some(shared_factory.clone());
                         }
 
-                        #[cfg(not(feature = "thread_shared_struct"))]
+                        #[cfg(all(not(feature = "thread_shared_struct"),not(feature = "use_io_uring")))]
                             let mut context = HttpContext::<Holder, HS, QS>::new(
                             crate::server::sr_context::Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+                            peer
+                        );
+                        #[cfg(all(not(feature = "thread_shared_struct"),feature = "use_io_uring"))]
+                            let mut context = HttpContext::<Holder, HS, QS>::new(
+                            crate::server::sr_context::Protocol::Http1(Http1Context::new(hs,
+                                                                                         unsafe{write_buf.unsafe_clone()}
+                                                                                         , &mut body_buf, left_bytes, request)),
                             peer
                         );
 

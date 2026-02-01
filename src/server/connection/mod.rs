@@ -16,7 +16,11 @@ use tokio_rustls::server::TlsStream;
 
 #[cfg(feature = "debugging")]
 use tracing::{debug};
-use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults, WaterTcpStream};
+use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults};
+
+#[cfg(not(feature = "use_io_uring"))]
+use crate::server::WaterTcpStream;
+
 use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::sr_context::{Http2Context};
@@ -262,13 +266,24 @@ impl  ConnectionStream {
 
           let mut each_request_body_reading_buffer =
               BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
-          let mut reading_buffer = BytesMut::with_capacity(READING_BUF_LEN);
+          let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
           let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
 
               if let Ok(read_size)
-                  = stream.read_buf(&mut reading_buffer).await
+                  = match stream {
+                  #[cfg(feature = "support_tls")]
+                  HttpStream::AsyncSecure(_) => {
+                      todo!()
+                  }
+                  HttpStream::Async(s) => {
+                      let (r,b) = s.read(unsafe{reading_buffer}).await;
+                      reading_buffer = b;
+                       r
+                  }
+
+              }
               {
                   // when connection is closed
                   if read_size == 0 {
@@ -281,7 +296,7 @@ impl  ConnectionStream {
 
                       #[cfg(feature = "debugging")]
                       {
-                          info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
+                          tracing::info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
                       }
 
                       if buf_bytes.is_empty() { break; }
@@ -312,6 +327,21 @@ impl  ConnectionStream {
 
                               #[cfg(feature = "debugging")]
                               debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
+                              #[cfg(feature = "use_io_uring")]
+                                  let mut context =
+                                  HttpContext::new(
+                                      Protocol::from_http1_context(
+                                          Http1Context::new(
+                                              stream,
+                                              unsafe{response_buffer.unsafe_clone()},
+                                              &mut each_request_body_reading_buffer,
+                                              left_bytes,
+                                              request
+                                          )
+                                      ),
+                                      peer
+                                  );
+                              #[cfg(not(feature = "use_io_uring"))]
                               let mut context =
                                   HttpContext::new(
                                       Protocol::from_http1_context(
@@ -330,7 +360,7 @@ impl  ConnectionStream {
                                   let t1 = std::time::SystemTime::now();
 
 
-                              _= match  context.serve(controller).await {
+                              _= match  context.serve_ef(matcher.clone()).await {
 
                                   ServingRequestResults::Stop => {return;}
 
@@ -387,9 +417,18 @@ impl  ConnectionStream {
 
                                               while rem > 0  {
                                                   if reading_buffer.is_empty() {
-                                                      if stream.read_buf(&mut reading_buffer).await.is_err() {
-                                                          return;
-                                                      }
+                                                      if  match stream {
+                                                          #[cfg(feature = "support_tls")]
+                                                          HttpStream::AsyncSecure(_) => {
+                                                              todo!()
+                                                          }
+                                                          HttpStream::Async(s) => {
+                                                              let (r,b) = s.read(unsafe{reading_buffer}).await;
+                                                              reading_buffer = b;
+                                                              r
+                                                          }
+
+                                                      }.is_err() { return }
                                                   }
                                                   let to_advance = rem.min(reading_buffer.len());
                                                   reading_buffer.advance(to_advance);
@@ -425,7 +464,7 @@ impl  ConnectionStream {
                   }
 
                   if !response_buffer.is_empty() {
-                      if let Err(_) = handle_responding(&mut response_buffer,stream).await {
+                      if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
                           return;
                       }
                   }
@@ -433,7 +472,7 @@ impl  ConnectionStream {
               }
               else {
                   if !response_buffer.is_empty() {
-                      if let Err(_) = handle_responding(&mut response_buffer,stream).await {
+                      if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
                           return;
                       }
                   }
@@ -454,20 +493,20 @@ impl  ConnectionStream {
 #[cfg(feature = "use_io_uring")]
 #[inline(always)]
 pub (crate) async fn handle_responding<'e>
-(response_buf:&mut BytesMut,stream:&mut HttpStream) ->Result<(),&'e str>{
+(response_buf:BytesMut,stream:&mut HttpStream) ->Result<BytesMut,&'e str>{
 
     match stream {
+        #[cfg(feature = "support_tls")]
         HttpStream::AsyncSecure(h) => {
-            if h.write_all(&response_buf).await {
-                return Err("can not write data to given buffer");
-            }
+            todo!()
         }
         HttpStream::Async(h) => {
-           let (r,_) =  h.write_all(response_buf).await;
+           let (r,b) =  h.write_all(response_buf).await;
             if r.is_err() { return Err("can not write data to given buffer")}
+            return  Ok(b);
         }
     };
-    Ok(())
+
 }
 
 
@@ -489,12 +528,12 @@ pub (crate) async fn handle_responding<'e,
 //
 #[inline(always)]
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
-    // const MIN_RESERVE: usize = 1024 * 1  ;
-    //
-    // let remaining = buffer.capacity() - buffer.len();
-    // if remaining < MIN_RESERVE {
-    //     buffer.reserve( (MIN_RESERVE * 16) - remaining );
-    // }
+    const MIN_RESERVE: usize = 1024 * 4  ;
+
+    let remaining = buffer.capacity() - buffer.len();
+    if remaining < MIN_RESERVE {
+        buffer.reserve( (MIN_RESERVE * 4) - remaining );
+    }
 }
 
 #[derive(Debug)]
@@ -562,10 +601,12 @@ impl BodyReadingBuffer {
 
     {
         let res = match  stream {
+            #[cfg(feature = "support_tls")]
             HttpStream::AsyncSecure(h) => {                h.read(&mut self.buffer)
             }
             HttpStream::Async(h) => {
-                h.read(&mut self.buffer)
+                let (r,_) = h.read(unsafe{self.buffer.unsafe_clone()}).await;
+                r
             }
         };
         if let Ok(s) = res {

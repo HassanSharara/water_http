@@ -45,10 +45,11 @@ pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
 impl <'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>  Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT> {
 
-    // pub (crate) fn from_http1_context(context:Http1Context<'a,HEADERS_COUNT,PATH_QUERY_COUNT>)
-    // ->Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
-    //     Protocol::Http1(context)
-    // }
+    #[cfg(feature = "use_io_uring")]
+    pub (crate) fn from_http1_context(context:Http1Context<'a,HEADERS_COUNT,PATH_QUERY_COUNT>)
+    ->Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
+        Protocol::Http1(context)
+    }
 
     #[cfg(not(feature = "use_only_http1"))]
     pub (crate) fn from_http2_context(context:Http2Context<'a,>)
@@ -563,8 +564,13 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
             file.set_bytes_range(start,end);
         }
-        let mut  sender = self.sender();
-        sender.send_file(file).await
+        #[cfg(not(feature = "use_io_uring"))]
+        {
+            let mut  sender = self.sender();
+
+            return sender.send_file(file).await
+        }
+        return  SendingFileResults::ErrorWhileOpeningTheFile
     }
 
 
@@ -1345,7 +1351,6 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
 
 
-#[derive(Debug)]
 
 pub (crate)enum HttpStream {
     #[cfg(feature = "support_tls")]
@@ -1368,8 +1373,10 @@ impl HttpStream {
     // }
 }
 
+#[cfg(feature = "use_io_uring")]
 
 
+#[cfg(not(feature = "use_io_uring"))]
 impl AsyncWrite for HttpStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
         match self.get_mut() {
@@ -1396,6 +1403,8 @@ impl AsyncWrite for HttpStream {
     }
 }
 
+#[cfg(not(feature = "use_io_uring"))]
+
 impl AsyncRead for HttpStream {
     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
@@ -1418,6 +1427,11 @@ pub struct Http1Context<'a,const HEADERS_COUNT:usize
   pub request: IncomingRequest<'a, HEADERS_COUNT, PATH_QUERY_COUNT>,
   pub (crate) stream:&'a mut HttpStream,
   pub (crate) body_reading_buffer:&'a mut BodyReadingBuffer,
+
+  #[cfg(feature = "use_io_uring")]
+
+  pub(crate)  response_buffer:BytesMut,
+  #[cfg(not(feature = "use_io_uring"))]
   pub(crate)  response_buffer:&'a mut BytesMut,
   pub (crate) left_bytes:&'a [u8],
   #[cfg(feature = "accept_transfer_chunked")]
@@ -1427,6 +1441,28 @@ pub struct Http1Context<'a,const HEADERS_COUNT:usize
 
 impl <'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize> Http1Context<'a,HEADERS_COUNT,PATH_QUERY_COUNT> {
+
+
+    #[cfg(feature = "use_io_uring")]
+    pub (crate) fn new(
+        stream:&'a mut HttpStream,
+        response_buffer: BytesMut,
+        body_reading_buffer:&'a mut BodyReadingBuffer,
+        left_bytes:&'a[u8],
+        request:IncomingRequest<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
+
+    )->Http1Context<'a,HEADERS_COUNT,PATH_QUERY_COUNT> {
+        Self {
+            request,
+            body_reading_buffer,
+            response_buffer,
+            stream,
+            left_bytes,
+            #[cfg(feature = "accept_transfer_chunked")]
+            to_advance:None
+        }
+    }
+    #[cfg(not(feature = "use_io_uring"))]
     pub (crate) fn new(
                        stream:&'a mut HttpStream,
                        response_buffer:&'a mut BytesMut,

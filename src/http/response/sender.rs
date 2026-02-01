@@ -3,6 +3,7 @@
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::future::Future;
+
 use std::io:: SeekFrom;
 
 #[cfg(not(feature = "use_only_http1"))]
@@ -20,7 +21,7 @@ use crate::http::{FileRSender, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
 use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
-use crate::server::{get_server_config, Http1Context, WRITING_FILES_BUF_LEN};
+use crate::server::{get_server_config, Http1Context, HttpStream, WRITING_FILES_BUF_LEN};
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::Http2Context;
 
@@ -64,6 +65,12 @@ pub  trait HttpSenderTrait {
     /// for flushing response stream into route connection
     async fn flush(&mut self)->Result<(),()>;
 
+    #[cfg(not(feature = "use_tokio_send"))]
+    /// for writing custom bytes to the stream
+    fn write_custom_bytes(&mut self,bytes:&[u8])->
+     impl Future<
+     Output = Result<(),WaterErrors<'_>>> ;
+    #[cfg(feature = "use_tokio_send")]
     /// for writing custom bytes to the stream
     fn write_custom_bytes(&mut self,bytes:&[u8])->
      impl Future<
@@ -530,9 +537,27 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
 
 
     pub (crate) async fn write_bytes(&mut self,bytes:&[u8])->Result<(),()>{
-        match self.context.stream.write_all(bytes).await {
-            Ok(_) => {Ok(())}
-            Err(_) => {Err(())}
+        #[cfg(feature = "use_io_uring")]
+        {
+            match self.context.stream {
+                #[cfg(feature = "support_tls")]
+                HttpStream::AsyncSecure(_) => {
+                    todo!()
+                }
+                HttpStream::Async(s) => {
+                    let bs = water_buffer::helper::BytesSliceWrapper::new(bytes);
+                    let (r,_) = s.write_all(bs).await;
+                    if r.is_err() {return  Err(())}
+                    return  Ok(())
+                }
+            }
+        }
+        #[cfg(not(feature = "use_io_uring"))]
+        {
+            match self.context.stream.write_all(bytes).await {
+                Ok(_) => {Ok(())}
+                Err(_) => {Err(())}
+            }
         }
     }
 
@@ -566,7 +591,14 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         // let mut iota_buffer = itoa::Buffer::new();
         // let num_str = iota_buffer.format(http_status.status.get());
         let v = http_status.status.get();
-        v.put_into(*buf);
+        #[cfg(not(feature = "use_io_uring"))]
+        {
+            v.put_into(*buf);
+        }
+        #[cfg(feature = "use_io_uring")]
+        {
+            v.put_into(buf) ;
+        }
         buf.extend_from_slice(b" ");
         buf.extend_from_slice(http_status.label.as_bytes());
         buf.extend_from_slice(b"\r\n");
@@ -609,7 +641,15 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         self.context.response_buffer.extend_from_slice(b"Content-Length: ");
         // self.context.response_buffer.extend_from_slice(buffer.format(data.len()).as_bytes());
         // extend_with_int_human(self.context.response_buffer,data.len());
-        len.put_into(self.context.response_buffer);
+        #[cfg(feature = "use_io_uring")]
+        {
+            let  buf = &mut self.context.response_buffer;
+            len.put_into(buf);
+        }
+        #[cfg(not(feature = "use_io_uring"))]
+        {
+            len.put_into(self.context.response_buffer);
+        }
         self.context.response_buffer.extend_from_slice(b"\r\n\r\n");
         self.context.response_buffer.extend_from_slice(data);
         Ok(())
@@ -628,7 +668,12 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         if let HeaderBytes::Usize(u) = key_bytes {
             // let mut buffer = itoa::Buffer::new();
             // self.context.response_buffer.extend_from_slice(buffer.format(u).as_bytes());
+            #[cfg(not(feature = "use_io_uring"))]
             u.put_into(self.context.response_buffer);
+            #[cfg(feature = "use_io_uring")]
+            {
+                u.put_into(&mut self.context.response_buffer);
+            }
         } else {
             self.context.response_buffer.extend_from_slice(key_bytes.as_bytes());
         }
@@ -636,7 +681,11 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         if let HeaderBytes::Usize(v) = value_bytes {
             // let mut bb = itoa::Buffer::new();
             // self.context.response_buffer.extend_from_slice(bb.format(v).as_bytes());
+            #[cfg(not(feature = "use_io_uring"))]
             v.put_into(self.context.response_buffer);
+
+            #[cfg(feature = "use_io_uring")]
+            v.put_into(&mut self.context.response_buffer);
         } else {
             self.context.response_buffer.extend_from_slice(value_bytes.as_bytes());
         }
@@ -760,6 +809,15 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
 
 
+    #[cfg(feature = "use_io_uring")]
+    async fn flush(&mut self) -> Result<(),()>{
+        if handle_responding(unsafe{self.context.response_buffer.unsafe_clone()},self.context.stream).await.is_err() {
+            return Err(())
+        }
+        Ok(())
+    }
+
+    #[cfg(not(feature = "use_io_uring"))]
      async fn flush(&mut self) -> Result<(),()>{
          if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
              return Err(())
@@ -767,6 +825,16 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
          Ok(())
     }
 
+
+    #[cfg(feature = "use_io_uring")]
+    async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
+        self.context.response_buffer.extend_from_slice(bytes);
+        if handle_responding(unsafe{self.context.response_buffer.unsafe_clone()},self.context.stream).await.is_err() {
+            return Err(WaterErrors::Server(ServerError::WRITING_TO_STREAM_ERROR))
+        }
+        Ok(())
+    }
+    #[cfg(not(feature = "use_io_uring"))]
     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
         self.context.response_buffer.extend_from_slice(bytes);
         if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
