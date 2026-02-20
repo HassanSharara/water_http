@@ -284,7 +284,12 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
             FullBody(body) => {
                 if let IBody::Bytes(body_bytes) = body {
+                    #[cfg(feature = "debugging")]
+                    {
+                        tracing::debug!("binary body bytes [] {:?}",String::from_utf8_lossy(body_bytes));
+                    }
                     self.body_bytes_holder = Some(body_bytes.to_vec());
+
                     return  Ok(self.body_bytes_holder.as_ref())
                 }
                 return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST))
@@ -691,6 +696,11 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 handler(self).await;
                 return ServingRequestResults::Done;
             }
+        }
+
+        #[cfg(feature = "debugging")]
+        {
+            println!("Not Found incoming path {:?}",path);
         }
         self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
         ServingRequestResults::Stop

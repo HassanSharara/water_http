@@ -73,7 +73,7 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
                  let left_bytes_len = h1.left_bytes.len();
 
                 // if left_bytes_len < self.content_length {
-                //     self.reading_buffer.bytes_consumed+=left_bytes_len;
+                //     self.reading_buffer.bytes_red_by_buffer+=left_bytes_len;
                 // }
                 let boundary = self.boundary.as_bytes();
                 if h1.left_bytes.starts_with(boundary) {
@@ -87,11 +87,11 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
                     // when left bytes is not empty
                     if h1.left_bytes.is_empty()
                     {
-                        if left_bytes_len+self.reading_buffer.bytes_consumed >= self.content_length {
+                        if left_bytes_len+self.reading_buffer.bytes_red_by_buffer >= self.content_length {
                             return Ok(())
                         }
                         let res =   self.read_using_local_buffer(field,callback,left_bytes_len).await;
-                        self.reading_buffer.extended_bytes = 0;
+                        // self.reading_buffer.extended_bytes = 0;
                         return  res;
                     }
                     else
@@ -208,7 +208,7 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
           let mut end_reading_trigger = 0_u8;
           loop { // checking if the data is already close to end
 
-              if self.reading_buffer.bytes_consumed + left_bytes_len >= self.content_length {
+              if self.reading_buffer.bytes_red_by_buffer + left_bytes_len >= self.content_length {
                   if end_reading_trigger >= 8 { return Ok(())}
                   let chunk = self.reading_buffer.chunk();
                   if chunk.len() <= boundary_length+2  {
@@ -274,7 +274,7 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
 
 
 
-    // if self.reading_buffer.bytes_consumed >= self.content_length {
+    // if self.reading_buffer.bytes_red_by_buffer >= self.content_length {
     // if last_read_trigger >= 4 { return Ok(())}
     // let chunk = self.reading_buffer.chunk();
     // if chunk.len() <= boundary_length + 2  {
@@ -305,14 +305,14 @@ pub (crate) type FieldCallBackResult = Result<Option<Pin<Box< dyn Future<Output 
         loop {
 
 
-            if self.reading_buffer.bytes_consumed < boundary_length {
+            if self.reading_buffer.bytes_red_by_buffer < boundary_length {
                 if self.reading_buffer.chunk().ends_with(b"--\r\n") {
                     return Ok(())
                 }
             }
 
             // checking if the data is already close to end
-            if self.reading_buffer.bytes_consumed < self.content_length  {
+            if self.reading_buffer.bytes_red_by_buffer < self.content_length  {
                 body_reading_checker!(body_mut,self.reading_buffer);
             }
 

@@ -165,9 +165,18 @@ impl <'a:'request,'request
         let mut rem = remaining;
 
         self.body_reading_buffer.extend_from_slice(self.left_bytes);
+
+        #[cfg(feature = "debugging")]
+        {
+            tracing::debug!("body reading buffer now is {:?}",String::from_utf8_lossy(self.body_reading_buffer.chunk()));
+        }
         while rem > 0 {
             match self.body_reading_buffer.read_buf(self.stream).await {
                 Ok(s) => {
+                    #[cfg(feature = "debugging")]
+                    {
+                        tracing::debug!("[xxx-form-data-field] Reader : we road {:?}",String::from_utf8_lossy(&self.body_reading_buffer[..s]));
+                    }
                     rem -= rem.min(s);
                 }
                 Err(_) => {
@@ -205,6 +214,9 @@ impl <'a:'request,'request
         let content_length = self.request.content_length();
         if let Some( content_length) = content_length {
             let body_should_handled_as_chunks = self.left_bytes.len() < *content_length;
+            #[cfg(feature = "debugging")]{
+                tracing::debug!("[Body_Should Handled as Chunks] : {}",body_should_handled_as_chunks );
+            }
             if body_should_handled_as_chunks {
                 match mechanism {
                     ParsingBodyMechanism::Default => {
@@ -261,8 +273,15 @@ impl <'a:'request,'request
                 }
             }
             else {
+                #[cfg(feature = "debugging")]
+                {
+                }
                 return match mechanism {
                     ParsingBodyMechanism::Default => {
+                        #[cfg(feature = "debugging")]
+                        {
+                            tracing::debug!("mechanism is Default");
+                        }
                         match self.request.headers()
                             .get_as_bytes("Content-Type") {
                             None => { ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST)) }
@@ -276,7 +295,8 @@ impl <'a:'request,'request
                                             x_fields
                                         )
                                     )
-                                } else if lower_case.contains("multipart/form-data") {
+                                }
+                                else if lower_case.contains("multipart/form-data") {
                                     return self.get_chunked_body_multipart(
                                         content_type,
                                         &content_length
@@ -291,6 +311,10 @@ impl <'a:'request,'request
                         }
                     }
                     ParsingBodyMechanism::JustBytes => {
+                        #[cfg(feature = "debugging")]
+                        {
+                            tracing::debug!("full body is {:?}",String::from_utf8_lossy(&self.left_bytes[..*content_length]));
+                        }
                         ParsingBodyResults::FullBody(
                             IBody::Bytes(
                                 &self.left_bytes[..*content_length]

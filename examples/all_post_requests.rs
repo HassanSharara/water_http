@@ -20,6 +20,16 @@ pub struct CHolder {
 }
 
 fn main() {
+
+    #[cfg(any(feature = "debugging",feature = "count_connection_parsing_speed"))]
+    {
+        let subscriber  = tracing_subscriber::FmtSubscriber::builder()
+            .with_max_level(tracing::Level::DEBUG)
+            .finish();
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("no thing");
+    }
+
     let  config = ServerConfigurations::bind("0.0.0.0",8084);
     water_http::RunServer!(
         config,
@@ -43,9 +53,13 @@ WaterController! {
 }
 
 async fn upload_bin<H,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,HS,QS> ){
+    #[cfg(feature = "debugging")]
+    {
+        tracing::info!("upload binary request invoked");
+    }
     let mut gf = g.getter();
     let puller = gf.get_body().await;
-    println!("res is {:?}",puller);
+    // println!("res is {:?}",puller);
     if let ParsingBodyResults::Chunked(IBodyChunks::Bytes(mut puller)) = puller {
         if puller.on_chunk(|data|{
              println!("binary data is {:?}",String::from_utf8_lossy(data));
@@ -55,6 +69,11 @@ async fn upload_bin<H,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,HS,
             _= g.send_str("success").await;
             return;
         }
+    }
+    else if let ParsingBodyResults::FullBody(
+    water_http::http::request::IBody::Bytes(b)
+    ) = puller {
+        _= g.send_str("Success").await;
     }
     _= g.send_str("Failed").await;
 }

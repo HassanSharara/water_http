@@ -52,8 +52,11 @@ impl <'a> BytesPuller <'a> {
                     ServerError::HANDLING_INCOMING_BODY_ERROR
                 ));
 
-
-                if content_length < left_bytes.len() {
+                #[cfg(feature = "debugging")]
+                {
+                    tracing::debug!("[BytesPuller]: Content-Length: {content_length} while left bytes {}",left_bytes.len());
+                }
+                if content_length <= left_bytes.len() {
                     let data = &left_bytes[..content_length];
                     if let Err(_) = callback(data) {
                         return  err
@@ -66,15 +69,15 @@ impl <'a> BytesPuller <'a> {
                     }
                     remaining-=left_bytes.len();
                     loop {
-                        if remaining < 1 {
+                        if remaining == 0 {
                             return  Ok(())
                         }
                         if h1.reading_buffer.read_buf(h1.stream).await.is_err() { return  err}
 
                         let data = h1.reading_buffer.chunk();
-                        let to_index = remaining.min(data.len());
+                        let to_index = content_length.min(data.len());
                         if callback(&data[..to_index]).is_err() { return  err}
-                        remaining-=to_index;
+                        remaining-=remaining.min(data.len());
                         continue;
                     }
                 }

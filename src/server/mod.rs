@@ -247,10 +247,7 @@ pub  use sr_context::*;
 pub mod errors;
 mod capsule;
 mod encoding;
-#[cfg(not(feature = "use_io_uring"))]
-mod io;
-#[cfg(not(feature = "use_io_uring"))]
-pub(crate) use io::*;
+
 pub use encoding::*;
 
 pub use capsule::*;
