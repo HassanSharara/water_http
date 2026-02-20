@@ -576,8 +576,6 @@ impl  ConnectionStream {
           let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
           let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
 
-          let mut read_count = 0_usize;
-          let mut write_count = 0_usize;
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
 
@@ -594,8 +592,6 @@ impl  ConnectionStream {
 
               }
               {
-
-                  read_count +=1;
                   // when connection is closed
                   if read_size == 0 {
                       break;
@@ -868,8 +864,6 @@ impl  ConnectionStream {
                       }
 
                   }
-                  write_count +=1;
-
                   continue 'main_loop;
               }
               else {
@@ -877,18 +871,12 @@ impl  ConnectionStream {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
                           break 'main_loop;
                       }
-                      write_count +=1;
                   }
                   break;
               }
           }
 
-          if read_count == 0 {
-              println!("read count = 0");
-          }
-          if write_count == 0 {
-              println!("write count ==0 ");
-          }
+
       }
 
         //
