@@ -575,6 +575,7 @@ impl  ConnectionStream {
               BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
           let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
           let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
+
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
 
@@ -859,7 +860,6 @@ impl  ConnectionStream {
 
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          response_buffer.clear();
                           return;
                       }
                   }
@@ -868,7 +868,6 @@ impl  ConnectionStream {
               else {
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          response_buffer.clear();
                           return;
                       }
                   }
@@ -877,251 +876,7 @@ impl  ConnectionStream {
           }
       }
 
-        //
-        // {
-        //
-        //     let mut each_request_body_reading_buffer =
-        //         BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
-        //     let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
-        //     let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
-        //     'main_loop: loop {
-        //         reserve_buf(&mut reading_buffer);
-        //
-        //         if let Ok(read_size)
-        //             = match stream {
-        //             #[cfg(feature = "support_tls")]
-        //             HttpStream::AsyncSecure(_) => {
-        //                 todo!()
-        //             }
-        //             HttpStream::Async(s) => {
-        //                 let (r,b) = s.read(unsafe{reading_buffer}).await;
-        //                 reading_buffer = b;
-        //                 r
-        //             }
-        //
-        //         }
-        //         {
-        //             // when connection is closed
-        //             if read_size == 0 {
-        //                 return;
-        //             }
-        //
-        //
-        //             loop {
-        //                 let buf_bytes = reading_buffer.chunk();
-        //
-        //                 #[cfg(feature = "debugging")]
-        //                 {
-        //                     tracing::info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
-        //                 }
-        //
-        //                 if buf_bytes.is_empty() { break; }
-        //                 use crate::{http::request::{IncomingRequest,FormingRequestResult},server::Http1Context};
-        //                 #[cfg(feature = "count_connection_parsing_speed")]
-        //                     let t1 = std::time::SystemTime::now();
-        //                 let request =
-        //                     IncomingRequest::<HS,QS>::new(buf_bytes);
-        //                 #[cfg(feature = "count_connection_parsing_speed")]
-        //                 {
-        //                     let t2 = std::time::SystemTime::now();
-        //                     let dif = t2.duration_since(t1);
-        //                     println!("request from {:?}  parsed in  {:?}",peer,dif);
-        //
-        //                 }
-        //
-        //
-        //                 match request {
-        //                     FormingRequestResult::Success(request) => {
-        //
-        //                         #[cfg(feature = "debugging")]
-        //                         {
-        //                             debug!("new request has been received ");
-        //                         }
-        //
-        //                         let total_request_size = request.get_total_headers_length();
-        //                         let left_bytes = &buf_bytes[total_request_size..];
-        //
-        //                         #[cfg(feature = "debugging")]
-        //                         debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
-        //                         #[cfg(feature = "use_io_uring")]
-        //                             let mut context =
-        //                             HttpContext::new(
-        //                                 Protocol::from_http1_context(
-        //                                     Http1Context::new(
-        //                                         stream,
-        //                                         unsafe{response_buffer.unsafe_clone()},
-        //                                         &mut each_request_body_reading_buffer,
-        //                                         left_bytes,
-        //                                         request
-        //                                     )
-        //                                 ),
-        //                                 peer
-        //                             );
-        //
-        //
-        //                         #[cfg(feature = "thread_shared_struct")]
-        //                         {
-        //                             context.thread_shared_struct = Some(shared_factory.clone());
-        //                         }
-        //
-        //                         #[cfg( feature = "count_connection_parsing_speed")]
-        //                             let t1 = std::time::SystemTime::now();
-        //
-        //
-        //                         _= match  context.serve_ef(matcher.clone()).await {
-        //
-        //                             ServingRequestResults::Stop => {return;}
-        //
-        //                             ServingRequestResults::Done => {
-        //
-        //                                 #[cfg( feature = "count_connection_parsing_speed")]
-        //                                 {
-        //                                     let end = std::time::SystemTime::now();
-        //                                     println!("request from {:?}  served in {:?}",
-        //                                              peer,
-        //                                              end.duration_since(t1)
-        //                                     );
-        //                                 }
-        //
-        //                                 let content_length = context.content_length().copied();
-        //
-        //                                 match content_length {
-        //                                     None => {
-        //                                         let br = total_request_size >= buf_bytes.len();
-        //                                         if br { reading_buffer.clear(); break ;}
-        //                                         else {
-        //                                             #[cfg(feature = "accept_transfer_chunked")]
-        //                                             if let Some(h) = context.get_from_headers("Transfer-Encoding"){
-        //                                                 if h == "chunked" {
-        //                                                     drop(h);
-        //                                                     reading_buffer.clear();
-        //                                                     continue;
-        //                                                 }
-        //                                             }
-        //                                             reading_buffer.advance(total_request_size);
-        //                                         }
-        //
-        //                                     }
-        //                                     Some(content_length) => {
-        //                                         reading_buffer.advance(total_request_size);
-        //                                         let mut rem = content_length;
-        //                                         #[cfg(feature = "debugging")]
-        //                                         {
-        //                                             println!("remaining is {} while bytes consumed {} while body buffer length {}",
-        //                                                      rem,each_request_body_reading_buffer.bytes_red_by_buffer,
-        //                                                      each_request_body_reading_buffer.len()
-        //                                             );
-        //                                         }
-        //                                         if each_request_body_reading_buffer.advanced_bytes > 0 {
-        //                                             let td = each_request_body_reading_buffer.advanced_bytes
-        //                                                 .min(each_request_body_reading_buffer.len());
-        //                                             each_request_body_reading_buffer.advance(
-        //                                                 td
-        //                                             );
-        //                                             rem -= td.min(rem);
-        //                                         }
-        //                                         if each_request_body_reading_buffer.bytes_red_by_buffer > 0 {
-        //                                             rem -= reading_buffer.len().min(rem);
-        //                                             reading_buffer.clear();
-        //
-        //                                             if rem > 0 {
-        //                                                 each_request_body_reading_buffer.advance(rem.min(each_request_body_reading_buffer.len()));
-        //
-        //                                             }
-        //                                             if !each_request_body_reading_buffer.is_empty() {
-        //
-        //                                                 reading_buffer.extend_from_slice(each_request_body_reading_buffer.chunk());
-        //                                             }
-        //                                             each_request_body_reading_buffer.reset();
-        //                                         }
-        //                                         #[cfg(feature = "debugging")]
-        //                                         {
-        //                                             tracing::debug!("now remaining is {}",rem);
-        //                                         }
-        //                                         while rem > 0  {
-        //                                             #[cfg(feature = "debugging")]
-        //                                             {
-        //                                                 tracing::debug!("remaining buffers to advance {}",rem);
-        //                                             }
-        //                                             if reading_buffer.is_empty() {
-        //                                                 if  match stream {
-        //                                                     #[cfg(feature = "support_tls")]
-        //                                                     HttpStream::AsyncSecure(_) => {
-        //                                                         todo!()
-        //                                                     }
-        //                                                     HttpStream::Async(s) => {
-        //                                                         let (r,b) = s.read(unsafe{reading_buffer}).await;
-        //                                                         reading_buffer = b;
-        //                                                         r
-        //                                                     }
-        //
-        //                                                 }.is_err() { return }
-        //                                             }
-        //                                             let to_advance = rem.min(reading_buffer.len());
-        //                                             reading_buffer.advance(to_advance);
-        //                                             rem -= to_advance;
-        //                                         }
-        //
-        //                                         if reading_buffer.is_empty() {
-        //                                             reading_buffer.clear();
-        //                                             break;
-        //                                         }
-        //
-        //                                     }
-        //                                 }
-        //
-        //
-        //                                 continue;
-        //                             }
-        //                         };
-        //
-        //
-        //                     }
-        //                     FormingRequestResult::ReadMore => {
-        //                         // why I need to return if reading_buf less than 250
-        //                         // if reading_buffer.len() > 250 {
-        //                         //     return
-        //                         // }
-        //                         #[cfg(feature = "debugging")]
-        //                         {
-        //                             tracing::info!("incoming request is not enough: now we need to read more ");
-        //                         }
-        //                         continue 'main_loop;
-        //                     }
-        //                     FormingRequestResult::Err(e) => {
-        //                         #[cfg(feature = "debugging")]
-        //                         {
-        //                             tracing::error!("incoming request has error {:?} \n the request is {:?}",e,
-        //                             String::from_utf8_lossy(reading_buffer.chunk())
-        //                           );
-        //                         }
-        //                         return;
-        //                     }
-        //                 }
-        //             }
-        //
-        //             if !response_buffer.is_empty() {
-        //                 if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-        //                     return;
-        //                 }
-        //             }
-        //             continue 'main_loop;
-        //         }
-        //         else {
-        //             if !response_buffer.is_empty() {
-        //                 if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-        //                     return;
-        //                 }
-        //             }
-        //             break;
-        //         }
-        //     }
-        // }
-
     }
-
-
-
 }
 
 
@@ -1140,8 +895,9 @@ pub (crate) async fn handle_responding<'e>
             todo!()
         }
         HttpStream::Async(h) => {
-           let (r,b) =  h.write_all(response_buf).await;
+           let (r,mut b) =  h.write_all(response_buf).await;
             if r.is_err() { return Err("can not write data to given buffer")}
+            b.clear();
             return  Ok(b);
         }
     };
