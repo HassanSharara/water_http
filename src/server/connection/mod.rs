@@ -575,6 +575,9 @@ impl  ConnectionStream {
               BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
           let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
           let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
+
+          let mut read_count = 0_usize;
+          let mut write_count = 0_usize;
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
 
@@ -591,9 +594,11 @@ impl  ConnectionStream {
 
               }
               {
+
+                  read_count +=1;
                   // when connection is closed
                   if read_size == 0 {
-                      return;
+                      break;
                   }
 
 
@@ -659,7 +664,7 @@ impl  ConnectionStream {
 
                               _= match  context.serve_ef(matcher.clone()).await {
 
-                                  ServingRequestResults::Stop => {return;}
+                                  ServingRequestResults::Stop => {break 'main_loop;}
 
                                   ServingRequestResults::Done => {
 
@@ -817,7 +822,7 @@ impl  ConnectionStream {
                                                       let l = r.min(rem);
                                                       rem -= l;
                                                       reading_buffer.advance(l);
-                                                  } else { return }
+                                                  } else { break 'main_loop; }
                                               }
                                               #[cfg(feature = "debugging")]
                                               {
@@ -859,21 +864,30 @@ impl  ConnectionStream {
 
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          response_buffer.clear();
-                          return;
+                          break 'main_loop;
                       }
+
                   }
+                  write_count +=1;
+
                   continue 'main_loop;
               }
               else {
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          response_buffer.clear();
-                          return;
+                          break 'main_loop;
                       }
+                      write_count +=1;
                   }
                   break;
               }
+          }
+
+          if read_count == 0 {
+              println!("read count = 0");
+          }
+          if write_count == 0 {
+              println!("write count ==0 ");
           }
       }
 
@@ -1140,8 +1154,9 @@ pub (crate) async fn handle_responding<'e>
             todo!()
         }
         HttpStream::Async(h) => {
-           let (r,b) =  h.write_all(response_buf).await;
+           let (r,mut b) =  h.write_all(response_buf).await;
             if r.is_err() { return Err("can not write data to given buffer")}
+            b.clear();
             return  Ok(b);
         }
     };
