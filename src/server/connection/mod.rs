@@ -859,6 +859,7 @@ impl  ConnectionStream {
 
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
+                          response_buffer.clear();
                           return;
                       }
                   }
@@ -867,6 +868,7 @@ impl  ConnectionStream {
               else {
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
+                          response_buffer.clear();
                           return;
                       }
                   }
