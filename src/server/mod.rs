@@ -246,6 +246,7 @@ pub  use sr_context::*;
 #[doc(hidden)]
 pub mod errors;
 mod capsule;
+#[cfg(feature = "auto_encode_response")]
 mod encoding;
 
 pub use encoding::*;

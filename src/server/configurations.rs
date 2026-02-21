@@ -213,6 +213,7 @@ impl ServerConfigurations {
             tls_certificate:None,
             core_affinity:false,
             restricted_ips:None,
+            #[cfg(feature = "auto_encode_response")]
             responding_encoding_configurations:EncodingConfigurations::default(),
             #[cfg(feature = "support_tls")]
             tls_ports:vec![443],

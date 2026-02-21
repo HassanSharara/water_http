@@ -1,3 +1,4 @@
+#![cfg(feature = "auto_encode_response")]
 use std::borrow::Cow;
 use std::future::Future;
 use std::io::Write;
