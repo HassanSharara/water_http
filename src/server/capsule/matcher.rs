@@ -189,7 +189,10 @@ impl <
     H:'static + Send,
     #[cfg(not(feature = "use_tokio_send"))]
     H:'static,
-    const QS:usize,const HS:usize>  Matcher<H,QS,HS> {
+    const QS:usize,
+    const HS:usize
+>
+Matcher<H,QS,HS> {
 
     pub fn clone(&self)->Matcher<H,QS,HS>{
         Matcher {
@@ -369,50 +372,6 @@ impl <
         self.static_paths.insert(path.to_string(), path_holder);
     }
 
-
-
-    // pub fn match_path(
-    //     &mut self,
-    //     path: &str,
-    // ) -> Option<(PathHolder<H,SHARED,HS,QS>, Vec<(&str, &str)>)> {
-    //     let path = path.trim_matches('/');
-    //     let segment_count = path.split('/').count();
-    //
-    //     unsafe {
-    //         // 1️⃣ Check static paths
-    //         if let Some(holder) = self.static_paths.get(path) {
-    //             return Some((*holder, Vec::new()));
-    //         }
-    //
-    //         // 2️⃣ Check dynamic paths
-    //         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {
-    //             'outer: for (original_path, holder) in dynamic_vec {
-    //                 let mut params = Vec::new();
-    //                 let mut incoming_iter = path.split('/');
-    //                 let mut original_iter = original_path.split('/');
-    //
-    //                 while let (Some(opart), Some(ipart)) = (original_iter.next(), incoming_iter.next())
-    //                 {
-    //                     if opart.starts_with('{') && opart.ends_with('}') {
-    //                         // extract param name without {}
-    //                         let name = &opart[1..opart.len() - 1];
-    //                         params.push((name, ipart));
-    //                     } else if opart != ipart {
-    //                         continue 'outer; // mismatch
-    //                     }
-    //                 }
-    //
-    //                 // Ensure both iterators are fully consumed
-    //                 if original_iter.next().is_none() && incoming_iter.next().is_none() {
-    //                     return Some((*holder, params));
-    //                 }
-    //             }
-    //         }
-    //     }
-    //
-    //     None
-    // }
-
 }
 
 
@@ -570,96 +529,6 @@ impl <
         None
     }
 
-    // pub fn match_path(
-    //     &mut self,
-    //     path: &str,
-    // ) -> Option<(PathHolder<H,SHARED,HS,QS>, Vec<(&str, &str)>)> {
-    //     let path = path.trim_matches('/');
-    //     let segment_count = path.split('/').count();
-    //
-    //     unsafe {
-    //         // 1️⃣ Check static paths
-    //         if let Some(holder) = self.static_paths.get(path) {
-    //             return Some((*holder, Vec::new()));
-    //         }
-    //
-    //         // 2️⃣ Check dynamic paths
-    //         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {
-    //             'outer: for (original_path, holder) in dynamic_vec {
-    //                 let mut params = Vec::new();
-    //                 let mut incoming_iter = path.split('/');
-    //                 let mut original_iter = original_path.split('/');
-    //
-    //                 while let (Some(opart), Some(ipart)) = (original_iter.next(), incoming_iter.next())
-    //                 {
-    //                     if opart.starts_with('{') && opart.ends_with('}') {
-    //                         // extract param name without {}
-    //                         let name = &opart[1..opart.len() - 1];
-    //                         params.push((name, ipart));
-    //                     } else if opart != ipart {
-    //                         continue 'outer; // mismatch
-    //                     }
-    //                 }
-    //
-    //                 // Ensure both iterators are fully consumed
-    //                 if original_iter.next().is_none() && incoming_iter.next().is_none() {
-    //                     return Some((*holder, params));
-    //                 }
-    //             }
-    //         }
-    //     }
-    //
-    //     None
-    // }
-
 }
 
-// -------------------- Helper for dynamic vec --------------------
 
-
-
-
-
-// -------------------- Save a path --------------------
-
-
-// -------------------- Match a path and extract params --------------------
-
-//
-// // -------------------- Tests --------------------
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//
-//
-//     #[test]
-//     fn test_dynamic_path() {
-//         init_paths();
-//
-//         save_path("/about", 1);
-//         assert_eq!(match_path("/about").map(|(h, _)| h), Some(1));
-//         assert_eq!(match_path("/about/").map(|(h, _)| h), Some(1));
-//
-//
-//         save_path("/users/{id}", 2);
-//         save_path("/users/{id}/posts/{post_id}", 3);
-//
-//         let res1 = match_path("/users/42").unwrap();
-//         assert_eq!(res1.0, 2);
-//         assert_eq!(res1.1, vec![("id", "42")]);
-//
-//         let res2 = match_path("/users/42/posts/99").unwrap();
-//         assert_eq!(res2.0, 3);
-//         assert_eq!(res2.1, vec![("id", "42"), ("post_id", "99")]);
-//
-//         assert_eq!(match_path("/users/42/posts"), None);
-//     }
-//
-//     #[test]
-//     fn test_no_match() {
-//         init_paths();
-//         save_path("/about", 1);
-//         assert_eq!(match_path("/contact"), None);
-//     }
-// }

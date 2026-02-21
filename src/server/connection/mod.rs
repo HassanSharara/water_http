@@ -328,7 +328,7 @@ impl  ConnectionStream {
                                 debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
                                 #[cfg(feature = "thread_shared_struct")]
                                     let mut context = HttpContext::<Holder,SHARED, HS, QS>::new(
-                                    crate::server::sr_context::Protocol::Http1(Http1Context::new(stream,
+                                    Protocol::Http1(Http1Context::new(stream,
                                                                                                  &mut response_buffer,
                                                                                                  &mut each_request_body_reading_buffer,
                                                                                                  left_bytes,
@@ -531,10 +531,6 @@ impl  ConnectionStream {
 
                             }
                             FormingRequestResult::ReadMore => {
-                                // why I need to return if reading_buf less than 250
-                                // if reading_buffer.len() > 250 {
-                                //     return
-                                // }
                                 #[cfg(feature = "debugging")]
                                 {
                                     tracing::info!("incoming request is not enough: now we need to read more ");

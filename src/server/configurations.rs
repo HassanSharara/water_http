@@ -139,6 +139,8 @@ pub struct ServerConfigurations {
     /// - specifying which ip to accept connection and which not
     pub restricted_ips:Option<RestrictionRule>,
 
+
+    #[cfg(feature = "auto_encode_response")]
     /// http encoding configurations ,
     /// which takes [EncodingConfigurations] struct
     /// # Note :
@@ -221,7 +223,7 @@ impl ServerConfigurations {
     }
 
 
-
+    #[cfg(feature = "auto_encode_response")]
     /// set config encoding configurations
     /// when framework responding to client
     ///

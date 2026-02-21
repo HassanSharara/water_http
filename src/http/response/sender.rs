@@ -616,11 +616,13 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
 
     #[inline]
     async fn send_data_as_final_response(&mut self, data: ResponseData<'_>) -> Result<(),()> {
-
+        #[cfg(feature = "auto_encode_response")]
         let ref en_configurations = get_server_config().responding_encoding_configurations;
 
         let data = data.as_bytes();
         let len = data.len();
+
+        #[cfg(feature = "auto_encode_response")]
         if en_configurations.is_not_none() && data.len() >= en_configurations.threshold_for_encoding_response  {
             let accept_encoding = self.context
                 .request.headers().get_as_str("Accept-Encoding");
@@ -639,10 +641,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             }
 
         }
-        // let mut buffer = itoa::Buffer::new();
         self.context.response_buffer.extend_from_slice(b"Content-Length: ");
-        // self.context.response_buffer.extend_from_slice(buffer.format(data.len()).as_bytes());
-        // extend_with_int_human(self.context.response_buffer,data.len());
         #[cfg(feature = "use_io_uring")]
         {
             let  buf = &mut self.context.response_buffer;
@@ -668,8 +667,6 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         let value_bytes = value.into();
 
         if let HeaderBytes::Usize(u) = key_bytes {
-            // let mut buffer = itoa::Buffer::new();
-            // self.context.response_buffer.extend_from_slice(buffer.format(u).as_bytes());
             #[cfg(not(feature = "use_io_uring"))]
             u.put_into(self.context.response_buffer);
             #[cfg(feature = "use_io_uring")]
@@ -681,11 +678,8 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         }
         self.context.response_buffer.extend_from_slice(b": ");
         if let HeaderBytes::Usize(v) = value_bytes {
-            // let mut bb = itoa::Buffer::new();
-            // self.context.response_buffer.extend_from_slice(bb.format(v).as_bytes());
             #[cfg(not(feature = "use_io_uring"))]
             v.put_into(self.context.response_buffer);
-
             #[cfg(feature = "use_io_uring")]
             v.put_into(&mut self.context.response_buffer);
         } else {
