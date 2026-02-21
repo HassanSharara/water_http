@@ -895,9 +895,9 @@ pub (crate) async fn handle_responding<'e>
             todo!()
         }
         HttpStream::Async(h) => {
-           let (r, b) =  h.write_all(response_buf).await;
+           let (r,mut b) =  h.write_all(response_buf).await;
             if r.is_err() { return Err("can not write data to given buffer")}
-            // b.clear();
+             b.clear();
             return  Ok(b);
         }
     };
