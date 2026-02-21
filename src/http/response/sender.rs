@@ -404,6 +404,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
  impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait
  for HttpSender<'a,'context,HEADERS_COUNT,QUERY_COUNT>
  {
+    #[inline(always)]
     fn send_status_code(&mut self, http_status: StatusCode) {
         match self {
             HttpSender::H1(h1) => {
@@ -415,7 +416,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             }
         }
     }
-
+     #[inline(always)]
     fn send_data_partial(&mut self, data: ResponseData) {
         match self {
             HttpSender::H1(h1) => {
@@ -427,7 +428,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             }
         }
     }
-
+     #[inline(always)]
    async fn send_data_as_final_response(&mut self, data: ResponseData<'_>)->Result<(),()> {
         match self {
             HttpSender::H1(h1) => {
@@ -439,7 +440,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             }
         }
     }
-
+     #[inline(always)]
     fn set_header<K: Display, V: Display>(&mut self, key: K, value: V) {
         match self {
             HttpSender::H1(h1) => {
@@ -451,7 +452,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             }
         }
     }
-
+     #[inline(always)]
      fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
             match self {
                 HttpSender::H1(h1) => {
@@ -463,7 +464,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
                 }
             }
      }
-
+     #[inline(always)]
      async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
          match self {
              HttpSender::H1(h1) => {h1.send_json(value).await}
@@ -494,7 +495,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
             HttpSender::H2(h2) => {h2.send_file(pc).await}
         }
     }
-
+     #[inline(always)]
      async fn flush(&mut self) -> Result<(), ()> {
          match self {
              HttpSender::H1(h1) => {h1.flush().await}
@@ -502,7 +503,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
              HttpSender::H2(h2) => {h2.flush().await}
          }
      }
-
+     #[inline(always)]
      async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
          match self {
              HttpSender::H1(h1) => {h1.write_custom_bytes(bytes).await}
@@ -510,7 +511,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
              HttpSender::H2(h2) => {h2.write_custom_bytes(bytes).await}
          }
      }
-
+     #[inline(always)]
      fn extend_write_buffer(&mut self, bytes: &[u8]) {
          match self {
              HttpSender::H1(h1) => {h1.extend_write_buffer(bytes)}
@@ -567,7 +568,7 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
             }
         }
     }
-
+    #[inline(always)]
     fn handle_content_type_while_sending_file(&mut self,file_content_type:&Option<&str>,file_name:&OsStr,content_disposition:Option<&String>){
         match file_content_type {
             None => {
@@ -660,12 +661,12 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         self.context.response_buffer.extend_from_slice(data);
         Ok(())
     }
-
+    #[inline(always)]
     fn set_header<K:Display, V:Display>(&mut self, key: K, value: V) {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         self.context.response_buffer.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
     }
-
+    #[inline(always)]
     fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         let key_bytes = key.into();
@@ -692,7 +693,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         }
         self.context.response_buffer.extend_from_slice(b"\r\n");
     }
-
+    #[inline(always)]
     async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()> {
         self.set_header_ef("content-type","application/json");
         match serde_json::to_vec(value) {
@@ -706,13 +707,13 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         }
 
     }
-
+    #[inline(always)]
     async fn send_str(&mut self,data: &'static str) -> Result<(),()> {
         self.send_status_code(StatusCode::OK);
         self.send_data_as_final_response(ResponseData::Str(data)).await
     }
 
-
+    #[inline(always)]
     #[cfg(not(feature = "use_io_uring"))]
     async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
 
@@ -811,6 +812,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
 
 
     #[cfg(feature = "use_io_uring")]
+    #[inline(always)]
     async fn flush(&mut self) -> Result<(),()>{
         if handle_responding(unsafe{self.context.response_buffer.unsafe_clone()},self.context.stream).await.is_err() {
             return Err(())
@@ -818,6 +820,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         Ok(())
     }
 
+    #[inline(always)]
     #[cfg(not(feature = "use_io_uring"))]
      async fn flush(&mut self) -> Result<(),()>{
          if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {
@@ -826,7 +829,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
          Ok(())
     }
 
-
+    #[inline(always)]
     #[cfg(feature = "use_io_uring")]
     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
         self.context.response_buffer.extend_from_slice(bytes);
@@ -836,6 +839,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         Ok(())
     }
     #[cfg(not(feature = "use_io_uring"))]
+    #[inline(always)]
     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
         self.context.response_buffer.extend_from_slice(bytes);
         if handle_responding(self.context.response_buffer,self.context.stream).await.is_err() {

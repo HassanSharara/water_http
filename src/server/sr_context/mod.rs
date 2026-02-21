@@ -214,7 +214,7 @@ impl <'a,
     const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>
 HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
-
+    #[inline(always)]
     /// for getting connected socket Address
     /// # return `&SocketAddr`
     pub fn get_peer_socket(&self)->&SocketAddr {
@@ -230,7 +230,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None}
     }
 
-
+    #[inline(always)]
     /// returning getter struct for getting info from incoming request very easley and
     /// for making a less ram usage for better performance
     pub fn getter<'f>(&'f mut self)->HttpGetter<'f,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
@@ -242,7 +242,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
-
+    #[inline(always)]
     /// getting the full body bytes from stream
     /// this function will make context allocate heap memory for holding bytes together
     /// and not use the same buffer bytes because the buffer would be busy handling another request and
@@ -304,7 +304,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         return Err( WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR))
     }
 
-
+    #[inline(always)]
     /// for getting the body parsed as [Deserialize] json struct
     pub async fn get_body_as_json<'b,V:Deserialize<'b>>(&mut self)->Result<V,serde_json::Error>{
         let body = self.get_body_full_bytes().await;
@@ -322,7 +322,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         }
     }
 
-
+    #[inline(always)]
     /// getting body as multipart form data [FormDataAll]
     pub async fn get_body_as_multipart(&mut self)->Result<FormDataAll,WaterErrors<'_>>{
         let mut body = self.getter();
@@ -353,7 +353,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
-
+    #[inline(always)]
     /// returning dynamic trait that would be for getting values from body using
     /// keys
     pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
@@ -406,7 +406,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             )
         )
     }
-
+    #[inline(always)]
     /// this function return the original data on the request buffer on memory ,and
     /// it is very fast and memory safe function ,and it has zero allocation for data
     pub fn get_from_headers_as_bytes(&self,key:&str)->Option<&[u8]>{
@@ -421,7 +421,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         }
     }
 
-
+    #[inline(always)]
     /// this function just convert the bytes that come from [self.get_from_headers]
     /// to `Cow<'_,str>`
     ///  return [`Cow<'_,str>`]
@@ -435,7 +435,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         None
     }
 
-
+    #[inline(always)]
     /// getting content body length if request has body it will return [usize] as content length
     /// else it's returning [None]
     pub fn content_length(&mut self) ->Option<&usize>{
@@ -457,6 +457,9 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     //     }
     // }
     /// getting sender for sending all types of data to client
+
+
+    #[inline(always)]
     pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         return match &mut self.protocol {
             #[cfg(not(feature = "use_only_http1"))]
@@ -468,38 +471,20 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
         }
     }
-
+    #[inline(always)]
     /// for setting Date header in http response with the current timestamp efficiently
     pub fn set_date_header(&mut self){
         let mut sender = self.sender();
         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
         sender.set_header_ef("Date",date);
     }
-
-    // pub(crate)  fn h1_response_buffer(&mut self,)->Result<&mut BytesMut,()>{
-    //     match &mut self.protocol {
-    //         Protocol::Http2(_) => {Err(())}
-    //         Protocol::Http1(h1) => {
-    //             Ok(h1.response_buffer)
-    //         }
-    //     }
-    // }
-    //
-    // pub(crate)  fn h1_stream(&mut self,)->Result<&mut HttpStream,()>{
-    //     match &mut self.protocol {
-    //         Protocol::Http2(_) => {Err(())}
-    //         Protocol::Http1(h1) => {
-    //             Ok(h1.stream)
-    //         }
-    //     }
-    // }
-
+    #[inline(always)]
     /// for sending [`&str`] values to the client
     pub async fn send_str(&mut self,value:&'static str)->Result<(),()>{
         let mut sender = self.sender();
         sender.send_str(value).await
     }
-
+    #[inline(always)]
     /// for sending back status code as final response
     pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode<'_>){
         let mut sender = self.sender();
@@ -507,7 +492,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         _=sender.send_data_as_final_response(ResponseData::Str("")).await;
     }
 
-
+    #[inline(always)]
     /// for sending html text
     /// this function is basically set the content type of http response to text/html
     /// to let the browsers or the client knows what is coming
@@ -516,14 +501,14 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         sender.set_header_ef("Content-Type","Text/html");
         sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
     }
-
+    #[inline(always)]
     /// for sending json data
     pub async fn send_json(&mut self,json:&impl Serialize)->serde_json::Result<()>{
         let mut sender = self.sender();
         return sender.send_json(json).await;
     }
 
-
+    #[inline(always)]
     /// for sending normal str data without static lifetime
     pub async fn send_string_slice(&mut self,value:&str)->Result<(),()>{
         let mut sender = self.sender();
@@ -533,7 +518,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         ).await
     }
 
-
+    #[inline(always)]
     /// for returning redirect response to the client
     pub async fn redirect(&mut self,url:&str)->Result<(),()>{
         let mut sender = self.sender();
@@ -548,7 +533,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     //     HttpGetter::new(&mut self.protocol)
     // }
 
-
+    #[inline(always)]
     #[cfg(not(feature = "use_io_uring"))]
     /// for sending files this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
@@ -580,7 +565,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         return  SendingFileResults::ErrorWhileOpeningTheFile
     }
 
-
+    #[inline(always)]
     /// getting the path from incoming request
     pub fn path(&self)->&str{
         match &self.protocol {
@@ -596,7 +581,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         }
     }
 
-
+    #[inline(always)]
     /// getting incoming request method
     pub fn method(&self)->&str{
         match &self.protocol {
@@ -611,7 +596,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         }
     }
 
-
+    #[inline(always)]
     /// getting from path generic injected parameters
     /// like <http://example.com/test/{id}>
     /// here id is a generic parameter
@@ -623,7 +608,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         None
     }
 
-
+    #[inline(always)]
     /// getting data from path query
     ///
     /// like <http://example.com/test?id=1>
@@ -1421,7 +1406,7 @@ impl <'a,const HEADERS_COUNT:usize
 
 
 
-
+    #[inline(always)]
     /// getter is for getting data from incoming request like body and request quires
     pub fn getter<'b>(&'b mut self)->Http1Getter<'b,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
 
