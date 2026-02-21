@@ -123,6 +123,8 @@ H:'static + Send,
             dynamic_paths
         }
     }
+
+    #[inline(always)]
     pub fn match_path<'a>(
         &'a self,
         path: &'a str,

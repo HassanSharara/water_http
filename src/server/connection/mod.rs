@@ -371,7 +371,7 @@ impl  ConnectionStream {
                                             );
                                         }
 
-                                        let content_length = context.content_length().copied();
+                                        let content_length = context.content_length();
 
                                         match content_length {
                                             None => {
@@ -396,6 +396,7 @@ impl  ConnectionStream {
                                                 }
                                             }
                                             Some(content_length) => {
+                                                let content_length = *content_length;
                                                 reading_buffer.advance(total_request_size);
                                                 let mut rem = content_length;
                                                 if rem == 0 { continue }
@@ -677,7 +678,7 @@ impl  ConnectionStream {
                                           );
                                       }
 
-                                      let content_length = context.content_length().copied();
+                                      let content_length = context.content_length();
 
                                       match content_length {
                                           None => {
@@ -709,6 +710,7 @@ impl  ConnectionStream {
 
                                           }
                                           Some(content_length) => {
+                                              let content_length = *content_length;
                                               reading_buffer.advance(total_request_size);
                                               let mut rem = content_length;
                                               if rem == 0 { continue }

@@ -1245,10 +1245,8 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 let middlewares_ptr = holder.father_middlewares.as_ptr();
                 let middlewares_len = holder.father_middlewares.len();
                 let handler = holder.func;
-
                 // Drop the borrow by ending the scope
                 drop(r); // Explicitly drop to end borrow
-
                 // Now reconstruct the slice from raw pointer
                 // SAFETY: The middleware slice is part of the controller which is 'static,
                 // so it's guaranteed to outlive this function call
