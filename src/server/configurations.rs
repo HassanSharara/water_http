@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 #[cfg(feature = "debugging")]
 use tracing::error;
+#[cfg(feature = "auto_encode_response")]
 use crate::server::encoding::{EncodingConfigurations};
 
 pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 4096*8;

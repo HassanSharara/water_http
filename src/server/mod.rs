@@ -248,7 +248,7 @@ pub mod errors;
 mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
-
+#[cfg(feature = "auto_encode_response")]
 pub use encoding::*;
 
 pub use capsule::*;

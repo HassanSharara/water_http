@@ -71,7 +71,7 @@ async fn upload_bin<H,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,HS,
         }
     }
     else if let ParsingBodyResults::FullBody(
-    water_http::http::request::IBody::Bytes(b)
+    water_http::http::request::IBody::Bytes(_b)
     ) = puller {
         _= g.send_str("Success").await;
     }
