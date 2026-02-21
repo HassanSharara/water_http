@@ -929,6 +929,10 @@ pub (crate) async fn handle_responding<'e,
 //
 #[inline(always)]
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
+    if buffer.is_empty() {
+        buffer.clear();
+        return
+    }
     const MIN_RESERVE: usize = 1024 * 4  ;
 
     let remaining = buffer.capacity() - buffer.len();
