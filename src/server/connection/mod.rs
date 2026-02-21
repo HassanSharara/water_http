@@ -328,7 +328,11 @@ impl  ConnectionStream {
                                 debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
                                 #[cfg(feature = "thread_shared_struct")]
                                     let mut context = HttpContext::<Holder,SHARED, HS, QS>::new(
-                                    crate::server::sr_context::Protocol::Http1(Http1Context::new(hs, &mut write_buf, &mut body_buf, left_bytes, request)),
+                                    crate::server::sr_context::Protocol::Http1(Http1Context::new(stream,
+                                                                                                 &mut response_buffer,
+                                                                                                 &mut each_request_body_reading_buffer,
+                                                                                                 left_bytes,
+                                                                                                 request)),
                                     peer
                                 );
 
