@@ -214,12 +214,12 @@ Matcher<H,QS,HS> {
         path: &'a str,
     ) -> Option<(&'a PathHolder<H, QS, HS>, Option<HashMap<String,String>>)> {
         let path = path.trim_matches('/').split("?").next().unwrap();
-        let segment_count = path.split('/').count();
 
         // 1️⃣ static
         if let Some(holder) = self.static_paths.get(path) {
             return Some((holder, None));
         }
+        let segment_count = path.split('/').count();
 
         // 2️⃣ dynamic
         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {

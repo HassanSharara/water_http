@@ -408,7 +408,7 @@ pub  fn run_server<
                     });
                 }
 
-                // B: TOKIO LOCALSET PATH
+                // B: TOKIO LOCAL SET PATH
                 #[cfg(not(feature = "use_io_uring"))]
                 {
                     let rt = tokio::runtime::Builder::new_current_thread()
@@ -770,7 +770,7 @@ async fn run_server_with_address<
                 // 6. Cooperative Yielding (Batching)
                 // Prevents the accept loop from starving processing tasks under heavy load
                 accept_batch += 1;
-                if accept_batch >= 32 {
+                if accept_batch >= 2000 {
                     accept_batch = 0;
                     tokio::task::yield_now().await;
                 }
