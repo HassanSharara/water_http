@@ -1323,7 +1323,7 @@ macro_rules! FunctionsMacroBuilder {
                  (
                      stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
-                     | context |  | context | unsafe{std::pin::Pin::new_unchecked(
+                     | context |   unsafe{std::pin::Pin::new_unchecked(
                          smallbox::smallbox!( async move {
                          $fn_name(context).await;
                      }))}
