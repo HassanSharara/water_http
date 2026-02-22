@@ -320,158 +320,277 @@ pub  fn run_server<
     static_path:&'static mut Option<HashMap<String,PathHolder<Holder,HS,QS>>>,
     #[cfg(not(feature = "thread_shared_struct"))]
     dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,HS,QS>>>,
-){
-    unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
-    controller.set_up(String::new());
-    #[cfg(not(feature = "thread_shared_struct"))]
-    let pointer = controller as *const CapsuleWaterController<Holder,HS,QS>;
-
-
-    *static_path = Some(HashMap::new());
-    *dynamic_path = Some(HashMap::new());
-
-
-
-    #[cfg(feature = "thread_shared_struct")]
-    let pointer = controller as *const CapsuleWaterController<Holder,SHARED,HS,QS>;
-    controller.____insure_binding();
-    let sp = static_path.as_mut().unwrap();
-    let dp = dynamic_path.as_mut().unwrap();
-
-    _=MatcherInitializer::serialize(sp,dp,controller);
-
-
-
-    let controller = unsafe {pointer.as_ref().unwrap()};
+)
+{
+    // 1. GLOBAL INITIALIZATION
+    unsafe { STATIC_SERVER_CONFIGURATION = Some(config); }
     let conf = get_server_config();
 
+    controller.set_up(String::new());
+    controller.____insure_binding();
+
+    // 2. MATCHER SERIALIZATION
+    *static_path = Some(HashMap::new());
+    *dynamic_path = Some(HashMap::new());
+    let sp = static_path.as_mut().unwrap();
+    let dp = dynamic_path.as_mut().unwrap();
+    _ = MatcherInitializer::serialize(sp, dp, controller);
+
+    // Cast the controller to a 'static reference safely for threads
+    #[cfg(feature = "thread_shared_struct")]
+        let controller_ptr: &'static CapsuleWaterController<Holder, SHARED, HS, QS> = unsafe { &*(controller as *const _) };
+    #[cfg(not(feature = "thread_shared_struct"))]
+        let controller_ptr: &'static CapsuleWaterController<Holder, HS, QS> = unsafe { &*(controller as *const _) };
+
+    // 3. MULTI-THREADED (TOKIO SEND) ARCHITECTURE
     #[cfg(feature = "use_tokio_send")]
     {
-        #[cfg(feature = "debugging")]
-            let mut workers_count = 0_usize;
-
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
-            .worker_threads(conf.worker_threads_count * 2)
+            .worker_threads(conf.worker_threads_count)
             .build()
             .unwrap();
-        let mut workers = vec![];
-        for _ in 0..conf.worker_threads_count {
-
-            for  address in conf.addresses.clone() {
-                let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
-                workers.push(
-                    rt.spawn(async move {
-                        #[cfg(feature = "debugging")]
-                        {
-                            debug!("listening on ip: {} port: {}",address.0,address.1);
-                            workers_count +=1;
-                            debug!("count of running workers {workers_count}");
-                        }
-
-                        #[cfg(feature = "thread_shared_struct")]
-                        {
-                            _=run_server_with_address(&address, controller,shared_factory,matcher).await;
-                        }
-
-                        #[cfg(not(feature = "thread_shared_struct"))]
-                        {
-                            _= crate::server::run_server_with_address(&address, controller, matcher).await;
-                        }
-                    })
-                );
-            }
-        }
 
         rt.block_on(async move {
-            for worker in workers {
-                let _ = worker.await;
+            for address in &conf.addresses {
+                let matcher = Matcher::new(static_path.as_ref().unwrap(), dynamic_path.as_ref().unwrap());
+                let addr = address.clone();
+                tokio::spawn(async move {
+                    #[cfg(feature = "thread_shared_struct")]
+                        let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                    #[cfg(not(feature = "thread_shared_struct"))]
+                        let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                });
             }
+            // Keep runtime alive
+            std::future::pending::<()>().await;
         });
     }
 
+    // 4. SILOED (LOCALSET / IO_URING) ARCHITECTURE
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut os_threads = vec![];
 
-            #[cfg(feature = "cpu_affinity")]
-            let cores = std::sync::Arc::new(
-            if conf.core_affinity  {
-                core_affinity::get_core_ids()
-            } else {
-                None
-            }
-        );
         #[cfg(feature = "cpu_affinity")]
-        let  core_index = std::sync::Arc::new(std::sync::Mutex::new(0_usize));
-        for _ in 0..conf.worker_threads_count {
-            for address in &conf.addresses {
-                let address = address.clone();
-                let controller = controller;
-                let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
+            let core_ids = if conf.core_affinity { core_affinity::get_core_ids() } else { None };
+
+        // We spawn exactly worker_threads_count.
+        // Each thread will bind to ALL addresses in the config via SO_REUSEPORT.
+        for i in 0..conf.worker_threads_count {
+            let addresses = conf.addresses.clone();
+            let matcher = Matcher::new(static_path.as_ref().unwrap(), dynamic_path.as_ref().unwrap());
+
+            #[cfg(feature = "cpu_affinity")]
+                let core_id = core_ids.as_ref().and_then(|ids| ids.get(i % ids.len()).cloned());
+
+            let thread = std::thread::spawn(move || {
+                // Set CPU Affinity
+                #[cfg(feature = "cpu_affinity")]
+                if let Some(id) = core_id {
+                    core_affinity::set_for_current(id);
+                }
+
+                // A: IO_URING PATH
                 #[cfg(feature = "use_io_uring")]
                 {
-
-                    let thread = std::thread::spawn(move || {
-                        tokio_uring::start(async move {
-                            #[cfg(feature = "thread_shared_struct")]
-                                let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
-
-                            #[cfg(not(feature = "thread_shared_struct"))]
-                                let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
-                        });
+                    tokio_uring::start(async move {
+                        for addr in addresses {
+                            let matcher = matcher.clone();
+                            tokio_uring::spawn(async move {
+                                #[cfg(feature = "thread_shared_struct")]
+                                    let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                #[cfg(not(feature = "thread_shared_struct"))]
+                                    let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                            });
+                        }
+                        std::future::pending::<()>().await;
                     });
-                    os_threads.push(thread);
-
                 }
+
+                // B: TOKIO LOCALSET PATH
                 #[cfg(not(feature = "use_io_uring"))]
                 {
-                    #[cfg(feature = "cpu_affinity")]
-                    let core_index = core_index.clone();
-                    #[cfg(feature = "cpu_affinity")]
-                        let  value = cores.clone();
-                    let thread = std::thread::spawn(move || {
-                        #[cfg(feature = "cpu_affinity")]
-                        if let Some(core) = value.as_ref() {
-                           let mut core_index_guard = core_index.lock();
-                           let core_index = core_index_guard.as_mut().unwrap();
-                           let m = core_index.deref_mut();
-                           core_affinity::set_for_current((core[*m]).clone());
-                           if *m + 1 >= core.len() {
-                               *m = 0;
-                           } else {
-                               *m+=1;
-                           }
-                       }
-                        let rt = tokio::runtime::Builder::new_current_thread()
-                            .enable_all()
-                            .max_blocking_threads(90)
-                            .build()
-                            .unwrap();
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+                    let local = LocalSet::new();
 
-                        let local = LocalSet::new();
-
-                        rt.block_on(async {
-                            local.run_until(async {
+                    rt.block_on(local.run_until(async move {
+                        for addr in addresses {
+                            let matcher = matcher.clone();
+                            tokio::task::spawn_local(async move {
                                 #[cfg(feature = "thread_shared_struct")]
-                                    let _ = run_server_with_address(&address, controller,shared_factory,matcher).await;
-
+                                    let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
                                 #[cfg(not(feature = "thread_shared_struct"))]
-                                    let _ = run_server_with_address(&address, controller,matcher).await;
-                            }).await;
-                        });
-                    });
-                    os_threads.push(thread);
+                                    let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                            });
+                        }
+                        std::future::pending::<()>().await;
+                    }));
                 }
-
-            }
+            });
+            os_threads.push(thread);
         }
+
         for thread in os_threads {
             let _ = thread.join();
         }
     }
-
 }
+// {
+//     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
+//     controller.set_up(String::new());
+//     #[cfg(not(feature = "thread_shared_struct"))]
+//     let pointer = controller as *const CapsuleWaterController<Holder,HS,QS>;
+//
+//
+//     *static_path = Some(HashMap::new());
+//     *dynamic_path = Some(HashMap::new());
+//
+//
+//
+//     #[cfg(feature = "thread_shared_struct")]
+//     let pointer = controller as *const CapsuleWaterController<Holder,SHARED,HS,QS>;
+//     controller.____insure_binding();
+//     let sp = static_path.as_mut().unwrap();
+//     let dp = dynamic_path.as_mut().unwrap();
+//
+//     _=MatcherInitializer::serialize(sp,dp,controller);
+//
+//
+//
+//     let controller = unsafe {pointer.as_ref().unwrap()};
+//     let conf = get_server_config();
+//
+//     #[cfg(feature = "use_tokio_send")]
+//     {
+//         #[cfg(feature = "debugging")]
+//             let mut workers_count = 0_usize;
+//
+//         let rt = tokio::runtime::Builder::new_multi_thread()
+//             .enable_all()
+//             .worker_threads(conf.worker_threads_count * 2)
+//             .build()
+//             .unwrap();
+//         let mut workers = vec![];
+//         for _ in 0..conf.worker_threads_count {
+//
+//             for  address in conf.addresses.clone() {
+//                 let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
+//                 workers.push(
+//                     rt.spawn(async move {
+//                         #[cfg(feature = "debugging")]
+//                         {
+//                             debug!("listening on ip: {} port: {}",address.0,address.1);
+//                             workers_count +=1;
+//                             debug!("count of running workers {workers_count}");
+//                         }
+//
+//                         #[cfg(feature = "thread_shared_struct")]
+//                         {
+//                             _=run_server_with_address(&address, controller,shared_factory,matcher).await;
+//                         }
+//
+//                         #[cfg(not(feature = "thread_shared_struct"))]
+//                         {
+//                             _= crate::server::run_server_with_address(&address, controller, matcher).await;
+//                         }
+//                     })
+//                 );
+//             }
+//         }
+//
+//         rt.block_on(async move {
+//             for worker in workers {
+//                 let _ = worker.await;
+//             }
+//         });
+//     }
+//
+//     #[cfg(not(feature = "use_tokio_send"))]
+//     {
+//         let mut os_threads = vec![];
+//
+//             #[cfg(feature = "cpu_affinity")]
+//             let cores = std::sync::Arc::new(
+//             if conf.core_affinity  {
+//                 core_affinity::get_core_ids()
+//             } else {
+//                 None
+//             }
+//         );
+//         #[cfg(feature = "cpu_affinity")]
+//         let  core_index = std::sync::Arc::new(std::sync::Mutex::new(0_usize));
+//         for _ in 0..conf.worker_threads_count {
+//             for address in &conf.addresses {
+//                 let address = address.clone();
+//                 let controller = controller;
+//                 let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
+//                 #[cfg(feature = "use_io_uring")]
+//                 {
+//
+//                     let thread = std::thread::spawn(move || {
+//                         tokio_uring::start(async move {
+//                             #[cfg(feature = "thread_shared_struct")]
+//                                 let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
+//
+//                             #[cfg(not(feature = "thread_shared_struct"))]
+//                                 let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
+//                         });
+//                     });
+//                     os_threads.push(thread);
+//
+//                 }
+//                 #[cfg(not(feature = "use_io_uring"))]
+//                 {
+//                     #[cfg(feature = "cpu_affinity")]
+//                     let core_index = core_index.clone();
+//                     #[cfg(feature = "cpu_affinity")]
+//                         let  value = cores.clone();
+//                     let thread = std::thread::spawn(move || {
+//                         #[cfg(feature = "cpu_affinity")]
+//                         if let Some(core) = value.as_ref() {
+//                            let mut core_index_guard = core_index.lock();
+//                            let core_index = core_index_guard.as_mut().unwrap();
+//                            let m = core_index.deref_mut();
+//                            core_affinity::set_for_current((core[*m]).clone());
+//                            if *m + 1 >= core.len() {
+//                                *m = 0;
+//                            } else {
+//                                *m+=1;
+//                            }
+//                        }
+//                         let rt = tokio::runtime::Builder::new_current_thread()
+//                             .enable_all()
+//                             .max_blocking_threads(90)
+//                             .build()
+//                             .unwrap();
+//
+//                         let local = LocalSet::new();
+//
+//                         rt.block_on(async {
+//                             local.run_until(async {
+//                                 #[cfg(feature = "thread_shared_struct")]
+//                                     let _ = run_server_with_address(&address, controller,shared_factory,matcher).await;
+//
+//                                 #[cfg(not(feature = "thread_shared_struct"))]
+//                                     let _ = run_server_with_address(&address, controller,matcher).await;
+//                             }).await;
+//                         });
+//                     });
+//                     os_threads.push(thread);
+//                 }
+//
+//             }
+//         }
+//         for thread in os_threads {
+//             let _ = thread.join();
+//         }
+//     }
+//
+// }
 
 
 #[cfg(feature = "use_io_uring")]
@@ -545,210 +664,330 @@ async fn run_server_with_address<
     matcher:Matcher<Holder,SHARED,HS,QS>,
     #[cfg(not(feature = "thread_shared_struct"))]
     matcher:Matcher<Holder,HS,QS>
-)->stdio::Result<()>{
-    // defining configuration object
+)->stdio::Result<()>
+{
     let server_config = get_server_config();
 
-
+    // 1. Listener Initialization
     #[cfg(feature = "use_io_uring")]
-    let listener = create_tokio_uring_listener(address,port,server_config.backlog);
-
-    let address_string = format!("{}:{}",address,port);
-    let socket_address = (&address_string).to_socket_addrs()
-        .unwrap().next()
-        .expect("error while parsing address");
+        let listener = create_tokio_uring_listener(address, port, server_config.backlog);
 
     #[cfg(not(feature = "use_io_uring"))]
-    let listener = {
-        // building tcp listener with defined backlog
+        let listener = {
+        let addr_str = format!("{}:{}", address, port);
+        let socket_addr = addr_str.to_socket_addrs().unwrap().next().expect("Invalid address");
+        let socket = match &socket_addr {
+            SocketAddr::V4(_) => tokio::net::TcpSocket::new_v4(),
+            SocketAddr::V6(_) => tokio::net::TcpSocket::new_v6(),
+        }.expect("Failed to create socket");
 
-        let socket = match &socket_address {
-            SocketAddr::V4(_) => { tokio::net::TcpSocket::new_v4()}
-            SocketAddr::V6(_) => {tokio::net::TcpSocket::new_v6()}
-        }.expect("can not create tcp socket from given address");
-        socket.set_reuseaddr(true).expect("can not set reuse address");
-        socket.set_nodelay(true).expect("");
+        socket.set_reuseaddr(true).ok();
+        socket.set_nodelay(true).ok();
         #[cfg(target_os = "linux")]
-        socket.set_reuseport(true).expect("could not reuse port on linux");
-        socket.bind(socket_address).expect("can not bind to given address");
-        socket.listen(
-            server_config.backlog
-        ).expect("")
+        socket.set_reuseport(true).ok();
+
+        socket.bind(socket_addr).expect("Bind failed");
+        socket.listen(server_config.backlog).expect("Listen failed")
     };
 
+    // 2. Resource & Security Setup
     #[cfg(feature = "thread_shared_struct")]
-    // create shared factory
-    let shared_struct:SHARED = shared_factory().await;
+        let shared_struct = shared_factory().await;
 
-    // building tls acceptor
     #[cfg(feature = "support_tls")]
-    let mut tls_acceptor:Option<TlsAcceptor> = None;
-    #[cfg(feature = "support_tls")]
-    if let Some(tls_config) = server_config.tls_certificate.as_ref() {
-        let server_tls_config =
-            tls::generate_tls_configurations(tls_config);
-        if let Ok(server_tls_config ) = server_tls_config {
-            tls_acceptor = Some(TlsAcceptor::from(Arc::new(server_tls_config)));
+        let (tls_acceptor, is_secure) = {
+        let mut acceptor = None;
+        if let Some(cfg) = server_config.tls_certificate.as_ref() {
+            if let Ok(gen) = tls::generate_tls_configurations(cfg) {
+                acceptor = Some(TlsAcceptor::from(Arc::new(gen)));
+            }
         }
-    }
+        (acceptor, server_config.tls_ports.contains(port))
+    };
 
-    #[cfg(feature = "support_tls")]
-    let is_port_should_be_securely_handled=
-        server_config.tls_ports.contains(port)
-        && tls_acceptor.is_some();
-
-
+    // 3. High-Performance Debugging Counter
     #[cfg(feature = "debugging")]
-    use std::ops::DerefMut;
-    #[cfg(feature = "debugging")]
-    let  connections_count = std::sync::Arc::new(tokio::sync::Mutex::new(0_usize));
+        let connections_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-
+    // 4. Optimized Accept Loop
+    let mut accept_batch: u32 = 0;
 
     loop {
-        #[cfg(feature = "debugging")]
-        let connections_count = connections_count.clone();
-        if let Ok((stream,socket)) = listener.accept().await {
-            #[cfg(feature = "debugging")]
-            {
-                let mut con = connections_count.lock().await;
-                let m = con.deref_mut();
-                *m +=1;
-            }
-            #[cfg(feature = "support_tls")]
-            let tls = tls_acceptor.clone();
+        match listener.accept().await {
+            Ok((stream, socket_addr)) => {
+                #[cfg(feature = "debugging")]
+                connections_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-            #[cfg(feature = "use_tokio_send")]
-            {
+                // Clone shared handles for the spawned task
+                let matcher = matcher.clone();
                 #[cfg(feature = "thread_shared_struct")]
                     let shared_struct = shared_struct.clone();
-                let matcher = matcher.clone();
-                tokio::spawn(async move {
-                    // checking if the current port should be handled
-                    // with tls configurations if it`s exist
+                #[cfg(feature = "support_tls")]
+                    let tls_acceptor = tls_acceptor.clone();
+                #[cfg(feature = "debugging")]
+                    let connections_count = connections_count.clone();
+
+                let handler_future = async move {
                     #[cfg(feature = "support_tls")]
-                    {
-                        if is_port_should_be_securely_handled {
-                            let tls = tls.unwrap();
-                            let tls_stream = tls.accept(stream).await;
-                             if let Ok(tls_stream) = tls_stream {
-                                let connection =  ConnectionStream::new(
-                                    WaterStream::TLS(tls_stream),
-                                    socket_address
-                                );
+                    if is_secure {
+                        if let Some(acc) = tls_acceptor {
+                            if let Ok(tls_stream) = acc.accept(stream).await {
+                                let connection = ConnectionStream::new(WaterStream::TLS(tls_stream), socket_addr);
                                 #[cfg(feature = "thread_shared_struct")]
-                                 serve_connection(connection,controller,shared_struct,matcher).await;
-                                 #[cfg(not(feature = "thread_shared_struct"))]
-                                serve_connection(connection, controller,matcher).await;
-                            }
-                            #[cfg(feature = "debugging")]
-                            {
-                                let mut con = connections_count.lock().await;
-                                debug!("last connections count where port is not secure {:?}",con.deref());
-                                let m = con.deref_mut();
-                                if *m == 1 {
-                                    *m = 0;
-                                } else {
-                                    *m -=1;
-                                }
-
-                            }
-                            return ;
-                        }
-                    }
-
-                    // handling connection normally
-                    let connection
-                        = ConnectionStream::new(WaterStream::TOStream(stream),socket);
-                    #[cfg(feature = "thread_shared_struct")]
-                    serve_connection(connection,controller,shared_struct,matcher).await;
-                    #[cfg(not(feature = "thread_shared_struct"))]
-                    serve_connection(connection, controller,matcher).await;
-                    #[cfg(feature = "debugging")]
-                    {
-                        let mut con = connections_count.lock().await;
-                        debug!("last connections count {:?}",con.deref());
-                        let m = con.deref_mut();
-                        if *m == 1 {
-                            *m = 0;
-                        } else {
-                            *m -=1;
-                        }
-
-                    }
-                });
-
-
-            }
-
-            #[cfg(not(feature = "use_tokio_send"))]
-            {
-                #[cfg(feature = "thread_shared_struct")]
-                let shared_struct = shared_struct.clone();
-                let matcher = matcher.clone();
-                let future = async move {
-                    // checking if the current port should be handled
-                    // with tls configurations if it`s exist
-                    #[cfg(feature = "support_tls")]
-                    {
-                        if is_port_should_be_securely_handled {
-                            let tls = tls.unwrap();
-                            let tls_stream = tls.accept(stream).await;
-                            if let Ok(tls_stream) = tls_stream {
-                                let connection =  ConnectionStream::new(
-                                    WaterStream::TLS(tls_stream),
-                                    socket_address
-                                );
-                                #[cfg(feature = "thread_shared_struct")]
-                                crate::server::serve_connection(connection, controller, shared_struct,matcher).await;
+                                serve_connection(connection, controller, shared_struct, matcher).await;
                                 #[cfg(not(feature = "thread_shared_struct"))]
-                                serve_connection(connection, controller,matcher).await;
+                                serve_connection(connection, controller, matcher).await;
                             }
-                            #[cfg(feature = "debugging")]
-                            {
-                                let mut con = connections_count.lock().await;
-                                debug!("last connections count where port is not secure {:?}",con.deref());
-                                let m = con.deref_mut();
-                                if *m == 1 {
-                                    *m = 0;
-                                } else {
-                                    *m -=1;
-                                }
-
-                            }
-                            return ;
                         }
+                        #[cfg(feature = "debugging")]
+                        connections_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                        return;
                     }
 
-                    // handling connection normally
-                    let connection
-                        = ConnectionStream::new(WaterStream::TOStream(stream),socket);
+                    // Plain HTTP path
+                    let connection = ConnectionStream::new(WaterStream::TOStream(stream), socket_addr);
                     #[cfg(feature = "thread_shared_struct")]
-                    crate::server::serve_connection(connection, controller, shared_struct.clone(),matcher).await;
+                    serve_connection(connection, controller, shared_struct, matcher).await;
                     #[cfg(not(feature = "thread_shared_struct"))]
-                    serve_connection(connection, controller,matcher).await;
-                    #[cfg(feature = "debugging")]
-                    {
-                        let mut con = connections_count.lock().await;
-                        debug!("last connections count {:?}",con.deref());
-                        let m = con.deref_mut();
-                        if *m == 1 {
-                            *m = 0;
-                        } else {
-                            *m -=1;
-                        }
+                    serve_connection(connection, controller, matcher).await;
 
-                    }
+                    #[cfg(feature = "debugging")]
+                    connections_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
                 };
 
-                #[cfg(feature = "use_io_uring")]
-                tokio_uring::spawn(future);
-                #[cfg(not(feature = "use_io_uring"))]
-                tokio::task::spawn_local(future);
+                // 5. Context-Aware Spawning
+                #[cfg(feature = "use_tokio_send")]
+                tokio::spawn(handler_future);
+
+                #[cfg(not(feature = "use_tokio_send"))]
+                {
+                    #[cfg(feature = "use_io_uring")]
+                    tokio_uring::spawn(handler_future);
+                    #[cfg(not(feature = "use_io_uring"))]
+                    tokio::task::spawn_local(handler_future);
+                }
+
+                // 6. Cooperative Yielding (Batching)
+                // Prevents the accept loop from starving processing tasks under heavy load
+                accept_batch += 1;
+                if accept_batch >= 32 {
+                    accept_batch = 0;
+                    tokio::task::yield_now().await;
+                }
+            }
+            Err(_) => {
+                // Yield on errors to prevent a hot-loop (e.g. EMFILE)
+                tokio::task::yield_now().await;
             }
         }
     }
 }
+
+// this is the old function
+// {
+//     // defining configuration object
+//     let server_config = get_server_config();
+//
+//
+//     #[cfg(feature = "use_io_uring")]
+//     let listener = create_tokio_uring_listener(address,port,server_config.backlog);
+//
+//     let address_string = format!("{}:{}",address,port);
+//     let socket_address = (&address_string).to_socket_addrs()
+//         .unwrap().next()
+//         .expect("error while parsing address");
+//
+//     #[cfg(not(feature = "use_io_uring"))]
+//     let listener = {
+//         // building tcp listener with defined backlog
+//
+//         let socket = match &socket_address {
+//             SocketAddr::V4(_) => { tokio::net::TcpSocket::new_v4()}
+//             SocketAddr::V6(_) => {tokio::net::TcpSocket::new_v6()}
+//         }.expect("can not create tcp socket from given address");
+//         socket.set_reuseaddr(true).expect("can not set reuse address");
+//         socket.set_nodelay(true).expect("");
+//         #[cfg(target_os = "linux")]
+//         socket.set_reuseport(true).expect("could not reuse port on linux");
+//         socket.bind(socket_address).expect("can not bind to given address");
+//         socket.listen(
+//             server_config.backlog
+//         ).expect("")
+//     };
+//
+//     #[cfg(feature = "thread_shared_struct")]
+//     // create shared factory
+//     let shared_struct:SHARED = shared_factory().await;
+//
+//     // building tls acceptor
+//     #[cfg(feature = "support_tls")]
+//     let mut tls_acceptor:Option<TlsAcceptor> = None;
+//     #[cfg(feature = "support_tls")]
+//     if let Some(tls_config) = server_config.tls_certificate.as_ref() {
+//         let server_tls_config =
+//             tls::generate_tls_configurations(tls_config);
+//         if let Ok(server_tls_config ) = server_tls_config {
+//             tls_acceptor = Some(TlsAcceptor::from(Arc::new(server_tls_config)));
+//         }
+//     }
+//
+//     #[cfg(feature = "support_tls")]
+//     let is_port_should_be_securely_handled=
+//         server_config.tls_ports.contains(port)
+//         && tls_acceptor.is_some();
+//
+//
+//     #[cfg(feature = "debugging")]
+//     use std::ops::DerefMut;
+//     #[cfg(feature = "debugging")]
+//     let  connections_count = std::sync::Arc::new(tokio::sync::Mutex::new(0_usize));
+//
+//
+//
+//     loop {
+//         #[cfg(feature = "debugging")]
+//         let connections_count = connections_count.clone();
+//         if let Ok((stream,socket)) = listener.accept().await {
+//             #[cfg(feature = "debugging")]
+//             {
+//                 let mut con = connections_count.lock().await;
+//                 let m = con.deref_mut();
+//                 *m +=1;
+//             }
+//             #[cfg(feature = "support_tls")]
+//             let tls = tls_acceptor.clone();
+//
+//             #[cfg(feature = "use_tokio_send")]
+//             {
+//                 #[cfg(feature = "thread_shared_struct")]
+//                     let shared_struct = shared_struct.clone();
+//                 let matcher = matcher.clone();
+//                 tokio::spawn(async move {
+//                     // checking if the current port should be handled
+//                     // with tls configurations if it`s exist
+//                     #[cfg(feature = "support_tls")]
+//                     {
+//                         if is_port_should_be_securely_handled {
+//                             let tls = tls.unwrap();
+//                             let tls_stream = tls.accept(stream).await;
+//                              if let Ok(tls_stream) = tls_stream {
+//                                 let connection =  ConnectionStream::new(
+//                                     WaterStream::TLS(tls_stream),
+//                                     socket_address
+//                                 );
+//                                 #[cfg(feature = "thread_shared_struct")]
+//                                  serve_connection(connection,controller,shared_struct,matcher).await;
+//                                  #[cfg(not(feature = "thread_shared_struct"))]
+//                                 serve_connection(connection, controller,matcher).await;
+//                             }
+//                             #[cfg(feature = "debugging")]
+//                             {
+//                                 let mut con = connections_count.lock().await;
+//                                 debug!("last connections count where port is not secure {:?}",con.deref());
+//                                 let m = con.deref_mut();
+//                                 if *m == 1 {
+//                                     *m = 0;
+//                                 } else {
+//                                     *m -=1;
+//                                 }
+//
+//                             }
+//                             return ;
+//                         }
+//                     }
+//
+//                     // handling connection normally
+//                     let connection
+//                         = ConnectionStream::new(WaterStream::TOStream(stream),socket);
+//                     #[cfg(feature = "thread_shared_struct")]
+//                     serve_connection(connection,controller,shared_struct,matcher).await;
+//                     #[cfg(not(feature = "thread_shared_struct"))]
+//                     serve_connection(connection, controller,matcher).await;
+//                     #[cfg(feature = "debugging")]
+//                     {
+//                         let mut con = connections_count.lock().await;
+//                         debug!("last connections count {:?}",con.deref());
+//                         let m = con.deref_mut();
+//                         if *m == 1 {
+//                             *m = 0;
+//                         } else {
+//                             *m -=1;
+//                         }
+//
+//                     }
+//                 });
+//
+//
+//             }
+//
+//             #[cfg(not(feature = "use_tokio_send"))]
+//             {
+//                 #[cfg(feature = "thread_shared_struct")]
+//                 let shared_struct = shared_struct.clone();
+//                 let matcher = matcher.clone();
+//                 let future = async move {
+//                     // checking if the current port should be handled
+//                     // with tls configurations if it`s exist
+//                     #[cfg(feature = "support_tls")]
+//                     {
+//                         if is_port_should_be_securely_handled {
+//                             let tls = tls.unwrap();
+//                             let tls_stream = tls.accept(stream).await;
+//                             if let Ok(tls_stream) = tls_stream {
+//                                 let connection =  ConnectionStream::new(
+//                                     WaterStream::TLS(tls_stream),
+//                                     socket_address
+//                                 );
+//                                 #[cfg(feature = "thread_shared_struct")]
+//                                 crate::server::serve_connection(connection, controller, shared_struct,matcher).await;
+//                                 #[cfg(not(feature = "thread_shared_struct"))]
+//                                 serve_connection(connection, controller,matcher).await;
+//                             }
+//                             #[cfg(feature = "debugging")]
+//                             {
+//                                 let mut con = connections_count.lock().await;
+//                                 debug!("last connections count where port is not secure {:?}",con.deref());
+//                                 let m = con.deref_mut();
+//                                 if *m == 1 {
+//                                     *m = 0;
+//                                 } else {
+//                                     *m -=1;
+//                                 }
+//
+//                             }
+//                             return ;
+//                         }
+//                     }
+//
+//                     // handling connection normally
+//                     let connection
+//                         = ConnectionStream::new(WaterStream::TOStream(stream),socket);
+//                     #[cfg(feature = "thread_shared_struct")]
+//                     crate::server::serve_connection(connection, controller, shared_struct.clone(),matcher).await;
+//                     #[cfg(not(feature = "thread_shared_struct"))]
+//                     serve_connection(connection, controller,matcher).await;
+//                     #[cfg(feature = "debugging")]
+//                     {
+//                         let mut con = connections_count.lock().await;
+//                         debug!("last connections count {:?}",con.deref());
+//                         let m = con.deref_mut();
+//                         if *m == 1 {
+//                             *m = 0;
+//                         } else {
+//                             *m -=1;
+//                         }
+//
+//                     }
+//                 };
+//
+//                 #[cfg(feature = "use_io_uring")]
+//                 tokio_uring::spawn(future);
+//                 #[cfg(not(feature = "use_io_uring"))]
+//                 tokio::task::spawn_local(future);
+//             }
+//         }
+//     }
+// }
 
 
 
