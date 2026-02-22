@@ -298,7 +298,7 @@ impl  ConnectionStream {
                             tracing::info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
                         }
 
-                        if buf_bytes.is_empty() { break; }
+                        if buf_bytes.is_empty() { break }
                         use crate::{http::request::{IncomingRequest,FormingRequestResult},server::Http1Context};
                         #[cfg(feature = "count_connection_parsing_speed")]
                             let t1 = std::time::SystemTime::now();
@@ -537,14 +537,14 @@ impl  ConnectionStream {
                                 }
                                 continue 'main_loop;
                             }
-                            FormingRequestResult::Err(_) => {
+                            FormingRequestResult::Err(_e) => {
                                 #[cfg(feature = "debugging")]
                                 {
-                                    tracing::error!("incoming request has error {:?} \n the request is {:?}",e,
+                                    tracing::error!("incoming request has error {:?} \n the request is {:?}",_e,
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                                 }
-                                return;
+                                return
                             }
                         }
                     }
