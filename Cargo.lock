@@ -1004,6 +1004,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "smallbox"
+version = "0.8.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aca054fd9f8c2ebe8557a2433f307e038c0716124efd045daa0388afa5172189"
+
+[[package]]
 name = "smallvec"
 version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1304,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "4.0.1-beta.26"
+version = "4.0.1-beta.27"
 dependencies = [
  "askama",
  "brotli",
@@ -1325,6 +1331,7 @@ dependencies = [
  "rustls-pemfile",
  "serde",
  "serde_json",
+ "smallbox",
  "snap",
  "tokio",
  "tokio-rustls",

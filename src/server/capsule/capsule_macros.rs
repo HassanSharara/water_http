@@ -1323,9 +1323,10 @@ macro_rules! FunctionsMacroBuilder {
                  (
                      stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
-                     | context | Box::pin( async move {
+                     | context |  | context | unsafe{std::pin::Pin::new_unchecked(
+                         smallbox::smallbox!( async move {
                          $fn_name(context).await;
-                     })
+                     }))}
                  )
              );
             )*
@@ -1541,9 +1542,10 @@ macro_rules! FunctionsMacroBuilder {
                  (
                      stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
-                     | context | Box::pin( async move {
+                     | context | unsafe{std::pin::Pin::new_unchecked(
+                         smallbox::smallbox!( async move {
                          $fn_name(context).await;
-                     })
+                     }))}
                  )
              );
             )*

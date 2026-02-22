@@ -2,19 +2,28 @@
 pub mod capsule_macros;
 /// providing matching tech
 pub mod matcher;
-
 use std::future::Future;
 use std::pin::Pin;
 use crate::server::{HttpContext, push_named_route};
-
+use smallbox::SmallBox;
+use smallbox::space::S32;
 /// ----------------------------
-/// Future aliases (Send vs non-Send)
+/// SmallBox Future aliases (Zero-allocation for small handlers)
 /// ----------------------------
 #[cfg(feature = "use_tokio_send")]
-type BoxFutureSend<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+pub(crate) type BoxFutureSend<'a, T> = Pin<SmallBox<dyn Future<Output = T> + Send + 'a, S32>>;
 
 #[cfg(not(feature = "use_tokio_send"))]
-type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+pub(crate) type BoxFuture<'a, T> = Pin<SmallBox<dyn Future<Output = T> + 'a, S32>>;
+
+// /// ----------------------------
+// /// Future aliases (Send vs non-Send)
+// /// ----------------------------
+// #[cfg(feature = "use_tokio_send")]
+// type BoxFutureSend<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+//
+// #[cfg(not(feature = "use_tokio_send"))]
+// type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
 
 /// ----------------------------
 /// Middleware and handler type aliases
