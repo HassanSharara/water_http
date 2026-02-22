@@ -294,7 +294,10 @@ impl  ConnectionStream {
                                 )),
                                 peer // If peer is Option, use peer.unwrap_or(default_addr) or handle before loop
                             );
-
+                            #[cfg(feature = "thread_shared_struct")]
+                            {
+                            context.thread_shared_struct = Some(shared_factory.clone());
+                            }
                             if let ServingRequestResults::Stop = context.serve_ef(matcher.clone()).await { return; }
 
                             // 3. Safe Body Draining
