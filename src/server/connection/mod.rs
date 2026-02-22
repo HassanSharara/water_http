@@ -264,27 +264,26 @@ impl  ConnectionStream {
             let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
 
             'main_loop: loop {
-                // 1. SYSCALL BATCHING: Read once, process many
-                // We only read from the stream if our buffer is empty
+                // 1. Only read if we actually need data
                 if reading_buffer.is_empty() {
                     reading_buffer.reserve(4096);
                     match stream.read(reading_buffer.chunk_mut()).await {
-                        Ok(0) | Err(_) => return, // Connection closed or error
+                        Ok(0) | Err(_) => return, // Safe exit on close/error
                         Ok(n) => reading_buffer.advance_mut(n),
                     }
                 }
 
-                // 2. PIPELINE LOOP: Parse all requests currently in the buffer
+                // 2. The Pipeline Loop
                 loop {
                     let buf_bytes = reading_buffer.chunk();
-                    if buf_bytes.is_empty() { break; } // Go back to 'main_loop to read more
+                    if buf_bytes.is_empty() { break; } // Exit inner loop to read more data
 
                     match IncomingRequest::new(buf_bytes) {
                         FormingRequestResult::Success(request) => {
                             let total_request_size = request.get_total_headers_length();
                             let left_bytes = &buf_bytes[total_request_size..];
 
-                            // 3. ZERO-COPY HANDOFF
+                            // Create context (Ensure peer is handled safely if it's an Option)
                             let mut context = HttpContext::new(
                                 Protocol::Http1(Http1Context::new(
                                     stream,
@@ -293,55 +292,46 @@ impl  ConnectionStream {
                                     left_bytes,
                                     request
                                 )),
-                                peer
+                                peer // If peer is Option, use peer.unwrap_or(default_addr) or handle before loop
                             );
 
-                            if let ServingRequestResults::Stop = context.serve_ef(matcher.clone()).await {
-                                return;
-                            }
+                            if let ServingRequestResults::Stop = context.serve_ef(matcher.clone()).await { return; }
 
-                            // 4. FAST BODY DRAIN: Clear the path for the next request
-                            let content_length = context.content_length().cloned().unwrap_or(0);
+                            // 3. Safe Body Draining
+                            let content_length = context.content_length().cloned().unwrap_or(0); // SAFE
                             reading_buffer.advance(total_request_size);
 
                             if content_length > 0 {
                                 let mut rem = content_length;
-
-                                // Step A: Consume what's already in our reading buffer
                                 let in_buf = reading_buffer.len().min(rem);
                                 reading_buffer.advance(in_buf);
                                 rem -= in_buf;
 
-                                // Step B: If there's still a body, drain it directly using a stack buffer
-                                // This avoids the "double buffering" logic you had before
                                 if rem > 0 {
-                                    let mut trash = [0u8; 8192]; // Stack-allocated trash can
+                                    let mut trash = [0u8; 8192];
                                     while rem > 0 {
                                         let limit = rem.min(trash.len());
                                         match stream.read(&mut trash[..limit]).await {
-                                            Ok(0) | Err(_) => return,
-                                            Ok(n) => rem -= n,
+                                            Ok(n) if n > 0 => rem -= n,
+                                            _ => return, // Connection closed or error during drain
                                         }
                                     }
                                 }
                             }
 
-                            // Reset body buffer state for next pipelined request
                             each_request_body_reading_buffer.clear();
-
-                            // CRITICAL: We do NOT break here. We loop again to see
-                            // if another request is already in `reading_buffer`.
+                            // Stay in the inner loop to check for the next pipelined request
                             continue;
                         }
                         FormingRequestResult::ReadMore => {
-                            // Buffer contains a partial request, need more data from socket
+                            // Not enough data for a full header, go to 'main_loop to read()
                             continue 'main_loop;
                         }
                         FormingRequestResult::Err(_) => return,
                     }
                 }
 
-                // 5. BATCHED WRITE: Send all responses generated in this pipeline burst
+                // 4. Send all responses at once (Efficient!)
                 if !response_buffer.is_empty() {
                     if handle_responding(&mut response_buffer, stream).await.is_err() {
                         return;
