@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "4.0.1-beta.12"
+version = "4.0.1-beta.15"
 dependencies = [
  "askama",
  "brotli",
@@ -1339,8 +1339,8 @@ dependencies = [
 
 [[package]]
 name = "water_http_utils"
-version = "0.2.2-beta.1"
-source = "git+https://github.com/HassanSharara/water_http_utils#af19c570dbb4789f376de80fe51462efc5032ad2"
+version = "0.2.2-beta.5"
+source = "git+https://github.com/HassanSharara/water_http_utils#18554c6b7590ebfe2515f6834895b20ae6ce025b"
 dependencies = [
  "chrono",
  "memchr",
