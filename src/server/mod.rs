@@ -248,6 +248,8 @@ pub mod errors;
 mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
+pub(crate) mod io;
+
 #[cfg(feature = "auto_encode_response")]
 pub use encoding::*;
 
@@ -411,24 +413,51 @@ pub  fn run_server<
                 // B: TOKIO LOCAL SET PATH
                 #[cfg(not(feature = "use_io_uring"))]
                 {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .unwrap();
-                    let local = LocalSet::new();
 
-                    rt.block_on(local.run_until(async move {
-                        for addr in addresses {
-                            let matcher = matcher.clone();
-                            tokio::task::spawn_local(async move {
-                                #[cfg(feature = "thread_shared_struct")]
-                                    let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
-                                #[cfg(not(feature = "thread_shared_struct"))]
-                                    let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
-                            });
-                        }
-                        std::future::pending::<()>().await;
-                    }));
+
+                    #[cfg(tokio_unstable)]
+                    {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build_local(Default::default())
+                            .unwrap();
+                        rt.block_on(async move {
+                            for addr in addresses {
+                                let matcher = matcher.clone();
+                                tokio::task::spawn_local(async move {
+                                    #[cfg(feature = "thread_shared_struct")]
+                                        let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                    #[cfg(not(feature = "thread_shared_struct"))]
+                                        let _ = crate::server::run_server_with_address(&addr, controller_ptr, matcher).await;
+                                });
+                            }
+                            std::future::pending::<()>().await;
+                        });
+                    }
+
+                    #[cfg(not(tokio_unstable))]
+                    {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .unwrap();
+                        let local = LocalSet::new();
+
+                        rt.block_on(local.run_until(async move {
+                            for addr in addresses {
+                                let matcher = matcher.clone();
+                                tokio::task::spawn_local(async move {
+                                    #[cfg(feature = "thread_shared_struct")]
+                                        let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                    #[cfg(not(feature = "thread_shared_struct"))]
+                                        let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                                });
+                            }
+                            std::future::pending::<()>().await;
+                        }));
+                    }
+
+
                 }
             });
             os_threads.push(thread);
@@ -770,7 +799,7 @@ async fn run_server_with_address<
                 // 6. Cooperative Yielding (Batching)
                 // Prevents the accept loop from starving processing tasks under heavy load
                 accept_batch += 1;
-                if accept_batch >= 200 {
+                if accept_batch >= 2000 {
                     accept_batch = 0;
                     tokio::task::yield_now().await;
                 }

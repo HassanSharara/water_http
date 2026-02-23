@@ -143,6 +143,7 @@ impl  ConnectionStream {
                 }
             }
             WaterStream::TOStream(stream) => {
+
                 #[cfg(feature = "debugging")]
                 {
                     debug!("{:?} connected without secure layer (tls)",self.address);
@@ -256,6 +257,7 @@ impl  ConnectionStream {
     ){
 
         #[cfg(not(feature = "use_io_uring"))]
+
         {
 
             let mut each_request_body_reading_buffer =
@@ -263,7 +265,14 @@ impl  ConnectionStream {
             let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
             let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
 
-
+            // use super::io::WaterTcpStream;
+            // WaterTcpStream::serve(
+            //     stream,
+            //     peer,
+            //     _controller,
+            //     matcher.clone(),
+            // ).await;
+            // return
 
             'main_loop: loop {
                 reserve_buf(&mut reading_buffer);
@@ -283,7 +292,6 @@ impl  ConnectionStream {
 
                 }
                 {
-                    reading_buffer.advance_mut(read_size);
                     #[cfg(feature = "debugging")]
                     {
                         tracing::debug!("new red data is {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
@@ -292,6 +300,7 @@ impl  ConnectionStream {
                     if read_size == 0 {
                         return;
                     }
+                    reading_buffer.advance_mut(read_size);
 
 
                     loop {
@@ -572,8 +581,8 @@ impl  ConnectionStream {
 
 
 
-      #[cfg(feature = "use_io_uring")]
-      {
+       #[cfg(feature = "use_io_uring")]
+       {
 
           let mut each_request_body_reading_buffer =
               BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
