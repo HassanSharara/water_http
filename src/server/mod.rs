@@ -710,7 +710,7 @@ async fn run_server_with_address<
         let connections_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     // 4. Optimized Accept Loop
-    // let mut accept_batch: u32 = 0;
+    let mut accept_batch: u32 = 0;
 
     loop {
         match listener.accept().await {
@@ -769,11 +769,11 @@ async fn run_server_with_address<
 
                 // 6. Cooperative Yielding (Batching)
                 // Prevents the accept loop from starving processing tasks under heavy load
-                // accept_batch += 1;
-                // if accept_batch >= 2000 {
-                //     accept_batch = 0;
-                //     tokio::task::yield_now().await;
-                // }
+                accept_batch += 1;
+                if accept_batch >= 200 {
+                    accept_batch = 0;
+                    tokio::task::yield_now().await;
+                }
             }
             Err(_) => {
                 // Yield on errors to prevent a hot-loop (e.g. EMFILE)
