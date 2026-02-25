@@ -799,7 +799,7 @@ async fn run_server_with_address<
                 // 6. Cooperative Yielding (Batching)
                 // Prevents the accept loop from starving processing tasks under heavy load
                 accept_batch += 1;
-                if accept_batch >= 128 {
+                if accept_batch >= 256 {
                     accept_batch = 0;
                     tokio::task::yield_now().await;
                 }
