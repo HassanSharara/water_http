@@ -6,15 +6,15 @@ use std::future::Future;
 use std::pin::Pin;
 use crate::server::{HttpContext, push_named_route};
 use smallbox::SmallBox;
-use smallbox::space::S32;
+use smallbox::space::S16;
 /// ----------------------------
 /// SmallBox Future aliases (Zero-allocation for small handlers)
 /// ----------------------------
 #[cfg(feature = "use_tokio_send")]
-pub(crate) type BoxFutureSend<'a, T> = Pin<SmallBox<dyn Future<Output = T> + Send + 'a, S32>>;
+pub(crate) type BoxFutureSend<'a, T> = Pin<SmallBox<dyn Future<Output = T> + Send + 'a, S16>>;
 
 #[cfg(not(feature = "use_tokio_send"))]
-pub(crate) type BoxFuture<'a, T> = Pin<SmallBox<dyn Future<Output = T> + 'a, S32>>;
+pub(crate) type BoxFuture<'a, T> = Pin<SmallBox<dyn Future<Output = T> + 'a, S16>>;
 
 // /// ----------------------------
 // /// Future aliases (Send vs non-Send)
