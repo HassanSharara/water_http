@@ -257,7 +257,6 @@ impl  ConnectionStream {
     ){
 
         #[cfg(not(feature = "use_io_uring"))]
-
         {
 
             let mut each_request_body_reading_buffer =
@@ -647,7 +646,8 @@ impl  ConnectionStream {
 
                               #[cfg(feature = "debugging")]
                               debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
-                              #[cfg(feature = "use_io_uring")]
+
+
                                   let mut context =
                                   HttpContext::new(
                                       Protocol::from_http1_context(
