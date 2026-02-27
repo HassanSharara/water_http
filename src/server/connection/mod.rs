@@ -870,7 +870,7 @@ impl  ConnectionStream {
                       }
                   }
 
-                  if !response_buffer.is_empty() {
+                  if !response_buffer.is_empty() && reading_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
                           return;
                       }
