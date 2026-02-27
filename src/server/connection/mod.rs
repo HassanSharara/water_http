@@ -692,7 +692,6 @@ impl  ConnectionStream {
                                           None => {
                                               reading_buffer.advance(total_request_size);
                                               if reading_buffer.is_empty() {
-                                                  reading_buffer.clear();
                                                   break
                                               }
                                               #[cfg(feature = "accept_transfer_chunked")]
