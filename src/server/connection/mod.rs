@@ -673,7 +673,7 @@ impl  ConnectionStream {
 
                               _= match  context.serve_ef(matcher.clone()).await {
 
-                                  ServingRequestResults::Stop => {return;}
+                                  ServingRequestResults::Stop => {break}
 
                                   ServingRequestResults::Done => {
 
@@ -690,32 +690,31 @@ impl  ConnectionStream {
 
                                       match content_length {
                                           None => {
-                                              let br = total_request_size >= buf_bytes.len();
-                                              if br { reading_buffer.clear(); break ;}
-                                              else {
-
-                                                  #[cfg(feature = "accept_transfer_chunked")]
-                                                  {
-                                                      if let Some(h) = context.get_from_headers("Transfer-Encoding"){
-
-
-                                                          if h == "chunked" {
-                                                              drop(h);
-                                                              #[cfg(feature = "debugging")]
-                                                              {
-                                                                  debug!("request completed by chunked");
-                                                              }
-                                                              reading_buffer.clear();
-                                                              each_request_body_reading_buffer.clear();
-                                                              each_request_body_reading_buffer.reset();
-                                                              continue;
-                                                          }
-                                                      }
-
-                                                  }
-                                                  reading_buffer.advance(total_request_size);
+                                              reading_buffer.advance(total_request_size);
+                                              if reading_buffer.is_empty() {
+                                                  reading_buffer.clear();
+                                                  break
                                               }
+                                              #[cfg(feature = "accept_transfer_chunked")]
+                                              {
+                                                  if let Some(h) = context.get_from_headers("Transfer-Encoding"){
 
+
+                                                      if h == "chunked" {
+                                                          drop(h);
+                                                          #[cfg(feature = "debugging")]
+                                                          {
+                                                              debug!("request completed by chunked");
+                                                          }
+                                                          reading_buffer.clear();
+                                                          each_request_body_reading_buffer.clear();
+                                                          each_request_body_reading_buffer.reset();
+                                                          continue;
+                                                      }
+                                                  }
+
+                                              }
+                                              continue
                                           }
                                           Some(content_length) => {
                                               let content_length = *content_length;
