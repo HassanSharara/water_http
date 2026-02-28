@@ -936,7 +936,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
         buffer.clear();
         return
     }
-    const MIN_RESERVE: usize = 1024 * 2  ;
+    const MIN_RESERVE: usize = 1024 * 4  ;
 
     let remaining = buffer.mut_len() ;
     if remaining < MIN_RESERVE {
