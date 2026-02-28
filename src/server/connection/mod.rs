@@ -940,7 +940,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
 
     let remaining = buffer.remaining_mut() ;
     if remaining < MIN_RESERVE {
-        buffer.reserve( (MIN_RESERVE * 8) - remaining );
+        buffer.reserve( MIN_RESERVE * 8 );
     }
 }
 
