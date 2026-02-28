@@ -2,7 +2,7 @@
 
 use std::net::SocketAddr;
 use std::ops::Deref;
-use bytes::{Buf};
+use bytes::{Buf, BufMut};
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "use_io_uring")]
@@ -18,6 +18,7 @@ use tokio_uring::BufResult;
 
 #[cfg(feature = "debugging")]
 use tracing::{debug};
+
 use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, ServingRequestResults};
 
@@ -279,14 +280,11 @@ impl  ConnectionStream {
                 if let Ok(read_size)
                     = match stream {
                     #[cfg(feature = "support_tls")]
-                    HttpStream::AsyncSecure(_) => {
-                        todo!()
+                    HttpStream::AsyncSecure(s) => {
+                        s.read(reading_buffer.chunk_mut()).await
                     }
                     HttpStream::Async(s) => {
-                        let r = s.read(reading_buffer.chunk_mut()).await;
-
-                        r
-
+                        s.read(reading_buffer.chunk_mut()).await
                     }
 
                 }
@@ -311,7 +309,6 @@ impl  ConnectionStream {
                         }
 
                         if buf_bytes.is_empty() { break }
-                        use crate::{http::request::{IncomingRequest,FormingRequestResult},server::Http1Context};
                         #[cfg(feature = "count_connection_parsing_speed")]
                             let t1 = std::time::SystemTime::now();
                         let request =
@@ -348,14 +345,16 @@ impl  ConnectionStream {
                                     peer
                                 );
 
-                                #[cfg(all(not(feature = "thread_shared_struct")))]
+                                #[cfg(not(feature = "thread_shared_struct"))]
                                     let mut context = HttpContext::<Holder, HS, QS>::new(
                                      Protocol::Http1(Http1Context::new(
                                         stream,
                                         &mut response_buffer,
                                         &mut each_request_body_reading_buffer,
                                         left_bytes,
-                                        request)),
+                                        request
+                                     )
+                                     ),
                                     peer
                                 );
 
@@ -542,6 +541,7 @@ impl  ConnectionStream {
 
                             }
                             FormingRequestResult::ReadMore => {
+
                                 #[cfg(feature = "debugging")]
                                 {
                                     tracing::info!("incoming request is not enough: now we need to read more ");
@@ -549,6 +549,7 @@ impl  ConnectionStream {
                                 continue 'main_loop;
                             }
                             FormingRequestResult::Err(_e) => {
+
                                 #[cfg(feature = "debugging")]
                                 {
                                     tracing::error!("incoming request has error {:?} \n the request is {:?}",_e,
@@ -848,10 +849,6 @@ impl  ConnectionStream {
 
                           }
                           FormingRequestResult::ReadMore => {
-                              // why I need to return if reading_buf less than 250
-                              // if reading_buffer.len() > 250 {
-                              //     return
-                              // }
                               #[cfg(feature = "debugging")]
                               {
                                   tracing::info!("incoming request is not enough: now we need to read more ");
@@ -941,7 +938,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     }
     const MIN_RESERVE: usize = 1024 * 4  ;
 
-    let remaining = buffer.capacity() - buffer.len();
+    let remaining = buffer.remaining_mut() ;
     if remaining < MIN_RESERVE {
         buffer.reserve( (MIN_RESERVE * 4) - remaining );
     }

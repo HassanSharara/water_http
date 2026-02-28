@@ -146,12 +146,12 @@ pub  fn run_server<
 
         // We spawn exactly worker_threads_count.
         // Each thread will bind to ALL addresses in the config via SO_REUSEPORT.
-        for i in 0..conf.worker_threads_count {
+        for _i in 0..conf.worker_threads_count {
             let addresses = conf.addresses.clone();
             let matcher = Matcher::new(static_path.as_ref().unwrap(), dynamic_path.as_ref().unwrap());
 
             #[cfg(feature = "cpu_affinity")]
-                let core_id = core_ids.as_ref().and_then(|ids| ids.get(i % ids.len()).cloned());
+                let core_id = core_ids.as_ref().and_then(|ids| ids.get(_i % ids.len()).cloned());
 
             let thread = std::thread::spawn(move || {
                 // Set CPU Affinity

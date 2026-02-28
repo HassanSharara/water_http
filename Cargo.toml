@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.1-beta.49"
+version = "4.0.1-beta.50"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -71,3 +71,7 @@ auto_encode_response = []
 [dev-dependencies]
 askama = "0.14.0"
 
+
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tokio_unstable)'] }
