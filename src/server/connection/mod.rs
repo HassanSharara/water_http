@@ -20,7 +20,7 @@ use tokio_uring::BufResult;
 use tracing::{debug};
 
 use crate::http::request::{FormingRequestResult, IncomingRequest};
-use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, ServingRequestResults};
+use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults};
 
 
 
@@ -938,9 +938,9 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     }
     const MIN_RESERVE: usize = 1024 * 2  ;
 
-    let remaining = buffer.remaining_mut() ;
+    let remaining = buffer.mut_len() ;
     if remaining < MIN_RESERVE {
-        buffer.reserve( MIN_RESERVE * 8 );
+        buffer.reserve( (READING_BUF_LEN) - remaining );
     }
 }
 

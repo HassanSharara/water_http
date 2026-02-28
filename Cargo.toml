@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.1-beta.52"
+version = "4.0.1-beta.54"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -45,7 +45,7 @@ integer_to_bytes = {version =  "0.2.1" }
 core_affinity = {version = "0.8.3" , optional = true}
 #ntex-bytes = "1.0.0"
 #water_buffer = { git = "https://github.com/Hassansharara/water_buffer",features = ["bytes"], version = "1.2.2-Beta.4" }
-water_buffer = {version = "1.2.5" , features = ["bytes","unsafe_clone"]}
+water_buffer = {version = "1.2.6" , features = ["bytes","unsafe_clone"]}
 smallbox = "0.8.8"
 #bytes = "1.11.0"
 
