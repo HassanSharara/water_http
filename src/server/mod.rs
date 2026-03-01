@@ -111,6 +111,7 @@ pub  fn run_server<
     #[cfg(not(feature = "thread_shared_struct"))]
         let controller_ptr: &'static CapsuleWaterController<Holder, HS, QS> = unsafe { &*(controller as *const _) };
 
+    let listener_count = conf.listeners_count;
     // 3. MULTI-THREADED (TOKIO SEND) ARCHITECTURE
     #[cfg(feature = "use_tokio_send")]
     {
@@ -140,7 +141,6 @@ pub  fn run_server<
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut os_threads = vec![];
-
         #[cfg(feature = "cpu_affinity")]
             let core_ids = if conf.core_affinity { core_affinity::get_core_ids() } else { None };
 
@@ -191,12 +191,17 @@ pub  fn run_server<
                         rt.block_on(async move {
                             for addr in addresses {
                                 let matcher = matcher.clone();
-                                tokio::task::spawn_local(async move {
-                                    #[cfg(feature = "thread_shared_struct")]
-                                        let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
-                                    #[cfg(not(feature = "thread_shared_struct"))]
-                                        let _ = crate::server::run_server_with_address(&addr, controller_ptr, matcher).await;
-                                });
+                                for _ in 0..listener_count {
+                                    let addr = addr.clone();
+                                    let matcher = matcher.clone();
+                                    tokio::task::spawn_local(async move {
+                                        #[cfg(feature = "thread_shared_struct")]
+                                            let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                        #[cfg(not(feature = "thread_shared_struct"))]
+                                            let _ = crate::server::run_server_with_address(&addr, controller_ptr, matcher).await;
+                                    });
+                                }
+
                             }
                             std::future::pending::<()>().await;
                         });
@@ -213,12 +218,16 @@ pub  fn run_server<
                         rt.block_on(local.run_until(async move {
                             for addr in addresses {
                                 let matcher = matcher.clone();
-                                tokio::task::spawn_local(async move {
-                                    #[cfg(feature = "thread_shared_struct")]
-                                        let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
-                                    #[cfg(not(feature = "thread_shared_struct"))]
-                                        let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
-                                });
+                                for _ in 0..listener_count {
+                                    let matcher = matcher.clone();
+                                    let addr = addr.clone();
+                                    tokio::task::spawn_local(async move {
+                                        #[cfg(feature = "thread_shared_struct")]
+                                            let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                        #[cfg(not(feature = "thread_shared_struct"))]
+                                            let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                                    });
+                                }
                             }
                             std::future::pending::<()>().await;
                         }));

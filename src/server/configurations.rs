@@ -166,7 +166,8 @@ pub struct ServerConfigurations {
     /// the default value is ['443']
     pub tls_ports:Vec<u16>,
 
-
+    /// how many listeners
+    pub listeners_count:usize,
     ///backlog defines the maximum number of pending connections are queued by the operating system at any given time. Connection are removed from the queue with accepting connection from tcp listener When the queue is full, the operating-system will start rejecting connections.
     pub backlog:u32,
     /// defining the max size for handling single request
@@ -220,6 +221,7 @@ impl ServerConfigurations {
             tls_ports:vec![443],
             backlog:1028,
             max_request_size:10000,
+            listeners_count:4,
             worker_threads_count:worker_threads,
         }
     }
