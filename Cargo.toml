@@ -33,7 +33,7 @@ tracing = {version = "0.1.40",optional = true}
 tracing-subscriber = {version = "0.3.18",optional = true,features = ["env-filter"]}
 twoway = "0.2.2"
 zstd = "0.13.2"
-water_http_utils = { version = "0.2.2-beta.10", features = ["server"],git = "https://github.com/HassanSharara/water_http_utils"}
+water_http_utils = { version = "0.4.0", features = ["server"]}
 pin-project = "1.1.10"
 #path = "P:\\projects\\rust\\packages\\water_http_utils"
 #chrono = "0.4.42"
