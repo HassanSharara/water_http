@@ -3,6 +3,7 @@
 use std::net::SocketAddr;
 use std::ops::Deref;
 use bytes::{Buf, BufMut};
+use httparse::Status;
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "use_io_uring")]
@@ -298,6 +299,53 @@ impl  ConnectionStream {
                         return;
                     }
                     reading_buffer.advance_mut(read_size);
+                    #[cfg(code_test)]
+                    {
+                        loop {
+                            let buf_bytes = reading_buffer.chunk();
+
+                            let mut headers = [httparse::EMPTY_HEADER;16];
+                            let mut req = httparse::Request::new(&mut headers);
+                            #[cfg(feature = "count_connection_parsing_speed")]
+                                let t1 = std::time::SystemTime::now();
+
+                            match req.parse(buf_bytes) {
+                                Ok(r) => {
+                                    match r {
+                                        Status::Complete(s) => {
+                                            let method  = req.path.unwrap();
+                                            #[cfg(feature = "count_connection_parsing_speed")]
+                                            {
+                                                let t2 = std::time::SystemTime::now();
+                                                let dif = t2.duration_since(t1);
+                                                println!("request from {:?}  parsed in  {:?}",peer,dif);
+
+                                            }
+                                            match method {
+                                                "/hello"=>{
+                                                    response_buffer.extend_from_slice(b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!");
+                                                }
+                                                _=>{
+                                                    response_buffer.extend_from_slice(b"HTTP/1.1 400 Not Found\r\n\r\n0\r\n");
+
+                                                }
+                                            }
+                                            reading_buffer.advance(s);
+                                        }
+                                        Status::Partial => {
+                                            break
+                                        }
+                                    }
+                                }
+                                Err(_) => {return}
+                            }
+                        }
+                        if crate::server::connection::handle_responding(&mut response_buffer, stream).await.is_err() {
+                            return
+                        }
+                        continue 'main_loop;
+                    }
+
 
 
                     loop {

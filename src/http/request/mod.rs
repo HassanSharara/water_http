@@ -117,7 +117,8 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
 
     /// getting content length in headers
     pub fn content_length(&self)->Option<&usize> {
-            return  self.http_request.headers().content_length.as_ref();
+          self.http_request.headers().content_length()
+
         }
 
 
