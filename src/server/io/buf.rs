@@ -5,13 +5,14 @@ use water_buffer::WaterBuffer as BM;
 type WaterBuffer = BM<u8>;
 
 /// Configuration constants for the pool
-const MAX_CACHED_BUFFERS: usize = 512;    // Max buffers stored per thread
+const MAX_CACHED_BUFFERS: usize = 512 * 3;    // Max buffers stored per thread
 const DEFAULT_CAPACITY: usize = 16384 * 4;   // 16KB initial size
-const MAX_RECYCLABLE_SIZE: usize = 65536 * 2; // Don't pool buffers larger than 64KB to save RAM
+const MAX_RECYCLABLE_SIZE: usize = 65536 * 2;
 
 thread_local! {
     /// The actual storage for recycled buffers
     static BUFFER_CACHE: RefCell<Vec<WaterBuffer>> = RefCell::new(Vec::with_capacity(MAX_CACHED_BUFFERS));
+    static ALC:RefCell<usize> = RefCell::new(0);
 }
 
 /// A "Smart Pointer" that wraps WaterBuffer. 
@@ -26,9 +27,15 @@ impl PooledWaterBuffer {
         let buf = BUFFER_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             if let Some(mut existing_buf) = cache.pop() {
-                existing_buf.reset(); // Clear pointers/length but keep heap allocation
+                existing_buf.clear(); // Clear pointers/length but keep heap allocation
                 existing_buf
             } else {
+              // ALC.with(|b|{
+              //      let mut a =  b.borrow_mut();
+              //     *a = *a +1;
+              //     println!("allocating buffer count {:?}",*a);
+              // });
+
                 WaterBuffer::with_capacity(DEFAULT_CAPACITY)
             }
         });
@@ -43,7 +50,7 @@ impl PooledWaterBuffer {
     }
 
     /// Manually put a buffer back into the pool (e.g., after a uring operation completes).
-    pub fn recycle(buf: WaterBuffer) {
+    pub fn recycle(mut buf: WaterBuffer) {
         // Safety check: Don't cache massive buffers to prevent memory bloat
         if buf.cap() <= MAX_RECYCLABLE_SIZE {
             BUFFER_CACHE.with(|cache| {

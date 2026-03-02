@@ -302,7 +302,7 @@ impl  ConnectionStream {
                     }
                     // when connection is closed
                     if read_size == 0 {
-                        return;
+                        break 'main_loop;
                     }
                     reading_buffer.advance_mut(read_size);
                     #[cfg(code_test)]
@@ -423,7 +423,7 @@ impl  ConnectionStream {
 
                                 _= match  context.serve_ef(matcher.clone()).await {
 
-                                    ServingRequestResults::Stop => {return;}
+                                    ServingRequestResults::Stop => {                        break 'main_loop;}
 
                                     ServingRequestResults::Done => {
 
@@ -577,7 +577,7 @@ impl  ConnectionStream {
                                                         let l = r.min(rem);
                                                         rem -= l;
                                                         reading_buffer.advance(l);
-                                                    } else { return }
+                                                    } else {                         break 'main_loop; }
                                                 }
                                                 #[cfg(feature = "debugging")]
                                                 {
@@ -617,7 +617,7 @@ impl  ConnectionStream {
 
                     if !response_buffer.is_empty() {
                         if let Err(_) = handle_responding(&mut response_buffer,stream).await {
-                            return;
+                            break 'main_loop;
                         }
                     }
                     continue 'main_loop;
@@ -625,12 +625,16 @@ impl  ConnectionStream {
                 else {
                     if !response_buffer.is_empty() {
                         if let Err(_) = handle_responding(&mut response_buffer,stream).await {
-                            return;
+                            break 'main_loop;
                         }
                     }
-                    break;
+                    break 'main_loop;
                 }
             }
+
+            PooledWaterBuffer::recycle(each_request_body_reading_buffer.buffer);
+            PooledWaterBuffer::recycle(reading_buffer);
+            PooledWaterBuffer::recycle(response_buffer);
         }
 
 
@@ -938,7 +942,6 @@ impl  ConnectionStream {
               }
           }
       }
-
 
 
     }
