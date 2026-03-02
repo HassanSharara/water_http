@@ -15,6 +15,7 @@ pub mod errors;
 mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
+pub (crate) mod io;
 // pub(crate) mod io;
 
 #[cfg(feature = "auto_encode_response")]

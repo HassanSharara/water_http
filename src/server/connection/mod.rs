@@ -257,14 +257,20 @@ impl  ConnectionStream {
      #[cfg(not(feature = "thread_shared_struct"))]
      matcher:Matcher<Holder,HS,QS>
     ){
-
+        use crate::server::io::buf::PooledWaterBuffer;
+        let mut er_pool = PooledWaterBuffer::new();
+        let mut rb_pool = PooledWaterBuffer::new();
+        let mut wb_pool = PooledWaterBuffer::new();
+        let er  = er_pool.take_inner();
+        let rb  = rb_pool.take_inner();
+        let wb  = wb_pool.take_inner();
         #[cfg(not(feature = "use_io_uring"))]
         {
 
             let mut each_request_body_reading_buffer =
-                BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
-            let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
-            let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
+                BodyReadingBuffer::new(er);
+            let mut reading_buffer = rb;
+            let mut response_buffer = wb;
 
             // use super::io::WaterTcpStream;
             // WaterTcpStream::serve(
@@ -933,6 +939,8 @@ impl  ConnectionStream {
           }
       }
 
+
+
     }
 }
 
@@ -1012,6 +1020,16 @@ impl BodyReadingBuffer {
     //     self.buffer.is_empty()
     // }
 
+
+    #[inline(always)]
+    pub (crate) fn new(buffer:BytesMut)->Self{
+        Self {
+            buffer,
+            bytes_red_by_buffer:0,
+            extended_bytes:0,
+            advanced_bytes:0
+        }
+    }
     #[inline(always)]
     pub (crate) fn with_capacity(len:usize)->Self{
         Self {
