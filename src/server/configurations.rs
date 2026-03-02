@@ -221,7 +221,7 @@ impl ServerConfigurations {
             tls_ports:vec![443],
             backlog:1028,
             max_request_size:10000,
-            listeners_count:4,
+            listeners_count:1,
             worker_threads_count:worker_threads,
         }
     }

@@ -10,7 +10,9 @@ const DEFAULT_CAPACITY: usize = 16384 * 4;   // 16KB initial size
 const MAX_RECYCLABLE_SIZE: usize = 65536 * 2;
 
 thread_local! {
+    /// The actual storage for recycled buffers
     static BUFFER_CACHE: RefCell<Vec<WaterBuffer>> = RefCell::new(Vec::with_capacity(MAX_CACHED_BUFFERS));
+    static ALC:RefCell<usize> = RefCell::new(0);
 }
 
 /// A "Smart Pointer" that wraps WaterBuffer. 
@@ -28,11 +30,11 @@ impl PooledWaterBuffer {
                 existing_buf.clear(); // Clear pointers/length but keep heap allocation
                 existing_buf
             } else {
-              // ALC.with(|b|{
-              //      let mut a =  b.borrow_mut();
-              //     *a = *a +1;
-              //     println!("allocating buffer count {:?}",*a);
-              // });
+              ALC.with(|b|{
+                   let mut a =  b.borrow_mut();
+                  *a = *a +1;
+                  println!("allocating buffer count {:?}",*a);
+              });
 
                 WaterBuffer::with_capacity(DEFAULT_CAPACITY)
             }
