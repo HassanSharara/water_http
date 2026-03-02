@@ -242,6 +242,10 @@ impl ServerConfigurations {
     }
 
 
+    /// for changing how many listeners would be start
+    pub fn set_listeners_count(&mut self,c:usize){
+        self.listeners_count = c;
+    }
     ///
     /// # setting role to connect the server
     /// this role would be a type of `WaterIpAddressesRestriction`
