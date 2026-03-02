@@ -5,9 +5,9 @@ use water_buffer::WaterBuffer as BM;
 type WaterBuffer = BM<u8>;
 
 /// Configuration constants for the pool
-const MAX_CACHED_BUFFERS: usize = 64;    // Max buffers stored per thread
-const DEFAULT_CAPACITY: usize = 16384;   // 16KB initial size
-const MAX_RECYCLABLE_SIZE: usize = 65536; // Don't pool buffers larger than 64KB to save RAM
+const MAX_CACHED_BUFFERS: usize = 512;    // Max buffers stored per thread
+const DEFAULT_CAPACITY: usize = 16384 * 4;   // 16KB initial size
+const MAX_RECYCLABLE_SIZE: usize = 65536 * 2; // Don't pool buffers larger than 64KB to save RAM
 
 thread_local! {
     /// The actual storage for recycled buffers
