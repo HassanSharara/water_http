@@ -1300,9 +1300,9 @@ dependencies = [
 
 [[package]]
 name = "water_buffer"
-version = "1.2.7"
+version = "1.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55d37546df097b5d4588a13b382489d92382496acdb4b5cd38e60641f8f3ade0"
+checksum = "ee10b4131ed0fde0fbf2d7ad905028aac50804777822b94bc5063c0c1c073211"
 dependencies = [
  "bytes",
  "tokio-uring",
@@ -1310,7 +1310,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "4.0.1-beta.61"
+version = "4.0.1-beta.63"
 dependencies = [
  "askama",
  "brotli",
