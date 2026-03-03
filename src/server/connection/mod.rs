@@ -977,8 +977,15 @@ pub (crate) async fn handle_responding<'e,
 //
 #[inline(always)]
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
+    if buffer.is_empty() {
+        buffer.reset();
+        return
+    }
+
     let remaining = buffer.mut_len() ;
-    buffer.reserve( crate::server::get_server_config().default_read_buffer_size - remaining );
+    const LIMIT:usize = 1024 * 2 ;
+    if remaining > LIMIT { return }
+    buffer.reserve( LIMIT * 16 - remaining );
 }
 
 #[derive(Debug)]
