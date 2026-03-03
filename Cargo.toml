@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.1-beta.76"
+version = "4.0.1-beta.77"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"

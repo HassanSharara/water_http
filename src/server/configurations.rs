@@ -237,7 +237,6 @@ impl ServerConfigurations {
             max_buffer_size_for_cache:65536,
             default_read_buffer_size:READING_BUF_LEN,
             default_write_buffer_size:WRITING_BUF_LEN,
-            acceptor_threads_count:1,
             default_body_buffer_size:EACH_REQUEST_BODY_READING_BUFFER,
             max_cached_buffers_count:128
         }
