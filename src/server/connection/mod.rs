@@ -270,6 +270,8 @@ impl  ConnectionStream {
                 BodyReadingBuffer::new(er);
             let mut reading_buffer = rb;
             let mut response_buffer = wb;
+
+            let mut ms = 0_usize;
             'main_loop: loop {
                 reserve_buf(&mut reading_buffer);
 
@@ -285,6 +287,10 @@ impl  ConnectionStream {
 
                 }
                 {
+                    if read_size > ms {
+                        ms = read_size;
+                    }
+                    println!("max read size {read_size}");
                     #[cfg(feature = "debugging")]
                     {
                         debug!("new red data is {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
