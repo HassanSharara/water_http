@@ -600,7 +600,7 @@ impl  ConnectionStream {
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                                 }
-                                break 'main_loop;
+                                break 'main_loop
                             }
                         }
                     }
@@ -939,8 +939,6 @@ impl  ConnectionStream {
 
 
 
-
-
 #[cfg(feature = "use_io_uring")]
 #[inline(always)]
 pub (crate) async fn handle_responding<'e>
@@ -980,16 +978,8 @@ pub (crate) async fn handle_responding<'e,
 //
 #[inline(always)]
 pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
-    if buffer.is_empty() {
-        buffer.clear();
-        return
-    }
-    const MIN_RESERVE: usize = 1024 * 2  ;
-
     let remaining = buffer.mut_len() ;
-    if remaining < MIN_RESERVE {
-        buffer.reserve( READING_BUF_LEN );
-    }
+    buffer.reserve( crate::server::get_server_config().default_read_buffer_size - remaining );
 }
 
 #[derive(Debug)]

@@ -139,94 +139,110 @@ pub  fn run_server<
     }
 
     // 4. SILOED (LOCALSET / IO_URING) ARCHITECTURE
-    // 4. SILOED (CHANNEL-BASED LOCALSET) ARCHITECTURE
     #[cfg(not(feature = "use_tokio_send"))]
     {
-        use tokio::sync::mpsc;
         let mut os_threads = vec![];
-        let mut worker_senders = vec![];
-
         #[cfg(feature = "cpu_affinity")]
             let core_ids = if conf.core_affinity { core_affinity::get_core_ids() } else { None };
 
-        // --- STEP A: SPAWN WORKER THREADS ---
+        // We spawn exactly worker_threads_count.
+        // Each thread will bind to ALL addresses in the config via SO_REUSEPORT.
         for _i in 0..conf.worker_threads_count {
-            // Create a channel for this specific worker
-            let (tx, mut rx) = mpsc::channel::<(tokio::net::TcpStream, std::net::SocketAddr)>(conf.backlog as usize);
-            worker_senders.push(tx);
-
+            let addresses = conf.addresses.clone();
             let matcher = Matcher::new(static_path.as_ref().unwrap(), dynamic_path.as_ref().unwrap());
+
             #[cfg(feature = "cpu_affinity")]
                 let core_id = core_ids.as_ref().and_then(|ids| ids.get(_i % ids.len()).cloned());
 
             let thread = std::thread::spawn(move || {
+                // Set CPU Affinity
                 #[cfg(feature = "cpu_affinity")]
-                if let Some(id) = core_id { core_affinity::set_for_current(id); }
+                if let Some(id) = core_id {
+                    core_affinity::set_for_current(id);
+                }
 
-                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-                let local = LocalSet::new();
+                // A: IO_URING PATH
+                #[cfg(feature = "use_io_uring")]
+                {
+                    tokio_uring::start(async move {
+                        for addr in addresses {
+                            let matcher = matcher.clone();
+                            tokio_uring::spawn(async move {
+                                #[cfg(feature = "thread_shared_struct")]
+                                    let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                #[cfg(not(feature = "thread_shared_struct"))]
+                                    let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                            });
+                        }
+                        std::future::pending::<()>().await;
+                    });
+                }
 
-                rt.block_on(local.run_until(async move {
-                    // Initialize thread-shared data once per worker thread
-                    #[cfg(feature = "thread_shared_struct")]
-                        let shared_data = shared_factory().await;
+                // B: TOKIO LOCAL SET PATH
+                #[cfg(not(feature = "use_io_uring"))]
+                {
 
-                    // Worker Loop: Wait for connections from the Acceptor
-                    while let Some((stream, socket_addr)) = rx.recv().await {
-                        let matcher = matcher.clone();
-                        #[cfg(feature = "thread_shared_struct")]
-                            let shared = shared_data.clone();
 
-                        tokio::task::spawn_local(async move {
-                            let connection = ConnectionStream::new(WaterStream::TOStream(stream), socket_addr);
-                            #[cfg(feature = "thread_shared_struct")]
-                            serve_connection(connection, controller_ptr, shared, matcher).await;
-                            #[cfg(not(feature = "thread_shared_struct"))]
-                            serve_connection(connection, controller_ptr, matcher).await;
+                    #[cfg(tokio_unstable)]
+                    {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build_local(Default::default())
+                            .unwrap();
+                        rt.block_on(async move {
+                            for addr in addresses {
+                                let matcher = matcher.clone();
+                                for _ in 0..listener_count {
+                                    let addr = addr.clone();
+                                    let matcher = matcher.clone();
+                                    tokio::task::spawn_local(async move {
+                                        #[cfg(feature = "thread_shared_struct")]
+                                            let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                        #[cfg(not(feature = "thread_shared_struct"))]
+                                            let _ = crate::server::run_server_with_address(&addr, controller_ptr, matcher).await;
+                                    });
+                                }
+
+                            }
+                            std::future::pending::<()>().await;
                         });
                     }
-                }));
+
+                    #[cfg(not(tokio_unstable))]
+                    {
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .unwrap();
+                        let local = LocalSet::new();
+
+                        rt.block_on(local.run_until(async move {
+                            for addr in addresses {
+                                let matcher = matcher.clone();
+                                for _ in 0..listener_count {
+                                    let matcher = matcher.clone();
+                                    let addr = addr.clone();
+                                    tokio::task::spawn_local(async move {
+                                        #[cfg(feature = "thread_shared_struct")]
+                                            let _ = run_server_with_address(&addr, controller_ptr, shared_factory, matcher).await;
+                                        #[cfg(not(feature = "thread_shared_struct"))]
+                                            let _ = run_server_with_address(&addr, controller_ptr, matcher).await;
+                                    });
+                                }
+                            }
+                            std::future::pending::<()>().await;
+                        }));
+                    }
+
+
+                }
             });
             os_threads.push(thread);
         }
 
-        // --- STEP B: SPAWN THE ACCEPTOR THREAD ---
-        let addresses = conf.addresses.clone();
-        let acceptor_thread = std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-
-            rt.block_on(async move {
-                let mut listeners = vec![];
-                for (addr, port) in addresses {
-                    let addr_str = format!("{}:{}", addr, port);
-                    let listener = tokio::net::TcpListener::bind(addr_str).await.expect("Acceptor failed to bind");
-                    listeners.push(listener);
-                }
-
-                let mut round_robin_counter = 0usize;
-
-                loop {
-                    // For simplicity, we select over all listeners.
-                    // In high-load, we could spawn one local task per listener here.
-                    for listener in &listeners {
-                        if let Ok((stream, addr)) = listener.accept().await {
-                            let worker_idx = round_robin_counter % worker_senders.len();
-                            // Hand off the connection to a worker
-                            if let Err(_) = worker_senders[worker_idx].try_send((stream, addr)) {
-                                // Channel full: Drop connection or log backpressure
-                            }
-                            round_robin_counter += 1;
-                        }
-                    }
-                }
-            });
-        });
-
-        // Keep the main thread alive by joining the workers
         for thread in os_threads {
             let _ = thread.join();
         }
-        let _ = acceptor_thread.join();
     }
 }
 
