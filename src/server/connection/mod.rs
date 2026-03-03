@@ -270,8 +270,6 @@ impl  ConnectionStream {
                 BodyReadingBuffer::new(er);
             let mut reading_buffer = rb;
             let mut response_buffer = wb;
-
-            let mut ms = 0_usize;
             'main_loop: loop {
                 reserve_buf(&mut reading_buffer);
 
@@ -287,10 +285,6 @@ impl  ConnectionStream {
 
                 }
                 {
-                    if read_size > ms {
-                        ms = read_size;
-                    }
-                    println!("max read size {read_size}");
                     #[cfg(feature = "debugging")]
                     {
                         debug!("new red data is {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
@@ -989,7 +983,7 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     }
 
     let remaining = buffer.mut_len() ;
-    const LIMIT:usize = 1024 * 2 ;
+    const LIMIT:usize = 1024 * 1 ;
     if remaining > LIMIT { return }
     buffer.reserve( LIMIT * 16 - remaining );
 }
