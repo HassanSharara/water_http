@@ -2,8 +2,7 @@
 
 use std::net::SocketAddr;
 use std::ops::Deref;
-use bytes::{Buf, BufMut};
-use httparse::Status;
+use bytes::{Buf};
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 #[cfg(feature = "use_io_uring")]
@@ -21,7 +20,7 @@ use tokio_uring::BufResult;
 use tracing::{debug};
 
 use crate::http::request::{FormingRequestResult, IncomingRequest};
-use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, READING_BUF_LEN, ServingRequestResults};
+use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, ServingRequestResults};
 
 
 

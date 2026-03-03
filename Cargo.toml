@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.1-beta.73"
+version = "4.0.1-beta.75"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -65,6 +65,7 @@ thread_shared_struct = []
 use_io_uring = ["tokio-uring","water_buffer/uring"]
 cpu_affinity = ["dep:core_affinity"]
 auto_encode_response = []
+split_accepting_connections_threads = []
 
 [dev-dependencies]
 askama = "0.14.0"
