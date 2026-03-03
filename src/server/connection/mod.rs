@@ -288,7 +288,7 @@ impl  ConnectionStream {
                 {
                     #[cfg(feature = "debugging")]
                     {
-                        tracing::debug!("new red data is {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
+                        debug!("new red data is {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
                     }
                     // when connection is closed
                     if read_size == 0 {
@@ -600,7 +600,7 @@ impl  ConnectionStream {
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                                 }
-                                return
+                                break 'main_loop;
                             }
                         }
                     }

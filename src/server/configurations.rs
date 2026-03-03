@@ -237,8 +237,8 @@ impl ServerConfigurations {
             max_buffer_size_for_cache:65536,
             default_read_buffer_size:16384,
             default_write_buffer_size:25000,
-            default_body_buffer_size:16384,
-            max_cached_buffers_count:128
+            default_body_buffer_size:25000,
+            max_cached_buffers_count:16 * 3
         }
     }
 
