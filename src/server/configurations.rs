@@ -168,6 +168,17 @@ pub struct ServerConfigurations {
 
     /// how many listeners
     pub listeners_count:usize,
+    pub max_buffer_size_for_cache:usize,
+
+    /// default buffer size for initiating buffer for reading
+    pub default_read_buffer_size:usize,
+    /// default buffer size for initiating buffer for writing
+    pub default_write_buffer_size:usize,
+    /// default buffer size for initiating buffer for requests body
+    pub default_body_buffer_size:usize,
+    /// how many cached buffers for each type of buffer
+    pub max_cached_buffers_count:usize,
+    /// default buffer size for initiating buffer for writing and writing
     ///backlog defines the maximum number of pending connections are queued by the operating system at any given time. Connection are removed from the queue with accepting connection from tcp listener When the queue is full, the operating-system will start rejecting connections.
     pub backlog:u32,
     /// defining the max size for handling single request
@@ -223,6 +234,11 @@ impl ServerConfigurations {
             max_request_size:10000,
             listeners_count:1,
             worker_threads_count:worker_threads,
+            max_buffer_size_for_cache:65536,
+            default_read_buffer_size:16384,
+            default_write_buffer_size:25000,
+            default_body_buffer_size:16384,
+            max_cached_buffers_count:128
         }
     }
 

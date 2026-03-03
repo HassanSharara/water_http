@@ -257,10 +257,10 @@ impl  ConnectionStream {
      #[cfg(not(feature = "thread_shared_struct"))]
      matcher:Matcher<Holder,HS,QS>
     ){
-        use crate::server::io::buf::PooledWaterBuffer;
-        let mut er_pool = PooledWaterBuffer::new();
-        let mut rb_pool = PooledWaterBuffer::new();
-        let mut wb_pool = PooledWaterBuffer::new();
+        use crate::server::io::buf::{PooledWaterBuffer,PooledBufferType as BufType};
+        let mut er_pool = PooledWaterBuffer::new(BufType::Body);
+        let mut rb_pool = PooledWaterBuffer::new(BufType::Read);
+        let mut wb_pool = PooledWaterBuffer::new(BufType::Write);
         let er  = er_pool.take_inner();
         let rb  = rb_pool.take_inner();
         let wb  = wb_pool.take_inner();
@@ -271,16 +271,6 @@ impl  ConnectionStream {
                 BodyReadingBuffer::new(er);
             let mut reading_buffer = rb;
             let mut response_buffer = wb;
-
-            // use super::io::WaterTcpStream;
-            // WaterTcpStream::serve(
-            //     stream,
-            //     peer,
-            //     _controller,
-            //     matcher.clone(),
-            // ).await;
-            // return
-
             'main_loop: loop {
                 reserve_buf(&mut reading_buffer);
 
@@ -631,10 +621,9 @@ impl  ConnectionStream {
                     break 'main_loop;
                 }
             }
-
-            PooledWaterBuffer::recycle(each_request_body_reading_buffer.buffer);
-            PooledWaterBuffer::recycle(reading_buffer);
-            PooledWaterBuffer::recycle(response_buffer);
+            PooledWaterBuffer::recycle(each_request_body_reading_buffer.buffer,BufType::Body);
+            PooledWaterBuffer::recycle(reading_buffer,BufType::Read);
+            PooledWaterBuffer::recycle(response_buffer,BufType::Write);
         }
 
 
