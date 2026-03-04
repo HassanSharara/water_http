@@ -16,7 +16,7 @@ mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
 pub (crate) mod io;
-pub mod channels;
+// pub mod channels;
 // pub(crate) mod io;
 
 #[cfg(feature = "auto_encode_response")]
@@ -93,28 +93,28 @@ pub  fn run_server<
     dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,HS,QS>>>,
 )
 {
-    {
-        #[cfg(feature = "thread_shared_struct")]
-        {
-            channels::serve_connections_by_channels(
-                config,
-                controller,
-                shared_factory,
-                static_path,
-                dynamic_path,
-            );
-        }
-        #[cfg(not(feature = "thread_shared_struct"))]
-        {
-            channels::serve_connections_by_channels(
-                config,
-                controller,
-                static_path,
-                dynamic_path,
-            );
-        }
-        return
-    }
+    // {
+    //     #[cfg(feature = "thread_shared_struct")]
+    //     {
+    //         channels::serve_connections_by_channels(
+    //             config,
+    //             controller,
+    //             shared_factory,
+    //             static_path,
+    //             dynamic_path,
+    //         );
+    //     }
+    //     #[cfg(not(feature = "thread_shared_struct"))]
+    //     {
+    //         channels::serve_connections_by_channels(
+    //             config,
+    //             controller,
+    //             static_path,
+    //             dynamic_path,
+    //         );
+    //     }
+    //     return
+    // }
     // 1. GLOBAL INITIALIZATION
     unsafe { STATIC_SERVER_CONFIGURATION = Some(config); }
     let conf = get_server_config();
