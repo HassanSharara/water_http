@@ -630,10 +630,10 @@ impl  ConnectionStream {
        #[cfg(feature = "use_io_uring")]
        {
 
-          let mut each_request_body_reading_buffer =
-              BodyReadingBuffer::with_capacity(crate::server::EACH_REQUEST_BODY_READING_BUFFER);
-          let mut reading_buffer = BytesMut::with_capacity(crate::server::READING_BUF_LEN);
-          let mut response_buffer = BytesMut::with_capacity(crate::server::WRITING_BUF_LEN);
+           let mut each_request_body_reading_buffer =
+               BodyReadingBuffer::new(er);
+           let mut reading_buffer = rb;
+           let mut response_buffer = wb;
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
@@ -653,7 +653,7 @@ impl  ConnectionStream {
               {
                   // when connection is closed
                   if read_size == 0 {
-                      return;
+                      break 'main_loop;
                   }
 
 
@@ -877,7 +877,7 @@ impl  ConnectionStream {
                                                       let l = r.min(rem);
                                                       rem -= l;
                                                       reading_buffer.advance(l);
-                                                  } else { return }
+                                                  } else {                       break 'main_loop; }
                                               }
                                               #[cfg(feature = "debugging")]
                                               {
@@ -908,14 +908,15 @@ impl  ConnectionStream {
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                               }
-                              return;
+                              break 'main_loop;
+                              ;
                           }
                       }
                   }
 
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          return;
+                          break 'main_loop;
                       }
                   }
                   continue 'main_loop;
@@ -923,12 +924,17 @@ impl  ConnectionStream {
               else {
                   if !response_buffer.is_empty() {
                       if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          return;
+                          break 'main_loop;
+
                       }
                   }
                   break;
               }
           }
+
+           PooledWaterBuffer::recycle(each_request_body_reading_buffer.buffer,BufType::Body);
+           PooledWaterBuffer::recycle(reading_buffer,BufType::Read);
+           PooledWaterBuffer::recycle(response_buffer,BufType::Write);
       }
 
 
