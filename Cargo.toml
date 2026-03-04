@@ -46,7 +46,6 @@ water_buffer = {version = "1.2.8" , features = ["bytes","unsafe_clone"]}
 water_http_utils = { version = "0.4.1-beta.10", features = ["server"],git = "https://github.com/HassanSharara/water_http_utils"}
 smallbox = "0.8.8"
 libc = "0.2.172"
-flume = "0.12.0"
 #bytes = "1.11.0"
 
 
