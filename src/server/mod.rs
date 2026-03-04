@@ -16,6 +16,7 @@ mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
 pub (crate) mod io;
+pub mod channels;
 // pub(crate) mod io;
 
 #[cfg(feature = "auto_encode_response")]
@@ -92,6 +93,28 @@ pub  fn run_server<
     dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,HS,QS>>>,
 )
 {
+    {
+        #[cfg(feature = "thread_shared_struct")]
+        {
+            channels::serve_connections_by_channels(
+                config,
+                controller,
+                shared_factory,
+                static_path,
+                dynamic_path,
+            );
+        }
+        #[cfg(not(feature = "thread_shared_struct"))]
+        {
+            channels::serve_connections_by_channels(
+                config,
+                controller,
+                static_path,
+                dynamic_path,
+            );
+        }
+        return
+    }
     // 1. GLOBAL INITIALIZATION
     unsafe { STATIC_SERVER_CONFIGURATION = Some(config); }
     let conf = get_server_config();
@@ -480,7 +503,7 @@ async fn run_server_with_address<
         let listener = create_tokio_uring_listener(address, port, server_config.backlog);
 
     #[cfg(not(feature = "use_io_uring"))]
-        let listener = {
+    let listener = {
         let addr_str = format!("{}:{}", address, port);
         let socket_addr = addr_str.to_socket_addrs().unwrap().next().expect("Invalid address");
         let socket = match &socket_addr {
