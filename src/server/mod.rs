@@ -551,9 +551,9 @@ async fn run_server_with_address<
                 // Clone shared handles for the spawned task
                 let matcher = matcher.clone();
                 #[cfg(feature = "thread_shared_struct")]
-                    let shared_struct = shared_struct.clone();
+                 let shared_struct = shared_struct.clone();
                 #[cfg(feature = "support_tls")]
-                    let tls_acceptor = tls_acceptor.clone();
+                 let tls_acceptor = tls_acceptor.clone();
                 #[cfg(feature = "debugging")]
                     let connections_count = connections_count.clone();
 
@@ -571,7 +571,7 @@ async fn run_server_with_address<
                         }
                         #[cfg(feature = "debugging")]
                         connections_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                        return;
+                        return
                     }
 
                     // Plain HTTP path

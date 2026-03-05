@@ -412,7 +412,7 @@ impl  ConnectionStream {
 
                                 _= match  context.serve_ef(matcher.clone()).await {
 
-                                    ServingRequestResults::Stop => {                        break 'main_loop;}
+                                    ServingRequestResults::Stop => { break 'main_loop; }
 
                                     ServingRequestResults::Done => {
 
@@ -430,7 +430,7 @@ impl  ConnectionStream {
                                         match content_length {
                                             None => {
                                                 let br = total_request_size >= buf_bytes.len();
-                                                if br { reading_buffer.clear(); break ;}
+                                                if br { reading_buffer.clear(); continue 'main_loop ;}
                                                 else {
                                                     #[cfg(feature = "accept_transfer_chunked")]
                                                     if let Some(h) = context.get_from_headers("Transfer-Encoding"){
@@ -551,8 +551,8 @@ impl  ConnectionStream {
 
                                                     let r = match stream {
                                                         #[cfg(feature = "support_tls")]
-                                                        HttpStream::AsyncSecure(_) => {
-                                                            todo!()
+                                                        HttpStream::AsyncSecure(s) => {
+                                                            s.read(reading_buffer.chunk_mut()).await
                                                         }
                                                         HttpStream::Async(s) => {
                                                             let r = s.read(reading_buffer.chunk_mut()).await;
@@ -604,8 +604,8 @@ impl  ConnectionStream {
                         }
                     }
 
-                    if !response_buffer.is_empty() {
-                        if let Err(_) = handle_responding(&mut response_buffer,stream).await {
+                    if   reading_buffer.is_empty() && !response_buffer.is_empty() {
+                        if  handle_responding(&mut response_buffer,stream).await.is_err() {
                             break 'main_loop;
                         }
                     }
@@ -641,8 +641,9 @@ impl  ConnectionStream {
               if let Ok(read_size)
                   = match stream {
                   #[cfg(feature = "support_tls")]
-                  HttpStream::AsyncSecure(_) => {
-                      todo!()
+                  HttpStream::AsyncSecure(s) => {
+                      let (r,b) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
+                      r
                   }
                   HttpStream::Async(s) => {
                       let (r,b) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
@@ -655,8 +656,6 @@ impl  ConnectionStream {
                   if read_size == 0 {
                       break 'main_loop;
                   }
-
-
                   loop {
                       let buf_bytes = reading_buffer.chunk();
                       // each_request_body_reading_buffer.clear();
@@ -739,7 +738,7 @@ impl  ConnectionStream {
                                           None => {
                                               reading_buffer.advance(total_request_size);
                                               if reading_buffer.is_empty() {
-                                                  break
+                                                  continue 'main_loop
                                               }
                                               #[cfg(feature = "accept_transfer_chunked")]
                                               {
@@ -865,8 +864,9 @@ impl  ConnectionStream {
 
                                                   let r = match stream {
                                                       #[cfg(feature = "support_tls")]
-                                                      HttpStream::AsyncSecure(_) => {
-                                                          todo!()
+                                                      HttpStream::AsyncSecure(s) => {
+                                                          let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await ;
+                                                          r
                                                       }
                                                       HttpStream::Async(s) => {
                                                           let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await ;
@@ -877,7 +877,7 @@ impl  ConnectionStream {
                                                       let l = r.min(rem);
                                                       rem -= l;
                                                       reading_buffer.advance(l);
-                                                  } else {                       break 'main_loop; }
+                                                  } else {  break 'main_loop; }
                                               }
                                               #[cfg(feature = "debugging")]
                                               {
@@ -913,9 +913,8 @@ impl  ConnectionStream {
                           }
                       }
                   }
-
                   if !response_buffer.is_empty() {
-                      if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
+                      if  handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await.is_err() {
                           break 'main_loop;
                       }
                   }
@@ -923,12 +922,9 @@ impl  ConnectionStream {
               }
               else {
                   if !response_buffer.is_empty() {
-                      if let Err(_) = handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await {
-                          break 'main_loop;
-
-                      }
+                      _= handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await;
                   }
-                  break;
+                  break 'main_loop;
               }
           }
 
