@@ -280,7 +280,7 @@ impl  ConnectionStream {
                             }
                         }
                         match stream.read(&mut reading_buffer).await {
-                            Ok(n) if n > 0 => n,
+                            Ok(n)  => n,
                             _ => break 'main_loop, // Connection closed or error
                         }
                     }
@@ -295,6 +295,9 @@ impl  ConnectionStream {
                     }
                     // when connection is closed
                     if read_size == 0 {
+                        if !response_buffer.is_empty() {
+                            _=handle_responding(&mut response_buffer,stream).await
+                        }
                         break 'main_loop;
                     }
                     reading_buffer.advance_mut(read_size);
