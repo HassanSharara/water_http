@@ -70,8 +70,6 @@ WaterController! {
           // in this case path is "/" while method is GET
         "/" hello_world(context){
             let mut sender = context.sender();
-            let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-            sender.set_header_ef("Date",date);
             _= sender.send_str("Hello World").await;
         }
 

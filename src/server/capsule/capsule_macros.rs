@@ -1575,13 +1575,13 @@ macro_rules! CheckupAutoGenerator {
         #[cfg(not(feature = "thread_shared_struct"))]
          {
              $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,header_length,query_length>| Box::pin( async move  $block));
+            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
          }
 
            #[cfg(feature = "thread_shared_struct")]
          {
              $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>| Box::pin( async move  $block));
+            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
          }
     };
 

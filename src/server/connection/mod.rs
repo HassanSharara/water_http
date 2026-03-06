@@ -1,5 +1,3 @@
-
-
 use std::net::SocketAddr;
 use std::ops::Deref;
 use bytes::{Buf};
@@ -257,6 +255,7 @@ impl  ConnectionStream {
      matcher:Matcher<Holder,HS,QS>
     ){
         use crate::server::io::buf::{PooledWaterBuffer,PooledBufferType as BufType};
+        use futures::FutureExt;
         let mut er_pool = PooledWaterBuffer::new(BufType::Body);
         let mut rb_pool = PooledWaterBuffer::new(BufType::Read);
         let mut wb_pool = PooledWaterBuffer::new(BufType::Write);
@@ -273,17 +272,22 @@ impl  ConnectionStream {
             'main_loop: loop {
                 reserve_buf(&mut reading_buffer);
 
-                if let Ok(read_size)
-                    = match stream {
-                    #[cfg(feature = "support_tls")]
-                    HttpStream::AsyncSecure(s) => {
-                        s.read(reading_buffer.chunk_mut()).await
+                let read_size: usize = match stream.poll_read(&mut reading_buffer).now_or_never() {
+                    None => {
+                        if !response_buffer.is_empty() {
+                            if handle_responding(&mut response_buffer, stream).await.is_err() {
+                                break 'main_loop;
+                            }
+                        }
+                        match stream.read(&mut reading_buffer).await {
+                            Ok(n) if n > 0 => n,
+                            _ => break 'main_loop, // Connection closed or error
+                        }
                     }
-                    HttpStream::Async(s) => {
-                        s.read(reading_buffer.chunk_mut()).await
-                    }
-
-                }
+                    // Case B: Data was already sitting in the OS buffer
+                    Some(Ok(n)) => n,
+                    Some(Err(_)) => break 'main_loop,
+                };
                 {
                     #[cfg(feature = "debugging")]
                     {
@@ -294,52 +298,7 @@ impl  ConnectionStream {
                         break 'main_loop;
                     }
                     reading_buffer.advance_mut(read_size);
-                    #[cfg(code_test)]
-                    {
-                        loop {
-                            let buf_bytes = reading_buffer.chunk();
 
-                            let mut headers = [httparse::EMPTY_HEADER;16];
-                            let mut req = httparse::Request::new(&mut headers);
-                            #[cfg(feature = "count_connection_parsing_speed")]
-                                let t1 = std::time::SystemTime::now();
-
-                            match req.parse(buf_bytes) {
-                                Ok(r) => {
-                                    match r {
-                                        Status::Complete(s) => {
-                                            let method  = req.path.unwrap();
-                                            #[cfg(feature = "count_connection_parsing_speed")]
-                                            {
-                                                let t2 = std::time::SystemTime::now();
-                                                let dif = t2.duration_since(t1);
-                                                println!("request from {:?}  parsed in  {:?}",peer,dif);
-
-                                            }
-                                            match method {
-                                                "/hello"=>{
-                                                    response_buffer.extend_from_slice(b"HTTP/1.1 200 OK\r\nContent-Length: 13\r\n\r\nHello, World!");
-                                                }
-                                                _=>{
-                                                    response_buffer.extend_from_slice(b"HTTP/1.1 400 Not Found\r\n\r\n0\r\n");
-
-                                                }
-                                            }
-                                            reading_buffer.advance(s);
-                                        }
-                                        Status::Partial => {
-                                            break
-                                        }
-                                    }
-                                }
-                                Err(_) => {return}
-                            }
-                        }
-                        if crate::server::connection::handle_responding(&mut response_buffer, stream).await.is_err() {
-                            return
-                        }
-                        continue 'main_loop;
-                    }
 
 
 
@@ -381,23 +340,23 @@ impl  ConnectionStream {
                                 #[cfg(feature = "thread_shared_struct")]
                                     let mut context = HttpContext::<Holder,SHARED, HS, QS>::new(
                                     Protocol::Http1(Http1Context::new(stream,
-                                                                                                 &mut response_buffer,
-                                                                                                 &mut each_request_body_reading_buffer,
-                                                                                                 left_bytes,
-                                                                                                 request)),
+                                                                      &mut response_buffer,
+                                                                      &mut each_request_body_reading_buffer,
+                                                                      left_bytes,
+                                                                      request)),
                                     peer
                                 );
 
                                 #[cfg(not(feature = "thread_shared_struct"))]
                                     let mut context = HttpContext::<Holder, HS, QS>::new(
-                                     Protocol::Http1(Http1Context::new(
+                                    Protocol::Http1(Http1Context::new(
                                         stream,
                                         &mut response_buffer,
                                         &mut each_request_body_reading_buffer,
                                         left_bytes,
                                         request
-                                     )
-                                     ),
+                                    )
+                                    ),
                                     peer
                                 );
 
@@ -430,7 +389,7 @@ impl  ConnectionStream {
                                         match content_length {
                                             None => {
                                                 let br = total_request_size >= buf_bytes.len();
-                                                if br { reading_buffer.clear(); continue 'main_loop ;}
+                                                if br { reading_buffer.clear(); break ;}
                                                 else {
                                                     #[cfg(feature = "accept_transfer_chunked")]
                                                     if let Some(h) = context.get_from_headers("Transfer-Encoding"){
@@ -604,20 +563,12 @@ impl  ConnectionStream {
                         }
                     }
 
-                    if   reading_buffer.is_empty() && !response_buffer.is_empty() {
+                    if   !response_buffer.is_empty() {
                         if  handle_responding(&mut response_buffer,stream).await.is_err() {
                             break 'main_loop;
                         }
                     }
                     continue 'main_loop;
-                }
-                else {
-                    if !response_buffer.is_empty() {
-                        if let Err(_) = handle_responding(&mut response_buffer,stream).await {
-                            break 'main_loop;
-                        }
-                    }
-                    break 'main_loop;
                 }
             }
             PooledWaterBuffer::recycle(each_request_body_reading_buffer.buffer,BufType::Body);
@@ -1020,15 +971,15 @@ impl BodyReadingBuffer {
             advanced_bytes:0
         }
     }
-    #[inline(always)]
-    pub (crate) fn with_capacity(len:usize)->Self{
-        Self {
-            buffer:BytesMut::with_capacity(len),
-            bytes_red_by_buffer:0,
-            extended_bytes:0,
-            advanced_bytes:0,
-        }
-    }
+    // #[inline(always)]
+    // pub (crate) fn with_capacity(len:usize)->Self{
+    //     Self {
+    //         buffer:BytesMut::with_capacity(len),
+    //         bytes_red_by_buffer:0,
+    //         extended_bytes:0,
+    //         advanced_bytes:0,
+    //     }
+    // }
 
 
     #[inline(always)]

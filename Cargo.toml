@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.1-beta.86"
+version = "4.0.1-beta.87"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -11,6 +11,7 @@ categories = ["network-programming", "web-programming::http-server" ]
 keywords = ["http", "water_http", "water-http","water-server"]
 readme = "README.md"
 
+default-run = "water_http"
 
 
 [dependencies]
@@ -46,6 +47,7 @@ water_buffer = {version = "1.2.8" , features = ["bytes","unsafe_clone"]}
 water_http_utils = { version = "0.4.1-beta.10", features = ["server"],git = "https://github.com/HassanSharara/water_http_utils"}
 smallbox = "0.8.8"
 libc = "0.2.172"
+futures = "0.3.32"
 #bytes = "1.11.0"
 
 
@@ -53,6 +55,12 @@ libc = "0.2.172"
 name = "io_uring"
 path = "src/io_uring_run.rs"
 required-features = ["use_io_uring"]
+
+[[bin]]
+name = "water_http"
+path = "src/main.rs"
+
+
 
 [features]
 debugging = ["tracing","tracing-subscriber"]

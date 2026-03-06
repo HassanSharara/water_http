@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
+use std::future::PollFn;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -11,7 +12,7 @@ use bytes::Bytes;
 
 #[cfg(not(feature = "use_only_http1"))]
 use h2::RecvStream;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
 #[cfg(not(feature = "use_only_http1"))]
 use h2::server::SendResponse;
 #[cfg(not(feature = "use_only_http1"))]
@@ -1269,6 +1270,57 @@ pub (crate)enum HttpStream {
 }
 
 impl HttpStream {
+
+    #[cfg(not(feature = "use_io_uring"))]
+    pub fn poll_read<'a>(
+        &'a mut self,
+        reading_buffer: &'a mut BytesMut
+    ) -> PollFn<impl FnMut(&mut Context<'_>) -> Poll<Result<usize, ()>> + 'a> {
+        std::future::poll_fn(move |cx| {
+
+            match self {
+                #[cfg(feature = "support_tls")]
+                HttpStream::AsyncSecure(s) => {
+                    let stream = Pin::new(s);
+                    let mut buf = ReadBuf::new(reading_buffer.chunk_mut());
+                    match stream.poll_read(cx, &mut buf) {
+                        Poll::Ready(Ok(_)) => {
+                            let n = buf.filled().len();
+                            Poll::Ready(Ok(n))
+                        }
+                        Poll::Ready(Err(_)) => Poll::Ready(Err(())),
+                        Poll::Pending => Poll::Pending,
+                    }
+                }
+                HttpStream::Async(s) => {
+                    let stream = Pin::new(s);
+                    let mut buf = ReadBuf::new(reading_buffer.chunk_mut());
+                    match stream.poll_read(cx, &mut buf) {
+                        Poll::Ready(Ok(_)) => {
+                            let n = buf.filled().len();
+                            Poll::Ready(Ok(n))
+                        }
+                        Poll::Ready(Err(_)) => Poll::Ready(Err(())),
+                        Poll::Pending => Poll::Pending,
+                    }
+                }
+            }
+        })
+    }
+
+    #[cfg(not(feature = "use_io_uring"))]
+    #[inline(always)]
+    pub async fn read(&mut self,buf:&mut BytesMut)->Result<usize,std::io::Error>{
+        match self {
+            #[cfg(feature = "support_tls")]
+            HttpStream::AsyncSecure(s) => {
+                s.read(buf.chunk_mut()).await
+            }
+            HttpStream::Async(s) => {
+                s.read(buf.chunk_mut()).await
+            }
+        }
+    }
     //
     // pub (crate) async fn  readable(&self)->io::Result<()>{
     //     match &self {
