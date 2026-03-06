@@ -600,7 +600,7 @@ impl  ConnectionStream {
                       r
                   }
                   HttpStream::Async(s) => {
-                      let (r,b) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
+                      let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
                        r
                   }
 

@@ -1308,7 +1308,6 @@ impl HttpStream {
         })
     }
 
-    #[cfg(not(feature = "use_io_uring"))]
     #[inline(always)]
     pub async fn read(&mut self,buf:&mut BytesMut)->Result<usize,std::io::Error>{
         match self {
@@ -1317,22 +1316,18 @@ impl HttpStream {
                 s.read(buf.chunk_mut()).await
             }
             HttpStream::Async(s) => {
-                s.read(buf.chunk_mut()).await
+                #[cfg(not(feature = "use_io_uring"))]
+                return s.read(buf.chunk_mut()).await;
+                #[cfg(feature = "use_io_uring")]
+                let (r,_) = s.read(unsafe{buf.unsafe_clone()}).await;
+                #[cfg(feature = "use_io_uring")]
+                r
             }
         }
     }
-    //
-    // pub (crate) async fn  readable(&self)->io::Result<()>{
-    //     match &self {
-    //         #[cfg(feature = "support_tls")]
-    //         HttpStream::AsyncSecure(s) => {
-    //             s.get_ref().0.readable().await
-    //         }
-    //         HttpStream::Async(s) => {
-    //             s.readable().await
-    //         }
-    //     }
-    // }
+
+
+
 }
 
 
