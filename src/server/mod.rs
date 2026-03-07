@@ -269,159 +269,6 @@ pub  fn run_server<
     }
 }
 
-// {
-//     unsafe  { STATIC_SERVER_CONFIGURATION = Some(config); }
-//     controller.set_up(String::new());
-//     #[cfg(not(feature = "thread_shared_struct"))]
-//     let pointer = controller as *const CapsuleWaterController<Holder,HS,QS>;
-//
-//
-//     *static_path = Some(HashMap::new());
-//     *dynamic_path = Some(HashMap::new());
-//
-//
-//
-//     #[cfg(feature = "thread_shared_struct")]
-//     let pointer = controller as *const CapsuleWaterController<Holder,SHARED,HS,QS>;
-//     controller.____insure_binding();
-//     let sp = static_path.as_mut().unwrap();
-//     let dp = dynamic_path.as_mut().unwrap();
-//
-//     _=MatcherInitializer::serialize(sp,dp,controller);
-//
-//
-//
-//     let controller = unsafe {pointer.as_ref().unwrap()};
-//     let conf = get_server_config();
-//
-//     #[cfg(feature = "use_tokio_send")]
-//     {
-//         #[cfg(feature = "debugging")]
-//             let mut workers_count = 0_usize;
-//
-//         let rt = tokio::runtime::Builder::new_multi_thread()
-//             .enable_all()
-//             .worker_threads(conf.worker_threads_count * 2)
-//             .build()
-//             .unwrap();
-//         let mut workers = vec![];
-//         for _ in 0..conf.worker_threads_count {
-//
-//             for  address in conf.addresses.clone() {
-//                 let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
-//                 workers.push(
-//                     rt.spawn(async move {
-//                         #[cfg(feature = "debugging")]
-//                         {
-//                             debug!("listening on ip: {} port: {}",address.0,address.1);
-//                             workers_count +=1;
-//                             debug!("count of running workers {workers_count}");
-//                         }
-//
-//                         #[cfg(feature = "thread_shared_struct")]
-//                         {
-//                             _=run_server_with_address(&address, controller,shared_factory,matcher).await;
-//                         }
-//
-//                         #[cfg(not(feature = "thread_shared_struct"))]
-//                         {
-//                             _= crate::server::run_server_with_address(&address, controller, matcher).await;
-//                         }
-//                     })
-//                 );
-//             }
-//         }
-//
-//         rt.block_on(async move {
-//             for worker in workers {
-//                 let _ = worker.await;
-//             }
-//         });
-//     }
-//
-//     #[cfg(not(feature = "use_tokio_send"))]
-//     {
-//         let mut os_threads = vec![];
-//
-//             #[cfg(feature = "cpu_affinity")]
-//             let cores = std::sync::Arc::new(
-//             if conf.core_affinity  {
-//                 core_affinity::get_core_ids()
-//             } else {
-//                 None
-//             }
-//         );
-//         #[cfg(feature = "cpu_affinity")]
-//         let  core_index = std::sync::Arc::new(std::sync::Mutex::new(0_usize));
-//         for _ in 0..conf.worker_threads_count {
-//             for address in &conf.addresses {
-//                 let address = address.clone();
-//                 let controller = controller;
-//                 let matcher = Matcher::new(static_path.as_ref().unwrap(),dynamic_path.as_ref().unwrap());
-//                 #[cfg(feature = "use_io_uring")]
-//                 {
-//
-//                     let thread = std::thread::spawn(move || {
-//                         tokio_uring::start(async move {
-//                             #[cfg(feature = "thread_shared_struct")]
-//                                 let _ = crate::server::run_server_with_address(&address, controller,shared_factory,matcher).await;
-//
-//                             #[cfg(not(feature = "thread_shared_struct"))]
-//                                 let _ = crate::server::run_server_with_address(&address, controller,matcher).await;
-//                         });
-//                     });
-//                     os_threads.push(thread);
-//
-//                 }
-//                 #[cfg(not(feature = "use_io_uring"))]
-//                 {
-//                     #[cfg(feature = "cpu_affinity")]
-//                     let core_index = core_index.clone();
-//                     #[cfg(feature = "cpu_affinity")]
-//                         let  value = cores.clone();
-//                     let thread = std::thread::spawn(move || {
-//                         #[cfg(feature = "cpu_affinity")]
-//                         if let Some(core) = value.as_ref() {
-//                            let mut core_index_guard = core_index.lock();
-//                            let core_index = core_index_guard.as_mut().unwrap();
-//                            let m = core_index.deref_mut();
-//                            core_affinity::set_for_current((core[*m]).clone());
-//                            if *m + 1 >= core.len() {
-//                                *m = 0;
-//                            } else {
-//                                *m+=1;
-//                            }
-//                        }
-//                         let rt = tokio::runtime::Builder::new_current_thread()
-//                             .enable_all()
-//                             .max_blocking_threads(90)
-//                             .build()
-//                             .unwrap();
-//
-//                         let local = LocalSet::new();
-//
-//                         rt.block_on(async {
-//                             local.run_until(async {
-//                                 #[cfg(feature = "thread_shared_struct")]
-//                                     let _ = run_server_with_address(&address, controller,shared_factory,matcher).await;
-//
-//                                 #[cfg(not(feature = "thread_shared_struct"))]
-//                                     let _ = run_server_with_address(&address, controller,matcher).await;
-//                             }).await;
-//                         });
-//                     });
-//                     os_threads.push(thread);
-//                 }
-//
-//             }
-//         }
-//         for thread in os_threads {
-//             let _ = thread.join();
-//         }
-//     }
-//
-// }
-
 
 #[cfg(feature = "use_io_uring")]
 fn create_tokio_uring_listener(address: &str, port: &u16, backlog: u32) -> tokio_uring::net::TcpListener {
@@ -468,15 +315,10 @@ fn create_tokio_uring_listener(address: &str, port: &u16, backlog: u32) -> tokio
 async fn run_server_with_address<
     #[cfg(feature = "use_tokio_send")]
     Holder:Send + 'static + std::fmt::Debug,
-
     #[cfg(not(feature = "use_tokio_send"))]
     Holder,
-
-
-
     #[cfg(all(feature = "thread_shared_struct",not(feature = "use_tokio_send")))]
     SHARED:Clone,
-
     #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
     SHARED:Clone + Send + 'static,
     const HS:usize,const QS:usize,>(
@@ -537,7 +379,7 @@ async fn run_server_with_address<
 
     // 3. High-Performance Debugging Counter
     #[cfg(feature = "debugging")]
-        let connections_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connections_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
     // 4. Optimized Accept Loop
     // let mut accept_batch: u32 = 0;
