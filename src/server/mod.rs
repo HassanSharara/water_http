@@ -354,7 +354,7 @@ async fn run_server_with_address<
         }.expect("Failed to create socket");
 
         socket.set_reuseaddr(true).ok();
-        // socket.set_nodelay(true).ok();
+        socket.set_nodelay(true).ok();
         #[cfg(all(
             unix,
             not(target_os = "solaris"),

@@ -1361,7 +1361,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "4.0.1-beta.93"
+version = "4.0.1-beta.94"
 dependencies = [
  "askama",
  "brotli",
