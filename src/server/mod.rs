@@ -355,7 +355,12 @@ async fn run_server_with_address<
 
         socket.set_reuseaddr(true).ok();
         // socket.set_nodelay(true).ok();
-        #[cfg(target_os = "linux")]
+        #[cfg(all(
+            unix,
+            not(target_os = "solaris"),
+            not(target_os = "illumos"),
+            not(target_os = "cygwin"),
+        ))]
         socket.set_reuseport(true).ok();
 
         socket.bind(socket_addr).expect("Bind failed");
