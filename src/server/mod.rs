@@ -485,7 +485,6 @@ async fn run_server_with_address<
         socket.bind(socket_addr).expect("Bind failed");
         socket.listen(server_config.backlog).expect("Listen failed")
     };
-
     // 2. Resource & Security Setup
     #[cfg(feature = "thread_shared_struct")]
         let shared_struct = shared_factory().await;
