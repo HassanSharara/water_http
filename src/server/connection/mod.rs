@@ -391,23 +391,20 @@ impl  ConnectionStream {
 
                                         match content_length {
                                             None => {
-                                                let br = total_request_size >= buf_bytes.len();
-                                                if br { reading_buffer.clear(); break ;}
-                                                else {
-                                                    #[cfg(feature = "accept_transfer_chunked")]
-                                                    if let Some(h) = context.get_from_headers("Transfer-Encoding"){
-                                                        if h == "chunked" {
-                                                            drop(h);
-                                                            #[cfg(feature = "debugging")]
-                                                            {
-                                                                debug!("request completed by chunked");
-                                                            }
-                                                            reading_buffer.clear();
-                                                            each_request_body_reading_buffer.clear();
-                                                            continue;
+                                                reading_buffer.advance(total_request_size);
+                                                if reading_buffer.is_empty() { reading_buffer.clear(); continue 'main_loop ;}
+                                                #[cfg(feature = "accept_transfer_chunked")]
+                                                if let Some(h) = context.get_from_headers("Transfer-Encoding"){
+                                                    if h == "chunked" {
+                                                        drop(h);
+                                                        #[cfg(feature = "debugging")]
+                                                        {
+                                                            debug!("request completed by chunked");
                                                         }
+                                                        reading_buffer.clear();
+                                                        each_request_body_reading_buffer.clear();
+                                                        continue;
                                                     }
-                                                    reading_buffer.advance(total_request_size);
                                                 }
                                             }
                                             Some(content_length) => {
