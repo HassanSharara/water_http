@@ -1361,7 +1361,7 @@ dependencies = [
 
 [[package]]
 name = "water_http"
-version = "4.0.1-beta.89"
+version = "4.0.1-beta.91"
 dependencies = [
  "askama",
  "brotli",
@@ -1399,8 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "water_http_utils"
-version = "0.4.1-beta.10"
-source = "git+https://github.com/HassanSharara/water_http_utils#7904aaa1067a3b792a780e8a53021ef47539de38"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e06ed740d27a812241a8309444c09055ece75bf07f934071aa00f9ff3457498e"
 dependencies = [
  "chrono",
  "memchr",

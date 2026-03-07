@@ -591,7 +591,7 @@ impl  ConnectionStream {
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
-
+              println!("start accepting connections");
               if let Ok(read_size)
                   = match stream {
                   #[cfg(feature = "support_tls")]
@@ -601,6 +601,7 @@ impl  ConnectionStream {
                   }
                   HttpStream::Async(s) => {
                       let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
+
                        r
                   }
 
@@ -692,7 +693,8 @@ impl  ConnectionStream {
                                           None => {
                                               reading_buffer.advance(total_request_size);
                                               if reading_buffer.is_empty() {
-                                                  continue 'main_loop
+                                                  reading_buffer.clear();
+                                                  break
                                               }
                                               #[cfg(feature = "accept_transfer_chunked")]
                                               {
