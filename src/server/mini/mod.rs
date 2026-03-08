@@ -260,7 +260,7 @@ impl<const H: usize, const Q: usize> MiniContext<H, Q> {
                 self.headers_respond_status = ResponseStatus::JustHeadersSet;
                 self.write_header(key, value)
             },
-            ResponseStatus::JustHeadersSet => panic!("you cant write headers twice"),
+            ResponseStatus::JustHeadersSet => self.write_header(key,value),
             ResponseStatus::None => {
                 self.set_status_code(HttpStatusCode::OK);
                 self.headers_respond_status = ResponseStatus::JustHeadersSet;
