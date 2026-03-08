@@ -29,8 +29,7 @@ use std::io as stdio;
 use std::net::{SocketAddr, ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
-#[cfg(feature = "cpu_affinity")]
-use std::ops::DerefMut;
+
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
 #[cfg(not(feature = "use_tokio_send"))]

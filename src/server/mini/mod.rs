@@ -92,14 +92,29 @@ pub fn serve<const H: usize, const Q: usize, Hnd: RequestHandler<H, Q>,Init,TI>(
     #[cfg(not(feature = "use_tokio_send"))]
     {
         let mut ws = vec![];
+        #[cfg(feature = "cpu_affinity")]
+        let mut cpu_cores = core_affinity::get_core_ids().unwrap_or(vec![]);
         for thread_number in 0..worker_threads {
             let address = address.clone();
             let listeners_count = conf.listeners_count;
             let handler = handler.clone();
             let thread_init_clone = thread_init.clone(); // Clone the factory, not the future
+
+            #[cfg(feature = "cpu_affinity")]
+            let core = if cpu_cores.is_empty() {
+                cpu_cores = core_affinity::get_core_ids().unwrap_or(vec![]);
+                cpu_cores.pop()
+            }else {cpu_cores.pop()
+            };
             let thread = std::thread::Builder::new()
                 .name(format!("water_thread [{}]", thread_number))
                 .spawn(move || {
+                    #[cfg(feature = "cpu_affinity")]
+                    {
+                        if let Some(c) = core {
+                            core_affinity::set_for_current(c);
+                        }
+                    }
                     let handler = handler.clone();
                     let fut = async move {
                         if let Some(init_factory) = thread_init_clone {
