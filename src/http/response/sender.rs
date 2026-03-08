@@ -17,6 +17,7 @@ use integer_to_bytes::HumanInt;
 use serde::de::Error;
 use serde::Serialize;
 use tokio::io::{ AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use water_buffer::WaterBuffer;
 use crate::http::{FileRSender, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
 use crate::server::connection::handle_responding;
@@ -51,7 +52,7 @@ pub  trait HttpSenderTrait {
 
    fn set_header<K:Display, V:Display>(&mut self,key:K,value:V);
     /// for setting header with the highest efficiency
-   fn set_header_ef<'h,K:Into<HeaderBytes<'h>>, V:Into<HeaderBytes<'h>>>(&mut self,key:K,value:V);
+   fn set_header_ef<'h,K:Into<WaterBytes<'h>>, V:Into<WaterBytes<'h>>>(&mut self,key:K,value:V);
 
     fn send_json<JSON:Serialize>(&mut self,value:&JSON)->
     impl Future<Output=serde_json::Result<()>>;
@@ -221,7 +222,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
         }
     }
 
-    fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
+    fn set_header_ef<'h,K: Into<WaterBytes<'h>>, V: Into<WaterBytes<'h>>>(&mut self, key: K, value: V) {
         let is_status_written = self.response_builder.is_some();
         if !is_status_written {return;}
         let res = self.response_builder.as_mut();
@@ -234,11 +235,11 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
             let value =value.into();
             if let Some(headers ) = res.headers_mut() {
                 headers.insert(HeaderName::from_bytes(
-                   if let HeaderBytes::Usize(n) = key {
+                   if let WaterBytes::Usize(n) = key {
                        ito.format(n).as_bytes()
                     } else { key.as_bytes() }
                 ).unwrap(),HeaderValue::from_bytes(
-                    if let HeaderBytes::Usize(n) = value {
+                    if let WaterBytes::Usize(n) = value {
                         ito.format(n).as_bytes()
                     } else { value.as_bytes() }
                 ).unwrap());
@@ -453,7 +454,7 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
         }
     }
      #[inline(always)]
-     fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
+     fn set_header_ef<'h,K: Into<WaterBytes<'h>>, V: Into<WaterBytes<'h>>>(&mut self, key: K, value: V) {
             match self {
                 HttpSender::H1(h1) => {
                     h1.set_header_ef(key,value)
@@ -667,12 +668,12 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
         self.context.response_buffer.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
     }
     #[inline(always)]
-    fn set_header_ef<'h,K: Into<HeaderBytes<'h>>, V: Into<HeaderBytes<'h>>>(&mut self, key: K, value: V) {
+    fn set_header_ef<'h,K: Into<WaterBytes<'h>>, V: Into<WaterBytes<'h>>>(&mut self, key: K, value: V) {
         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         let key_bytes = key.into();
         let value_bytes = value.into();
 
-        if let HeaderBytes::Usize(u) = key_bytes {
+        if let WaterBytes::Usize(u) = key_bytes {
             #[cfg(not(feature = "use_io_uring"))]
             u.put_into(self.context.response_buffer);
             #[cfg(feature = "use_io_uring")]
@@ -683,7 +684,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
             self.context.response_buffer.extend_from_slice(key_bytes.as_bytes());
         }
         self.context.response_buffer.extend_from_slice(b": ");
-        if let HeaderBytes::Usize(v) = value_bytes {
+        if let WaterBytes::Usize(v) = value_bytes {
             #[cfg(not(feature = "use_io_uring"))]
             v.put_into(self.context.response_buffer);
             #[cfg(feature = "use_io_uring")]
@@ -878,64 +879,92 @@ impl SendingFileResults {
 }
 
 /// for constructing efficient bytes injector
-pub enum HeaderBytes<'a> {
+pub enum WaterBytes<'a> {
     Str(&'static str),
     StringSlice(&'a str),
     Slice(&'a [u8]),
     String(String),
     Usize(usize),
     Vec(Vec<u8>),
+    None
 }
 
-impl<'a> HeaderBytes<'a> {
+impl<'a> WaterBytes<'a> {
     /// convert any type of supported data to &[u8]
     pub fn as_bytes(&self)->&'_ [u8] {
 
         match self {
-            HeaderBytes::Str(s) => {s.as_bytes()}
-            HeaderBytes::Slice(s) => {s}
-            HeaderBytes::String(s) => {(*s).as_bytes()}
+            WaterBytes::Str(s) => {s.as_bytes()}
+            WaterBytes::Slice(s) => {s}
+            WaterBytes::String(s) => {(*s).as_bytes()}
 
-            HeaderBytes::StringSlice(a) => {(*a).as_bytes()}
-            HeaderBytes::Vec(r) => {r.as_slice()}
+            WaterBytes::StringSlice(a) => {(*a).as_bytes()}
+            WaterBytes::Vec(r) => {r.as_slice()}
             _=>panic!("can not convert to bytes")
         }
     }
-}
 
-impl<'a> Into<HeaderBytes<'a>> for &'a [u8] {
-    fn into(self) -> HeaderBytes<'a> {
-        HeaderBytes::Slice(self)
+
+    /// for pushing to buffer
+    #[inline(always)]
+    pub fn push_to(&self,buf:&mut WaterBuffer<u8>){
+        if let WaterBytes::Usize(u) = self {
+            u.put_into(buf);
+            return
+        }
+       let bytes =  match self {
+            WaterBytes::Str(s) => {s.as_bytes()}
+            WaterBytes::Slice(s) => {s}
+            WaterBytes::String(s) => {(*s).as_bytes()}
+            WaterBytes::StringSlice(a) => {(*a).as_bytes()}
+            WaterBytes::Vec(r) => {r.as_slice()}
+            _=>panic!("can not convert to bytes")
+        };
+        buf.extend_from_slice(bytes);
     }
 }
 
-impl <'a> Into<HeaderBytes<'a>> for usize {
-    fn into(self) -> HeaderBytes<'a> {
-        HeaderBytes::Usize(self)
-    }
-}
-impl  Into<HeaderBytes<'_>> for Vec<u8> {
-    fn into(self) -> HeaderBytes<'static> {
-        HeaderBytes::Vec(self)
-    }
-}
-
-
-impl<'a> Into<HeaderBytes<'a>> for &'a String {
-    fn into(self) -> HeaderBytes<'a> {
-        HeaderBytes::StringSlice(self)
-    }
-}
-impl<'a> Into<HeaderBytes<'a>> for  String {
-    fn into(self) -> HeaderBytes<'a> {
-        HeaderBytes::String(self)
+impl<'a> Into<WaterBytes<'a>> for &'a [u8] {
+    fn into(self) -> WaterBytes<'a> {
+        WaterBytes::Slice(self)
     }
 }
 
 
-impl Into<HeaderBytes<'_>> for &'static str {
-    fn into(self) -> HeaderBytes<'static> {
-        HeaderBytes::Str(self)
+
+impl <'a> Into<WaterBytes<'a>> for () {
+    fn into(self) -> WaterBytes<'a> {
+        WaterBytes::None
+    }
+}
+
+impl <'a> Into<WaterBytes<'a>> for usize {
+    fn into(self) -> WaterBytes<'a> {
+        WaterBytes::Usize(self)
+    }
+}
+impl  Into<WaterBytes<'_>> for Vec<u8> {
+    fn into(self) -> WaterBytes<'static> {
+        WaterBytes::Vec(self)
+    }
+}
+
+
+impl<'a> Into<WaterBytes<'a>> for &'a String {
+    fn into(self) -> WaterBytes<'a> {
+        WaterBytes::StringSlice(self)
+    }
+}
+impl<'a> Into<WaterBytes<'a>> for  String {
+    fn into(self) -> WaterBytes<'a> {
+        WaterBytes::String(self)
+    }
+}
+
+
+impl Into<WaterBytes<'_>> for &'static str {
+    fn into(self) -> WaterBytes<'static> {
+        WaterBytes::Str(self)
     }
 
 }

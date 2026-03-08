@@ -16,6 +16,7 @@ mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
 pub (crate) mod io;
+pub mod mini;
 // pub mod channels;
 // pub(crate) mod io;
 
@@ -64,9 +65,8 @@ pub  fn run_server<
 
     #[cfg(all(feature = "thread_shared_struct",feature = "use_tokio_send"))]
     SHARED:Clone + Send + 'static,
-    const HS:usize,const QS:usize,
-
- >(
+    const HS:usize,const QS:usize
+    > (
     config:ServerConfigurations,
     #[cfg(feature = "thread_shared_struct")]
     controller:&'static mut CapsuleWaterController<Holder,SHARED,HS,QS>,
@@ -354,7 +354,7 @@ async fn run_server_with_address<
         }.expect("Failed to create socket");
 
         socket.set_reuseaddr(true).ok();
-        socket.set_nodelay(true).ok();
+        // socket.set_nodelay(true).ok();
         #[cfg(all(
             unix,
             not(target_os = "solaris"),

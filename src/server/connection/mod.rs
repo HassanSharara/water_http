@@ -21,7 +21,6 @@ use crate::http::request::{FormingRequestResult, IncomingRequest};
 use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, ServingRequestResults};
 
 
-
 use crate::server::matcher::Matcher;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::server::sr_context::{Http2Context};
@@ -160,7 +159,7 @@ impl  ConnectionStream {
                         if let Ok(mut connection) =  h2::server::handshake(stream).await {
                             while let Some(Ok(batch)) = connection.accept().await {
                                 let mut reading_buffer =
-                                    BodyReadingBuffer::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER);
+                                    BodyReadingBuffer::new(BytesMut::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER));
                                 #[cfg(feature = "thread_shared_struct")]
                                     let mut context =
                                     HttpContext::<'_,Holder,SHARED,HS,QS>::new(
@@ -194,7 +193,7 @@ impl  ConnectionStream {
                                         &self.address
                                     );
                                 match  context.serve_ef(matcher.clone()).await {
-                                    ServingRequestResults::Stop => {return;}
+                                    ServingRequestResults::Stop => {break;}
                                     ServingRequestResults::Done => {
                                         continue;
                                     }
