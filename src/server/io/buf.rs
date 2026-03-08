@@ -61,12 +61,13 @@ impl PooledWaterBuffer {
                 existing_buf.reset();
                 existing_buf
             } else {
-                // ALC.with(|c|{
-                //     let mut alc =  c.borrow_mut();
-                //     *alc = *alc+1;
-                //     println!("allocating new {:?} buffer  {:?}",ty,*alc);
-                // });
-
+               // if let PooledBufferType::Read = ty {
+               //      ALC.with(|c| {
+               //          let mut alc = c.borrow_mut();
+               //          *alc = *alc + 1;
+               //          println!("allocating new {:?} buffer  {:?}", ty, *alc);
+               //      });
+               //  }
                 WaterBuffer::with_capacity(cap)
             }
         });
@@ -92,6 +93,7 @@ impl PooledWaterBuffer {
                 }
             });
         }
+
     }
 }
 

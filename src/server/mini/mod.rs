@@ -29,7 +29,7 @@ fn create_listener((address, port): (String, u16)) -> TcpListener {
         not(target_os = "cygwin"),
     ))]
     socket.set_reuseport(true).ok();
-
+    socket.set_nodelay(true).ok();
     socket.bind(socket_addr).expect("Bind failed");
     socket.listen(conf.backlog).expect("Listen failed")
 }
