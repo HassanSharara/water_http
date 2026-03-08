@@ -77,10 +77,13 @@ impl<const H: usize, const Q: usize, F, Fut> RequestHandler<H, Q> for HandlerFn<
 
 // ── serve ─────────────────────────────────────────────────────────────────────
 
-pub fn serve<const H: usize, const Q: usize, Hnd: RequestHandler<H, Q>>(
+pub fn serve<const H: usize, const Q: usize, Hnd: RequestHandler<H, Q>,Init,TI>(
     conf: ServerConfigurations,
     handler: Hnd,
-) {
+    thread_init:Option<Init>
+) where
+    Init: Fn() -> TI + Send + Sync + Clone + 'static,
+    TI:Future<Output=()> + Send + 'static {
     unsafe { STATIC_SERVER_CONFIGURATION = Some(conf); }
     let conf = super::get_server_config();
     let worker_threads = conf.worker_threads_count;
@@ -93,11 +96,15 @@ pub fn serve<const H: usize, const Q: usize, Hnd: RequestHandler<H, Q>>(
             let address = address.clone();
             let listeners_count = conf.listeners_count;
             let handler = handler.clone();
+            let thread_init_clone = thread_init.clone(); // Clone the factory, not the future
             let thread = std::thread::Builder::new()
                 .name(format!("water_thread [{}]", thread_number))
                 .spawn(move || {
                     let handler = handler.clone();
                     let fut = async move {
+                        if let Some(init_factory) = thread_init_clone {
+                            init_factory().await;
+                        }
                         for add in address {
                             let handler = handler.clone();
                             for _ in 0..listeners_count {
