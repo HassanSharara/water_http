@@ -556,7 +556,7 @@ checksum = "f2dca8ae10b4db1249653fdee68ef06ab77520df20b334b20b97d3ca4ec0cad3"
 dependencies = [
  "bytes",
  "ntex-bytes",
- "water_buffer",
+ "water_buffer 1.2.10",
 ]
 
 [[package]]
@@ -1351,13 +1351,18 @@ dependencies = [
 
 [[package]]
 name = "water_buffer"
-version = "1.2.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1259738d48753e24e97e5306275e873395ed7fe75b6d6ee3529bac9a3909dfa3"
+version = "1.2.10-Beta.1"
+source = "git+https://github.com/HassanSharara/water_buffer?rev=ec6ad26#ec6ad2677dc01aaebd53823a6b976fe0604f541e"
 dependencies = [
  "bytes",
  "tokio-uring",
 ]
+
+[[package]]
+name = "water_buffer"
+version = "1.2.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1259738d48753e24e97e5306275e873395ed7fe75b6d6ee3529bac9a3909dfa3"
 
 [[package]]
 name = "water_http"
@@ -1392,7 +1397,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "twoway",
- "water_buffer",
+ "water_buffer 1.2.10-Beta.1",
  "water_http_utils",
  "zstd",
 ]
