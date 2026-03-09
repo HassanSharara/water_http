@@ -587,7 +587,7 @@ impl  ConnectionStream {
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
-              #[cfg(feature = "debugging")]
+
               if let Ok(read_size)
                   = match stream {
                   #[cfg(feature = "support_tls")]
