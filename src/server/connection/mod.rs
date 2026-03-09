@@ -688,9 +688,8 @@ impl  ConnectionStream {
                                                    end.duration_since(t1)
                                           );
                                       }
-
+                                      println!("incoming request is {}",context.path().to_string());
                                       let content_length = context.content_length();
-                                      println!("incoming request is {}",context.path());
                                       match content_length {
                                           None => {
                                               reading_buffer.advance(total_request_size);
