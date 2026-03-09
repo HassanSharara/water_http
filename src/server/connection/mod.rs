@@ -254,7 +254,6 @@ impl  ConnectionStream {
      matcher:Matcher<Holder,HS,QS>
     ){
         use crate::server::io::buf::{PooledWaterBuffer,PooledBufferType as BufType};
-        use futures::FutureExt;
         let mut er_pool = PooledWaterBuffer::new(BufType::Body);
         let mut rb_pool = PooledWaterBuffer::new(BufType::Read);
         let mut wb_pool = PooledWaterBuffer::new(BufType::Write);
@@ -263,6 +262,7 @@ impl  ConnectionStream {
         let wb  = wb_pool.take_inner();
         #[cfg(not(feature = "use_io_uring"))]
         {
+            use futures::FutureExt;
 
             let mut each_request_body_reading_buffer =
                 BodyReadingBuffer::new(er);
@@ -587,8 +587,6 @@ impl  ConnectionStream {
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
-              #[cfg(feature = "debugging")]
-              println!("trying to read data from stream");
               if let Ok(read_size)
                   = match stream {
                   #[cfg(feature = "support_tls")]

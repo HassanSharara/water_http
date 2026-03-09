@@ -2,7 +2,7 @@
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
-use std::future::PollFn;
+use std::future::{Future, PollFn};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -24,6 +24,7 @@ use serde::ser::Error;
 use tokio_uring::net::TcpStream;
 #[cfg(not(feature = "use_io_uring"))]
 use tokio::net::TcpStream;
+use tokio_uring::BufResult;
 
 #[cfg(not(feature = "use_only_http1"))]
 use crate::http::Http2Sender;
@@ -1309,6 +1310,44 @@ impl HttpStream {
         })
     }
 
+    #[cfg(feature = "use_io_uring")]
+    pub fn poll_read<'a>(
+        &'a mut self,
+        reading_buffer: &'a mut BytesMut
+    ) -> PollFn<impl FnMut(&mut Context<'_>) -> Poll<Result<usize, ()>> + 'a> {
+        std::future::poll_fn(move |cx| {
+
+            match self {
+                #[cfg(feature = "support_tls")]
+                HttpStream::AsyncSecure(_) => {
+                    todo!()
+                }
+                HttpStream::Async(s) => {
+                    use std::future::Future;
+                    // 1. Create the future
+                    let mut read_fut = s.read(unsafe { reading_buffer.unsafe_clone() });
+
+                    // 2. Pin it to the stack so it can be polled
+                    let mut pinned_fut = std::pin::pin!(read_fut);
+                    // 3. Call poll on the pinned future
+                   let p = pinned_fut.as_mut().poll(cx);
+                    println!("after poll");
+                    match p {
+                        Poll::Ready((r, _)) => {
+                            match r {
+                                Ok(r) => Poll::Ready(Ok(r)),
+                                Err(_) => Poll::Ready(Err(())),
+                            }
+                        }
+                        Poll::Pending => {
+                            Poll::Pending
+                        },
+                    }
+                }
+            }
+        })
+    }
+
     #[inline(always)]
     pub async fn read(&mut self,buf:&mut BytesMut)->Result<usize,std::io::Error>{
         match self {
@@ -1317,6 +1356,7 @@ impl HttpStream {
                 s.read(buf.chunk_mut()).await
             }
             HttpStream::Async(s) => {
+                use std::future::Future;
                 #[cfg(not(feature = "use_io_uring"))]
                 return s.read(buf.chunk_mut()).await;
                 #[cfg(feature = "use_io_uring")]
