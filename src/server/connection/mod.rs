@@ -872,12 +872,14 @@ impl  ConnectionStream {
                   continue 'main_loop;
               }
               else {
-                  if !response_buffer.is_empty() {
-                      _= handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await;
-                  }
+
                   break 'main_loop;
               }
           }
+
+           if !response_buffer.is_empty() {
+               _= handle_responding(unsafe{response_buffer.unsafe_clone()},stream).await;
+           }
 
            PooledWaterBuffer::recycle(each_request_body_reading_buffer.buffer,BufType::Body);
            PooledWaterBuffer::recycle(reading_buffer,BufType::Read);
