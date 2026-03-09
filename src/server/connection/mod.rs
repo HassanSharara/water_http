@@ -593,12 +593,19 @@ impl  ConnectionStream {
                   = match stream {
                   #[cfg(feature = "support_tls")]
                   HttpStream::AsyncSecure(s) => {
+
                       let (r,b) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
                       r
                   }
                   HttpStream::Async(s) => {
-                      let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
-                       r
+
+                      if let (Ok((Ok(r),_))) = tokio::time::timeout(
+                          std::time::Duration::from_secs(3),
+                          s.read(unsafe{reading_buffer.unsafe_clone()})).await{
+                          r
+                      }else {
+                          break 'main_loop
+                      }
                   }
 
               }
