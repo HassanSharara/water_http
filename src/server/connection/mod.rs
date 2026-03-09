@@ -616,8 +616,7 @@ impl  ConnectionStream {
                       }
 
                       if buf_bytes.is_empty() {
-                      #[cfg(feature = "debugging")]
-                      println!("buffer bytes is empty is zero 0 0 ");
+
                           break;
                       }
                       use crate::{http::request::{IncomingRequest,FormingRequestResult},server::Http1Context};
@@ -686,15 +685,13 @@ impl  ConnectionStream {
                                                    end.duration_since(t1)
                                           );
                                       }
-                                      println!("incoming request is {}",context.path().to_string());
+
                                       let content_length = context.content_length();
                                       match content_length {
                                           None => {
                                               reading_buffer.advance(total_request_size);
                                               if reading_buffer.is_empty() {
-                                                  #[cfg(feature = "debugging")]
-                                                  println!("reading buffer is empty after advancing {total_request_size}");
-                                                  reading_buffer.clear();
+                                                  reading_buffer.reset();
                                                   break
                                               }
                                               #[cfg(feature = "accept_transfer_chunked")]
