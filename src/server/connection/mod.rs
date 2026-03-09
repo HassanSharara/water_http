@@ -849,6 +849,8 @@ impl  ConnectionStream {
                               {
                                   tracing::info!("incoming request is not enough: now we need to read more ");
                               }
+                              #[cfg(feature = "debugging")]
+                              println!("error in request {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
                               continue 'main_loop;
                           }
                           FormingRequestResult::Err(e) => {
@@ -858,8 +860,7 @@ impl  ConnectionStream {
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                               }
-                              #[cfg(feature = "debugging")]
-                              println!("error in request {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
+
                               break 'main_loop;
 
                           }
@@ -904,6 +905,8 @@ pub (crate) async fn handle_responding<'e>
             todo!()
         }
         HttpStream::Async(h) => {
+            #[cfg(feature = "debugging")]
+            println!("writing response");
            let (r,mut b) =  h.write_all(response_buf).await;
             if r.is_err() { return Err("can not write data to given buffer")}
              b.clear();
