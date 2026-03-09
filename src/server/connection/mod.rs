@@ -690,7 +690,7 @@ impl  ConnectionStream {
                                       }
 
                                       let content_length = context.content_length();
-
+                                      println!("incoming request is {}",context.path());
                                       match content_length {
                                           None => {
                                               reading_buffer.advance(total_request_size);
@@ -859,8 +859,6 @@ impl  ConnectionStream {
                               {
                                   tracing::info!("incoming request is not enough: now we need to read more ");
                               }
-                              #[cfg(feature = "debugging")]
-                              println!("error in request {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
                               continue 'main_loop;
                           }
                           FormingRequestResult::Err(e) => {
@@ -870,7 +868,6 @@ impl  ConnectionStream {
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                               }
-
                               break 'main_loop;
 
                           }
