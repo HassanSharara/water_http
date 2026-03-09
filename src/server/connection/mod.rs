@@ -598,22 +598,13 @@ impl  ConnectionStream {
                       r
                   }
                   HttpStream::Async(s) => {
-
-                      if let (Ok((Ok(r),_))) = tokio::time::timeout(
-                          std::time::Duration::from_secs(3),
-                          s.read(unsafe{reading_buffer.unsafe_clone()})).await{
-                          r
-                      }else {
-                          break 'main_loop
-                      }
+                      let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
+                      r
                   }
-
               }
               {
                   // when connection is closed
                   if read_size == 0 {
-                      #[cfg(feature = "debugging")]
-                      println!("read size is zero 0 0 ");
                       break 'main_loop;
                   }
                   loop {

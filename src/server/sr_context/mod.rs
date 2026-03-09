@@ -1311,35 +1311,35 @@ impl HttpStream {
         })
     }
 
-    #[cfg(feature = "use_io_uring")]
-    pub fn poll_read<'a>(
-        &'a mut self,
-        reading_buffer: &'a mut BytesMut
-    ) -> Option<Result<usize, ()>> {
-        use futures::FutureExt;
-
-        let f = std::future::poll_fn(|cx|{
-            match self {
-                #[cfg(feature = "support_tls")]
-                HttpStream::AsyncSecure(_) => {todo!()}
-                HttpStream::Async(s) => {
-                    match s.read(unsafe{reading_buffer.unsafe_clone()}).poll(cx) {
-                        Poll::Ready((r,_)) => {
-                            match r {
-                                Ok(r) => {Poll::Ready(Ok(r))}
-                                Err(_) => {Poll::Ready(Err(()))}
-                            }
-                        }
-                        Poll::Pending => {
-                            Poll::Pending
-                        }
-                    }
-                }
-            }
-        });
-        let a = f.now_or_never();
-        a
-    }
+    // #[cfg(feature = "use_io_uring")]
+    // pub fn poll_read<'a>(
+    //     &'a mut self,
+    //     reading_buffer: &'a mut BytesMut
+    // ) -> Option<Result<usize, ()>> {
+    //     use futures::FutureExt;
+    //
+    //     let f = std::future::poll_fn(|cx|{
+    //         match self {
+    //             #[cfg(feature = "support_tls")]
+    //             HttpStream::AsyncSecure(_) => {todo!()}
+    //             HttpStream::Async(s) => {
+    //                 match s.read(unsafe{reading_buffer.unsafe_clone()}).poll(cx) {
+    //                     Poll::Ready((r,_)) => {
+    //                         match r {
+    //                             Ok(r) => {Poll::Ready(Ok(r))}
+    //                             Err(_) => {Poll::Ready(Err(()))}
+    //                         }
+    //                     }
+    //                     Poll::Pending => {
+    //                         Poll::Pending
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     });
+    //     let a = f.now_or_never();
+    //     a
+    // }
 
     #[inline(always)]
     pub async fn read(&mut self,buf:&mut BytesMut)->Result<usize,std::io::Error>{
