@@ -224,7 +224,7 @@ async fn handle_connection<const H: usize, const Q: usize, Hnd: RequestHandler<H
             }
 
             if !response_buffer.is_empty() {
-                if handle_responding(unsafe{response_buffer.unsafe_clone()}, &mut stream).await.is_err() {
+                if handle_responding(&mut response_buffer, &mut stream).await.is_err() {
                     break 'main_loop;
                 }
             }
@@ -234,7 +234,7 @@ async fn handle_connection<const H: usize, const Q: usize, Hnd: RequestHandler<H
         }
     }
     if !response_buffer.is_empty() {
-        let _ = handle_responding(unsafe{response_buffer.unsafe_clone()}, &mut stream).await;
+        let _ = handle_responding(&mut response_buffer, &mut stream).await;
     }
     PooledWaterBuffer::recycle(reading_buffer, PooledBufferType::Read);
     PooledWaterBuffer::recycle(response_buffer, PooledBufferType::Write);
