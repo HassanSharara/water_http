@@ -943,9 +943,9 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     }
 
     let remaining = buffer.mut_len() ;
-    const LIMIT:usize = 1024 * 1 ;
+    const LIMIT:usize = 1024 * 2 ;
     if remaining > LIMIT { return }
-    buffer.reserve( LIMIT * 16 - remaining );
+    buffer.reserve( (LIMIT * 16 )- remaining );
 }
 
 #[derive(Debug)]
