@@ -25,7 +25,6 @@ use serde::ser::Error;
 use tokio_uring::net::TcpStream;
 #[cfg(not(feature = "use_io_uring"))]
 use tokio::net::TcpStream;
-use tokio_uring::BufResult;
 
 #[cfg(not(feature = "use_only_http1"))]
 use crate::http::Http2Sender;
