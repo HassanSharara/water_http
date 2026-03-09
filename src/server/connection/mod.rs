@@ -669,7 +669,7 @@ impl  ConnectionStream {
 
                               _= match  context.serve_ef(matcher.clone()).await {
 
-                                  ServingRequestResults::Stop => {break}
+                                  ServingRequestResults::Stop => {break 'main_loop}
 
                                   ServingRequestResults::Done => {
 
