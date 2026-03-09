@@ -587,6 +587,8 @@ impl  ConnectionStream {
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
+              #[cfg(feature = "debugging")]
+              println!("reading from stream");
               if let Ok(read_size)
                   = match stream {
                   #[cfg(feature = "support_tls")]
@@ -603,6 +605,8 @@ impl  ConnectionStream {
               {
                   // when connection is closed
                   if read_size == 0 {
+                      #[cfg(feature = "debugging")]
+                      println!("read size is zero 0 0 ");
                       break 'main_loop;
                   }
                   loop {
@@ -613,7 +617,11 @@ impl  ConnectionStream {
                           tracing::info!("the new red data is {}",String::from_utf8_lossy(buf_bytes))
                       }
 
-                      if buf_bytes.is_empty() { break; }
+                      if buf_bytes.is_empty() {
+                      #[cfg(feature = "debugging")]
+                      println!("buffer bytes is empty is zero 0 0 ");
+                          break;
+                      }
                       use crate::{http::request::{IncomingRequest,FormingRequestResult},server::Http1Context};
                       #[cfg(feature = "count_connection_parsing_speed")]
                           let t1 = std::time::SystemTime::now();
@@ -687,6 +695,8 @@ impl  ConnectionStream {
                                           None => {
                                               reading_buffer.advance(total_request_size);
                                               if reading_buffer.is_empty() {
+                                                  #[cfg(feature = "debugging")]
+                                                  println!("reading buffer is empty after advancing {total_request_size}");
                                                   reading_buffer.clear();
                                                   break
                                               }
