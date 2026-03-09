@@ -587,6 +587,8 @@ impl  ConnectionStream {
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
+              #[cfg(feature = "debugging")]
+              println!("trying to read data from stream");
               if let Ok(read_size)
                   = match stream {
                   #[cfg(feature = "support_tls")]
@@ -596,7 +598,6 @@ impl  ConnectionStream {
                   }
                   HttpStream::Async(s) => {
                       let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
-
                        r
                   }
 
@@ -872,7 +873,6 @@ impl  ConnectionStream {
                   continue 'main_loop;
               }
               else {
-
                   break 'main_loop;
               }
           }
