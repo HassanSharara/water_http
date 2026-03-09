@@ -940,9 +940,10 @@ pub (crate) fn reserve_buf(buffer: &mut BytesMut) {
     }
 
     let remaining = buffer.mut_len() ;
-    const LIMIT:usize = 1024 * 2 ;
+    const LIMIT:usize = 1024 * 1 ;
     if remaining > LIMIT { return }
-    buffer.reserve( (LIMIT * 16 )- remaining );
+    let rs = crate::server::get_server_config().default_read_buffer_size;
+    buffer.reserve(  rs  );
 }
 
 #[derive(Debug)]
