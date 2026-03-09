@@ -913,7 +913,8 @@ pub (crate) async fn handle_responding<'e>
         }
         HttpStream::Async(h) => {
             #[cfg(feature = "debugging")]
-            println!("writing response");
+            println!("writing {:?}",String::from_utf8_lossy(&response_buf));
+
            let (r,mut b) =  h.write_all(response_buf).await;
             if r.is_err() { return Err("can not write data to given buffer")}
              b.clear();
