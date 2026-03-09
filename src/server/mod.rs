@@ -16,6 +16,7 @@ mod capsule;
 #[cfg(feature = "auto_encode_response")]
 mod encoding;
 pub (crate) mod io;
+#[cfg(not(feature = "use_io_uring"))]
 pub mod mini;
 // pub mod channels;
 // pub(crate) mod io;
