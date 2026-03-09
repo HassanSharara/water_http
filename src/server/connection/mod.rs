@@ -858,8 +858,10 @@ impl  ConnectionStream {
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                               }
+                              #[cfg(feature = "debugging")]
+                              println!("error in request {:?}",String::from_utf8_lossy(reading_buffer.chunk()));
                               break 'main_loop;
-                              ;
+
                           }
                       }
                   }
