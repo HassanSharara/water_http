@@ -43,7 +43,7 @@ tokio-uring = {version = "0.5.0", optional = true}
 bytes = "1.7.2"
 integer_to_bytes = {version =  "0.2.1" }
 core_affinity = {version = "0.8.3" , optional = true}
-water_buffer = {rev = "ec6ad26", version = "1.2.10-Beta.1" , features = ["bytes","unsafe_clone"],git = "https://github.com/HassanSharara/water_buffer"}
+water_buffer = {version = "1.2.10" , features = ["bytes","unsafe_clone"]}
 #water_http_utils = { version = "0.4.1-beta.10", features = ["server"],git = "https://github.com/HassanSharara/water_http_utils"}
 water_http_utils = {version = "0.4.2",features = ["server"]}
 smallbox = "0.8.8"
