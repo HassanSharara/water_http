@@ -33,6 +33,7 @@ use std::ops::Deref;
 
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
+use rustls::ServerConfig;
 #[cfg(not(feature = "use_tokio_send"))]
 use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
@@ -372,7 +373,7 @@ async fn run_server_with_address<
         let shared_struct = shared_factory().await;
 
     #[cfg(feature = "support_tls")]
-        let (tls_acceptor, is_secure) = {
+    let (tls_acceptor, is_secure) = {
         let mut acceptor = None;
         if let Some(cfg) = server_config.tls_certificate.as_ref() {
             if let Ok(gen) = tls::generate_tls_configurations(cfg) {
@@ -382,12 +383,9 @@ async fn run_server_with_address<
         (acceptor, server_config.tls_ports.contains(port))
     };
 
-    // 3. High-Performance Debugging Counter
     #[cfg(feature = "debugging")]
-    let connections_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connections_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
-    // 4. Optimized Accept Loop
-    // let mut accept_batch: u32 = 0;
 
     loop {
         match listener.accept().await {

@@ -10,7 +10,6 @@ use std::task::{Context, Poll};
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 #[cfg(not(feature = "use_only_http1"))]
 use bytes::Bytes;
-use futures::FutureExt;
 
 #[cfg(not(feature = "use_only_http1"))]
 use h2::RecvStream;

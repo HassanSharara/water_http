@@ -1,5 +1,7 @@
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use water_http::server::{HttpContext, ServerConfigurations};
 use water_http::{functions_builder, InitControllersRoot, WaterController};
 
@@ -10,6 +12,7 @@ use water_http::http::status_code::HttpStatusCode;
 InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
+    shared_type:u8,
 }
 type MainHolderType = CHolder;
 
@@ -34,12 +37,18 @@ fn main() {
     water_http::RunServer!(
         config,
         MAIN_ROOT,
-        MainController
+        MainController,
+        shared
     );
+}
+
+fn shared()->Pin<Box<dyn Future<Output=u8>>>{
+    Box::pin(async {8})
 }
 
 WaterController! {
     holder -> super::MainHolderType,
+    shared -> u8,
     name -> MainController ,
     functions -> {
 
@@ -52,7 +61,7 @@ WaterController! {
     }
 }
 
-async fn upload_bin<H:Send,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,HS,QS> ){
+async fn upload_bin<H:Send,SHARED:Clone,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,SHARED,HS,QS> ){
     #[cfg(feature = "debugging")]
     {
         tracing::info!("upload binary request invoked");

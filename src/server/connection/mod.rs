@@ -85,15 +85,17 @@ impl  ConnectionStream {
                     debug!("{:?} connected by tls layer",self.address);
                 }
                 if let Some(alpn_preface) = stream.get_ref().1.alpn_protocol() {
-
                     #[cfg(not(feature = "use_only_http1"))]
                     {
                         if alpn_preface == b"h2" {
                             let handshake
                                 = h2::server::handshake(stream).await;
                             if let Ok(mut connection) = handshake {
+                                let  original_buffer = BytesMut::with_capacity(
+                                    crate::server::EACH_REQUEST_BODY_READING_BUFFER
+                                );
                                 let mut reading_buffer =
-                                    BodyReadingBuffer::with_capacity(crate::server::configurations::EACH_REQUEST_BODY_READING_BUFFER);
+                                    BodyReadingBuffer::new(original_buffer);
 
                                 while let Some(
                                     Ok(batch))
@@ -107,8 +109,8 @@ impl  ConnectionStream {
                                             ),
                                             &self.address
                                         );
-                                    context.macher = Some(matcher);
-                                    match  context.serve_ef(controller).await {
+                                    let matcher = matcher.clone();
+                                    match  context.serve_ef(matcher).await {
                                         ServingRequestResults::Stop => {
                                             return;
                                         }
@@ -390,8 +392,6 @@ impl  ConnectionStream {
 
                                         match content_length {
                                             None => {
-                                                reading_buffer.advance(total_request_size);
-                                                if reading_buffer.is_empty() { reading_buffer.clear(); continue 'main_loop ;}
                                                 #[cfg(feature = "accept_transfer_chunked")]
                                                 if let Some(h) = context.get_from_headers("Transfer-Encoding"){
                                                     if h == "chunked" {
@@ -405,6 +405,10 @@ impl  ConnectionStream {
                                                         continue;
                                                     }
                                                 }
+
+                                                reading_buffer.advance(total_request_size);
+                                                if reading_buffer.is_empty() { reading_buffer.clear(); continue 'main_loop ;}
+                                                continue;
                                             }
                                             Some(content_length) => {
                                                 let content_length = *content_length;
@@ -688,7 +692,6 @@ impl  ConnectionStream {
                                       let content_length = context.content_length();
                                       match content_length {
                                           None => {
-                                              reading_buffer.advance(total_request_size);
                                               if reading_buffer.is_empty() {
                                                   reading_buffer.reset();
                                                   break
@@ -706,12 +709,12 @@ impl  ConnectionStream {
                                                           }
                                                           reading_buffer.clear();
                                                           each_request_body_reading_buffer.clear();
-                                                          each_request_body_reading_buffer.reset();
                                                           continue;
                                                       }
                                                   }
 
                                               }
+                                              reading_buffer.advance(total_request_size);
                                               continue
                                           }
                                           Some(content_length) => {
@@ -995,6 +998,7 @@ impl BodyReadingBuffer {
         self.advanced_bytes = 0;
     }
 
+    // #[cfg(feature = "use_io_uring")]
     // #[inline(always)]
     // pub (crate) fn reset(&mut self){
     //     self.bytes_red_by_buffer = 0;
