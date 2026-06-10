@@ -33,7 +33,6 @@ use std::ops::Deref;
 
 #[cfg(feature = "support_tls")]
 use std::sync::{Arc};
-use rustls::ServerConfig;
 #[cfg(not(feature = "use_tokio_send"))]
 use tokio::task::LocalSet;
 #[cfg(feature = "support_tls")]
@@ -380,7 +379,7 @@ async fn run_server_with_address<
                 acceptor = Some(TlsAcceptor::from(Arc::new(gen)));
             }
         }
-        (acceptor, server_config.tls_ports.contains(port))
+        (acceptor, server_config.tls_ports.is_empty() || server_config.tls_ports.contains(port) )
     };
 
     #[cfg(feature = "debugging")]

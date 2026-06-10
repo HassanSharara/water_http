@@ -229,7 +229,7 @@ impl ServerConfigurations {
             #[cfg(feature = "auto_encode_response")]
             responding_encoding_configurations:EncodingConfigurations::default(),
             #[cfg(feature = "support_tls")]
-            tls_ports:vec![443],
+            tls_ports:vec![],
             backlog:1028,
             max_request_size:10000,
             listeners_count:1,

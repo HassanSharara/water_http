@@ -360,6 +360,97 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
     }
 
 
+    #[cfg(feature = "use_io_uring")]
+    async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
+
+
+
+        let mut file = match tokio_uring::fs::File::open(pc.path).await {
+            Ok(f) => {f}
+            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+
+        #[cfg(feature = "use_io_uring")]
+            let mut file = match tokio_uring::fs::File::open(pc.path).await {
+            Ok(f) => {f}
+            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+        let meta = match file.metadata().await {
+            Ok(m) => {m}
+            Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
+        };
+        let  file_size  = meta.len() as usize;
+        let file_name = match pc.path.file_name() {
+            None => { return SendingFileResults::FileNotFound}
+            Some(f) => {f}
+        };
+        let file_content_type = crate::util::content_type_from_file_path(&pc.path);
+        let mut start = 0_usize;
+        let mut end = file_size;
+
+        // check if we need to send the whole file or just range of it
+        match pc.range {
+            None => {
+                self.send_status_code(HttpStatusCode::OK);
+            }
+            Some(ranges) => {
+                start = ranges.0.unwrap_or(0);
+                end = ranges.1.unwrap_or({
+                    (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream)
+                        .min(file_size)
+                });
+                if (end - start)  == file_size {
+                    self.send_status_code(HttpStatusCode::OK);
+                } else {
+                    self.send_status_code(HttpStatusCode::PARTIAL_CONTENT);
+                }
+            }
+        }
+        self.handle_content_type_while_sending_file(&file_content_type,file_name,pc.content_disposition.as_ref());
+        if end >= file_size { end = file_size;}
+        if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size)}
+        if  start == end || start > end || end > file_size {
+            return SendingFileResults::RangesNotSatisfied
+        }
+        let mut to_send = end - start  ;
+        if to_send != file_size {
+            self.set_header("Content-Range",format!("bytes {start}-{}/{}",{end-1},file_size));
+        }
+        self.set_header("Content-Length",to_send);
+        if file.seek(SeekFrom::Start(start as u64)).await.is_err() {return SendingFileResults::RangesNotSatisfied}
+        let mut buffer = Vec::with_capacity(
+            WRITING_FILES_BUF_LEN.min(
+                to_send
+            )
+        );
+
+        if self.write_headers_and_get_ready().await.is_err() {
+            return SendingFileResults::ErrorWhileSendingBytesToClient;
+        }
+        while to_send > 0 {
+            buffer.clear();
+            match file.read_buf(&mut buffer).await {
+                Ok(size) => {
+                    let index = to_send.min(size);
+                    if let Some(ref mut callback) = pc.edit_each_chunk {
+                        callback(&mut buffer[..index]);
+                    }
+                    if self.write_custom_bytes(&buffer[..index]).await.is_err() {
+                        return SendingFileResults::ErrorWhileSendingBytesToClient
+                    }
+                    to_send -= index;
+                    continue;
+                }
+                Err(_) => {
+                    return  SendingFileResults::ReadingFileBytesError
+                }
+            }
+
+        }
+        return SendingFileResults::Success
+    }
+
+
 
 
 

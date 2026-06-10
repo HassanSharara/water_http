@@ -27,7 +27,19 @@ pub struct CHolder {
     }
 
 
-    let mut config = ServerConfigurations::bind("0.0.0.0",8084);
+    let mut config = ServerConfigurations::bind_multi_ports(
+        vec![
+            8084,
+            443
+        ]
+    );
+     config.set_tls_certificate(
+         "cert/cert.pem",
+         "cert/key.pem",
+         None
+     );
+
+     config.tls_ports = vec![443];
      water_http::RunServer!(
         config,
         MAIN_ROOT,
