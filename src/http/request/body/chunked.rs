@@ -264,176 +264,53 @@ impl<'a> BodyChunkedReader<'a> {
 
 
              MultipartStreamHolder::H2(h2) => {
-                 let mut chunk:Option<Chunk> = None;
+                 let mut chunk_count = *chunk_index;
+                 let body_reader = h2.batch.body_mut();
 
-                 let  body_reader = h2.batch.body_mut();
-                 loop {
-                     #[cfg(feature = "debugging")]
-                     {
-                         println!("chunk is {:?}",chunk);
-                     }
-                     match &chunk {
-                         None => {
+                 // 1. Process anything currently sitting in our local reading buffer
+                 let local_chunk = self.reading_buffer.chunk();
+                 if !local_chunk.is_empty() {
+                     let current_chunk = Chunk {
+                         index: chunk_count,
+                         chunk_size: local_chunk.len(),
+                     };
+                     try_call_back!(callback, &current_chunk, local_chunk);
+                     chunk_count += 1;
+                     self.reading_buffer.clear();
+                 }
 
-                             let  data = self.reading_buffer.chunk();
-                             return  match find_new_line(data,16) {
-                                 Ok(index_option) => {
-                                     #[cfg(feature = "debugging")]
-                                     {
-                                         tracing::debug!("trying to find chunk on {:?}",index_option)
-                                     }
-                                     match index_option {
-                                         None => {
-                                           if let Some(r) = body_reader.data().await {
-                                               if let Ok(r) = r  {
-                                                   self.reading_buffer.extend_from_slice(&r);
-                                                   continue
-                                               } else {
+                 // 2. Drive the active incoming stream
+                 // Check if the stream has reached EOF natively
+                 if body_reader.is_end_stream() {
+                     *chunk_index = chunk_count;
+                     return Ok(());
+                 }
 
-                                                   return Err(())
-                                               }
+                 // Await the next frame fragment.
+                 // If this is a half-send, this will unblock the moment frame 1 hits,
+                 // execute the callback, and exit cleanly so your router handles it immediately.
+                 if let Some(frame_result) = body_reader.data().await {
+                     match frame_result {
+                         Ok(raw_bytes) => {
+                             let frame_data = raw_bytes.as_ref();
+                             if !frame_data.is_empty() {
+                                 let current_chunk = Chunk {
+                                     index: chunk_count,
+                                     chunk_size: frame_data.len(),
+                                 };
 
-                                           }
-                                           else {
-                                               return Ok(())
-                                           }
-                                         }
-                                         Some(i) => {
-
-                                             let chunk_size = hex_bytes_to_usize(&data[..i]);
-                                             if let Some(chunk_size) = chunk_size {
-                                                 #[cfg(feature = "debugging")]
-                                                 {
-                                                     tracing::debug!("chunk size is {}",chunk_size)
-                                                 }
-                                                 chunk = Some(Chunk { index: *chunk_index, chunk_size });
-
-                                                 *chunk_index += 1;
-                                                 if i + 2 >= data.len() {
-                                                     self.reading_buffer.clear();
-                                                     continue;
-                                                 }
-                                                 self.reading_buffer.advance(i+2);
-                                                 #[cfg(feature = "debugging")]
-                                                 {
-                                                     tracing::debug!("data after advanced {}",
-                                                       String::from_utf8_lossy(self.reading_buffer.chunk())
-                                                     )
-                                                 }
-                                                 continue;
-                                             }
-                                             Err(())
-                                         }
-                                     }
-                                 }
-                                 Err(_) => {  Err(())}
+                                 try_call_back!(callback, &current_chunk, frame_data);
+                                 chunk_count += 1;
                              }
                          }
-                         Some(chunk_op) => {
-
-                             let data = self.reading_buffer.chunk();
-                             if chunk_op.chunk_size == 0 {
-                                 #[cfg(feature = "debugging")]{
-                                     println!("the last chunk payload {:?}",
-                                              String::from_utf8_lossy(data)
-                                     )
-                                 }
-                                 return match find_new_line(data, 4) {
-                                     Ok(index_option) => {
-                                         match index_option {
-                                             None => {
-                                                 if let Some(r) = body_reader.data().await {
-                                                     if let Ok(r) = r {
-                                                         self.reading_buffer.extend_from_slice(&r);
-                                                         continue
-                                                     } else {
-                                                         return Err(());
-                                                     }
-                                                 } else {
-                                                     return Ok(())
-                                                 }
-                                             }
-                                             Some(i) => {
-                                                 #[cfg(feature = "debugging")]{
-                                                     println!("the last chunk was found on {i}"
-                                                     )
-                                                 }
-                                                 if data.len() < 2 { return Err(()) }
-                                                 if i == 0 {
-                                                     self.reading_buffer.advance(2);
-                                                 }
-                                                 #[cfg(feature = "debugging")]{
-                                                     tracing::info!("after chunked payload proceed {:?}",
-                                                       String::from_utf8_lossy(self.reading_buffer.chunk())
-                                                     )
-                                                 }
-                                                 Ok(())
-                                             }
-                                         }
-                                     }
-                                     Err(_) => { Err(()) }
-                                 }
-                             }
-
-                             let data = self.reading_buffer.chunk();
-                             match find_new_line(data,chunk_op.chunk_size) {
-                                 Ok(new_line) => {
-                                     match new_line {
-                                         None => {
-                                             try_call_back!(callback,chunk_op,data);
-                                             self.reading_buffer.clear();
-                                             if let Some(r) = body_reader.data().await {
-                                                 if let Ok(r) = r {
-                                                     self.reading_buffer.extend_from_slice(&r);
-                                                     continue
-                                                 }
-                                                 return Err(())
-                                             } else {
-                                                 return Ok(())
-                                             }
-                                         }
-                                         Some(n) => {
-                                             let data = self.reading_buffer.chunk();
-                                             try_call_back!(callback,chunk_op,&data[..n]);
-                                             if   data.len() <= 2 {
-                                                 chunk = None;
-                                                 self.reading_buffer.clear();
-                                                 if let Some(r) = body_reader.data().await {
-                                                     if let Ok(r) = r {
-                                                         self.reading_buffer.extend_from_slice(&r);
-                                                         continue
-                                                     }
-                                                     return Err(())
-                                                 } else {
-                                                     return Ok(())
-                                                 }
-                                             }
-                                             self.reading_buffer.advance(n+2);
-                                             #[cfg(feature = "debugging")]
-                                             {
-                                                 tracing::debug!("left bytes after advanced {:?}",
-                                                  String::from_utf8_lossy(self.reading_buffer.chunk()
-                                                  )
-                                              )
-                                             }
-                                             chunk = None;
-                                             continue;
-                                         }
-                                     }
-                                 }
-                                 Err(_) => {
-                                     #[cfg(feature = "debugging")]
-                                     {
-                                         tracing::error!("there is no new line when it should be {:?}",
-                                           String::from_utf8_lossy(data)
-                                         )
-                                     }
-                                     return Err(())}
-                             }
-
+                         Err(_) => {
+                             return Err(());
                          }
                      }
                  }
+
+                 *chunk_index = chunk_count;
+                 return Ok(());
              }
          }
      }

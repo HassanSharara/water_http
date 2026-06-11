@@ -148,7 +148,7 @@ pub struct ServerConfigurations {
     /// the default value for encoding logic [`EncodingLogic::None`]
     pub (crate) responding_encoding_configurations:EncodingConfigurations,
 
-    #[cfg(feature = "support_tls")]
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     /// - if you need your server to support tls or ssl encryption
     /// just provide the path of your [private.key] and [certificate.cer]
     /// and also you can provide [ca_bundle.cert]
@@ -161,7 +161,7 @@ pub struct ServerConfigurations {
     /// the env that you are working on
     pub core_affinity:bool,
 
-    #[cfg(feature = "support_tls")]
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     /// - specify where should the system apply tls protocol on which ports
     /// the default value is ['443']
     pub tls_ports:Vec<u16>,
@@ -196,7 +196,7 @@ pub struct ServerConfigurations {
     // pub max_http1_query_length:usize,
 }
 
-#[cfg(feature = "support_tls")]
+#[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 /// - struct for parsing tls certificates resources files paths
 ///  to  [ServerConfigurations]
 pub struct TLSCertificate {
@@ -222,13 +222,13 @@ impl ServerConfigurations {
             .unwrap_or(4);
         ServerConfigurations{
             addresses:vec![("0.0.0.0".to_string(),80),],
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             tls_certificate:None,
             core_affinity:false,
             restricted_ips:None,
             #[cfg(feature = "auto_encode_response")]
             responding_encoding_configurations:EncodingConfigurations::default(),
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             tls_ports:vec![],
             backlog:1028,
             max_request_size:10000,
@@ -274,7 +274,7 @@ impl ServerConfigurations {
     pub fn enable_core_affinity(&mut self){
         self.core_affinity = true;
     }
-    #[cfg(feature = "support_tls")]
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 
     /// # creating [TLSCertificate] from certificate path and private key path
     /// - (optional) also you could provide bundle path

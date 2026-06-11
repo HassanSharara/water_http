@@ -2,9 +2,12 @@
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
 use std::collections::HashMap;
+#[cfg(not(feature = "use_io_uring"))]
 use std::future::PollFn;
 use std::net::SocketAddr;
+#[cfg(not(feature = "use_io_uring"))]
 use std::pin::Pin;
+#[cfg(not(feature = "use_io_uring"))]
 use std::task::{Context, Poll};
 // use bytes:: BytesMut;
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
@@ -13,7 +16,9 @@ use bytes::Bytes;
 
 #[cfg(not(feature = "use_only_http1"))]
 use h2::RecvStream;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf};
+#[cfg(not(feature = "use_io_uring"))]
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf,AsyncReadExt};
+
 #[cfg(not(feature = "use_only_http1"))]
 use h2::server::SendResponse;
 #[cfg(not(feature = "use_only_http1"))]
@@ -29,7 +34,9 @@ use tokio::net::TcpStream;
 use crate::http::Http2Sender;
 #[cfg(not(feature = "use_only_http1"))]
 use crate::http::request::Http2Getter;
-use crate::http::{FileRSender, Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData, SendingFileResults};
+#[cfg(not(feature = "use_io_uring"))]
+use crate::http::{FileRSender,SendingFileResults};
+use crate::http::{ Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
 use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
@@ -1265,7 +1272,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
 
 pub (crate)enum HttpStream {
-    #[cfg(feature = "support_tls")]
+    #[cfg(all(all(feature = "support_tls",not(feature="use_io_uring"))))]
     AsyncSecure(tokio_rustls::server::TlsStream<TcpStream>),
     Async(TcpStream),
 }
@@ -1280,7 +1287,7 @@ impl HttpStream {
         std::future::poll_fn(move |cx| {
 
             match self {
-                #[cfg(feature = "support_tls")]
+                #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                 HttpStream::AsyncSecure(s) => {
                     let stream = Pin::new(s);
                     let mut buf = ReadBuf::new(reading_buffer.chunk_mut());
@@ -1318,7 +1325,7 @@ impl HttpStream {
     //
     //     let f = std::future::poll_fn(|cx|{
     //         match self {
-    //             #[cfg(feature = "support_tls")]
+    //             #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     //             HttpStream::AsyncSecure(_) => {todo!()}
     //             HttpStream::Async(s) => {
     //                 match s.read(unsafe{reading_buffer.unsafe_clone()}).poll(cx) {
@@ -1339,10 +1346,11 @@ impl HttpStream {
     //     a
     // }
 
+    #[cfg(not(feature = "use_io_uring"))]
     #[inline(always)]
     pub async fn read(&mut self,buf:&mut BytesMut)->Result<usize,std::io::Error>{
         match self {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             HttpStream::AsyncSecure(s) => {
                 s.read(buf.chunk_mut()).await
             }
@@ -1367,7 +1375,7 @@ impl HttpStream {
 impl AsyncWrite for HttpStream {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
         match self.get_mut() {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             HttpStream::AsyncSecure(stream) => Pin::new(stream).poll_write(cx, buf),
             HttpStream::Async(stream) => Pin::new(stream).poll_write(cx, buf),
         }
@@ -1375,7 +1383,7 @@ impl AsyncWrite for HttpStream {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             HttpStream::AsyncSecure(stream) => Pin::new(stream).poll_flush(cx),
             HttpStream::Async(stream) => Pin::new(stream).poll_flush(cx),
         }
@@ -1383,7 +1391,7 @@ impl AsyncWrite for HttpStream {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             HttpStream::AsyncSecure(stream) => Pin::new(stream).poll_shutdown(cx),
             HttpStream::Async(stream) => Pin::new(stream).poll_shutdown(cx),
         }
@@ -1395,7 +1403,7 @@ impl AsyncWrite for HttpStream {
 impl AsyncRead for HttpStream {
     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
         match self.get_mut() {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             HttpStream::AsyncSecure(stream) => {
                 Pin::new(stream).poll_read(cx,buf)
             }

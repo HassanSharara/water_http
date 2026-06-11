@@ -2,32 +2,33 @@ use std::net::SocketAddr;
 use std::ops::Deref;
 use bytes::{Buf};
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-#[cfg(feature = "use_io_uring")]
-use tokio_uring::net::TcpStream;
+#[cfg(not(feature = "use_io_uring"))]
+use tokio::io::{AsyncWrite,AsyncRead,AsyncReadExt,AsyncWriteExt};
+
 
 #[cfg(not(feature = "use_io_uring"))]
 use tokio::net::TcpStream;
-#[cfg(feature = "support_tls")]
+#[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 use tokio_rustls::server::TlsStream;
-#[cfg(feature = "use_io_uring")]
-use tokio_uring::BufResult;
+// #[cfg(feature = "use_io_uring")]
+// use tokio_uring::BufResult;
 
 
 #[cfg(feature = "debugging")]
 use tracing::{debug};
-
+#[cfg(not(feature = "use_io_uring"))]
 use crate::http::request::{FormingRequestResult, IncomingRequest};
-use crate::server::{CapsuleWaterController, Http1Context, HttpContext, HttpStream, Protocol, ServingRequestResults};
-
+use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults};
+#[cfg(not(feature = "use_io_uring"))]
+use crate::server::Http1Context;
 
 use crate::server::matcher::Matcher;
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(all(not(feature = "use_only_http1"),not(feature = "use_io_uring")))]
 use crate::server::sr_context::{Http2Context};
 
 
 pub enum WaterStream {
-    #[cfg(feature = "support_tls")]
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     TLS(TlsStream<TcpStream>),
 
     #[cfg(feature = "use_io_uring")]
@@ -77,17 +78,20 @@ impl  ConnectionStream {
         {
              debug!("new connection from  : {:?}",self.address);
         }
+
         match  self.io {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             WaterStream::TLS( stream) => {
                 #[cfg(feature = "debugging")]
                 {
                     debug!("{:?} connected by tls layer",self.address);
                 }
+                #[cfg(all(not(feature = "use_only_http1"),not(feature = "use_io_uring")))]
                 if let Some(alpn_preface) = stream.get_ref().1.alpn_protocol() {
-                    #[cfg(not(feature = "use_only_http1"))]
                     {
+
                         if alpn_preface == b"h2" {
+
                             let handshake
                                 = h2::server::handshake(stream).await;
                             if let Ok(mut connection) = handshake {
@@ -100,7 +104,8 @@ impl  ConnectionStream {
                                 while let Some(
                                     Ok(batch))
                                     = connection.accept().await {
-                                    let mut context:HttpContext<Holder,HS,QS> =
+                                    #[cfg(feature = "thread_shared_struct")]
+                                    let mut context:HttpContext<Holder,SHARED,HS,QS> =
                                         HttpContext::new(
                                             Protocol::<'_,HS, QS>::from_http2_context(
                                                 Http2Context
@@ -109,6 +114,18 @@ impl  ConnectionStream {
                                             ),
                                             &self.address
                                         );
+
+                                    #[cfg(not(feature = "thread_shared_struct"))]
+                                        let mut context:HttpContext<Holder,HS,QS> =
+                                        HttpContext::new(
+                                            Protocol::<'_,HS, QS>::from_http2_context(
+                                                Http2Context
+                                                    ::<'_>
+                                                ::new(batch, &mut reading_buffer)
+                                            ),
+                                            &self.address
+                                        );
+
                                     let matcher = matcher.clone();
                                     match  context.serve_ef(matcher).await {
                                         ServingRequestResults::Stop => {
@@ -123,24 +140,23 @@ impl  ConnectionStream {
                             return;
                         }
                     }
-
-                    #[cfg(feature = "thread_shared_struct")]
-                    Self::handle_h1_connections(
-                        &mut HttpStream::AsyncSecure(stream)
-                        ,&self.address,
-                        controller,
-                        shared_factory,
-                        matcher
-                    ).await;
-                    #[cfg(not(feature = "thread_shared_struct"))]
-                    Self::handle_h1_connections(
-                        &mut HttpStream::AsyncSecure(stream)
-                        ,&self.address,
-                    controller,
-                        matcher.clone()
-                    ).await;
-
                 }
+                #[cfg(feature = "thread_shared_struct")]
+                Self::handle_h1_connections(
+                    &mut HttpStream::AsyncSecure(stream)
+                    ,&self.address,
+                    controller,
+                    shared_factory,
+                    matcher
+                ).await;
+                #[cfg(not(feature = "thread_shared_struct"))]
+                Self::handle_h1_connections(
+                    &mut HttpStream::AsyncSecure(stream)
+                    ,&self.address,
+                    controller,
+                    matcher.clone()
+                ).await;
+
             }
             WaterStream::TOStream(stream) => {
 
@@ -149,11 +165,12 @@ impl  ConnectionStream {
                     debug!("{:?} connected without secure layer (tls)",self.address);
                 }
 
-                #[cfg(not(feature = "use_only_http1"))]
+                #[cfg(all(not(feature = "use_io_uring"),not(feature = "use_only_http1")))]
                 {
                     let mut preface :[u8;3]=[0;3];
                     _=stream.peek(&mut preface).await;
                     if preface == *b"PRI" {
+
                         #[cfg(feature = "debugging")]
                         {
                             debug!("{:?} connection is using http2 protocol",self.address);
@@ -245,7 +262,7 @@ impl  ConnectionStream {
         const QS:usize,>
     (stream:&mut HttpStream,peer:&SocketAddr,
      #[cfg(feature = "thread_shared_struct")]
-     controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
+      _controller:&'static  CapsuleWaterController<Holder,SHARED,HS,QS>,
      #[cfg(not(feature = "thread_shared_struct"))]
      _controller:&'static  CapsuleWaterController<Holder,HS,QS>,
      #[cfg(feature = "thread_shared_struct")]
@@ -255,6 +272,7 @@ impl  ConnectionStream {
      #[cfg(not(feature = "thread_shared_struct"))]
      matcher:Matcher<Holder,HS,QS>
     ){
+
         use crate::server::io::buf::{PooledWaterBuffer,PooledBufferType as BufType};
         let mut er_pool = PooledWaterBuffer::new(BufType::Body);
         let mut rb_pool = PooledWaterBuffer::new(BufType::Read);
@@ -512,7 +530,7 @@ impl  ConnectionStream {
                                                 while rem > 0 {
 
                                                     let r = match stream {
-                                                        #[cfg(feature = "support_tls")]
+                                                        #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                                                         HttpStream::AsyncSecure(s) => {
                                                             s.read(reading_buffer.chunk_mut()).await
                                                         }
@@ -587,14 +605,14 @@ impl  ConnectionStream {
            let mut each_request_body_reading_buffer =
                BodyReadingBuffer::new(er);
            let mut reading_buffer = rb;
-           let mut response_buffer = wb;
+           let  response_buffer = wb;
 
           'main_loop: loop {
               reserve_buf(&mut reading_buffer);
 
               if let Ok(read_size)
                   = match stream {
-                  #[cfg(feature = "support_tls")]
+                  #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                   HttpStream::AsyncSecure(s) => {
 
                       let (r,b) = s.read(unsafe{reading_buffer.unsafe_clone()}).await;
@@ -819,7 +837,7 @@ impl  ConnectionStream {
                                               while rem > 0 {
 
                                                   let r = match stream {
-                                                      #[cfg(feature = "support_tls")]
+                                                      #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                                                       HttpStream::AsyncSecure(s) => {
                                                           let (r,_) = s.read(unsafe{reading_buffer.unsafe_clone()}).await ;
                                                           r
@@ -857,10 +875,10 @@ impl  ConnectionStream {
                               }
                               continue 'main_loop;
                           }
-                          FormingRequestResult::Err(e) => {
+                          FormingRequestResult::Err(_e) => {
                               #[cfg(feature = "debugging")]
                               {
-                                  tracing::error!("incoming request has error {:?} \n the request is {:?}",e,
+                                  tracing::error!("incoming request has error {:?} \n the request is {:?}",_e,
                                     String::from_utf8_lossy(reading_buffer.chunk())
                                   );
                               }
@@ -903,7 +921,7 @@ pub (crate) async fn handle_responding<'e>
 (response_buf:BytesMut,stream:&mut HttpStream) ->Result<BytesMut,&'e str>{
 
     match stream {
-        #[cfg(feature = "support_tls")]
+        #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
         HttpStream::AsyncSecure(h) => {
             todo!()
         }
@@ -1028,7 +1046,7 @@ impl BodyReadingBuffer {
 
     {
         let res = match  stream {
-            #[cfg(feature = "support_tls")]
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             HttpStream::AsyncSecure(h) => {                h.read(&mut self.buffer)
             }
             HttpStream::Async(h) => {

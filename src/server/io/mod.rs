@@ -48,7 +48,7 @@ pub (crate) mod buf;
 //         }
 //         unsafe {
 //             match &mut *stream_ptr {
-//                 #[cfg(feature = "support_tls")]
+//                 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 //                 HttpStream::AsyncSecure(stream) => {
 //                     match stream.poll_write(cx, this.write_buf) {
 //                         Poll::Ready(Ok(n)) => {
@@ -92,7 +92,7 @@ pub (crate) mod buf;
 //         // match on the inner stream via the raw pointer and call its poll_read without moving
 //         unsafe {
 //             match &mut *stream_ptr {
-//                 #[cfg(feature = "support_tls")]
+//                 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 //                 HttpStream::AsyncSecure(s) => match Pin::new_unchecked(s).poll_read(cx, this.read_buf) {
 //                     Poll::Ready(Ok(_)) => {
 //                         let filled = unsafe {(&mut *this).read_buf.filled()};
@@ -495,7 +495,7 @@ pub (crate) mod buf;
 // //         }
 // //         unsafe {
 // //             match &mut *stream_ptr {
-// //                 #[cfg(feature = "support_tls")]
+// //                 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 // //                 HttpStream::AsyncSecure(stream) => {
 // //                     match stream.poll_write(cx, this.write_buf) {
 // //                         Poll::Ready(Ok(n)) => {
@@ -537,7 +537,7 @@ pub (crate) mod buf;
 // //     //     // perform variant dispatch and calls inside an unsafe block using the raw pointer
 // //     //     unsafe {
 // //     //         match &mut *stream_ptr {
-// //     //             #[cfg(feature = "support_tls")]
+// //     //             #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 // //     //             HttpStream::AsyncSecure(stream) => {
 // //     //                 match stream.poll_write(cx, this.write_buf) {
 // //     //                     Poll::Ready(r) => match r {
@@ -586,7 +586,7 @@ pub (crate) mod buf;
 // //         // match on the inner stream via the raw pointer and call its poll_read without moving
 // //         unsafe {
 // //             match &mut *stream_ptr {
-// //                 #[cfg(feature = "support_tls")]
+// //                 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 // //                 HttpStream::AsyncSecure(s) => match Pin::new_unchecked(s).poll_read(cx, this.read_buf) {
 // //                     Poll::Ready(Ok(_)) => {
 // //                         let filled = unsafe {(&mut *this).read_buf.filled()};
@@ -611,7 +611,7 @@ pub (crate) mod buf;
 // //     // #[inline(always)]
 // //     // fn poll_read_ready(mut self:Pin<&mut Self>,cx:&mut Context<'_>)->Poll<PollReadResults>{
 // //     //     return match &mut self.stream {
-// //     //         #[cfg(feature = "support_tls")]
+// //     //         #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 // //     //         HttpStream::AsyncSecure(s) => {
 // //     //             _= s.get_ref().0.poll_read_ready(cx);
 // //     //             Poll::Pending
@@ -686,7 +686,7 @@ pub (crate) mod buf;
 // //     //                 // Try read
 // //     //                 let before_len = rdr.filled().len();
 // //     //                 let read_result = match hs {
-// //     //                     #[cfg(feature = "support_tls")]
+// //     //                     #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 // //     //                     HttpStream::AsyncSecure(s) => Pin::new(s).poll_read(cx, &mut rdr),
 // //     //                     HttpStream::Async(s) => Pin::new(s).poll_read(cx, &mut rdr),
 // //     //                 };
@@ -703,7 +703,7 @@ pub (crate) mod buf;
 // //     //                 // Read pending, try to flush writes
 // //     //                 if write_buf.len() > 0 {
 // //     //                     let write_result = match hs {
-// //     //                         #[cfg(feature = "support_tls")]
+// //     //                         #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 // //     //                         HttpStream::AsyncSecure(s) => s.poll_write(cx, &write_buf),
 // //     //                         HttpStream::Async(s) => Pin::new(s).poll_write(cx, &write_buf),
 // //     //                     };

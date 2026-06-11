@@ -85,30 +85,50 @@ impl <'a> BytesPuller <'a> {
             StreamBytesPuller::H2(h2) => {
                 let mut remaining = self.content_length;
                 let body_mut = h2.batch.body_mut();
-                let err= Err(
+                let err = Err(
                     WaterErrors::Server(
                         ServerError::HANDLING_INCOMING_BODY_ERROR
                     )
                 );
+
                 while remaining > 0 {
                     let data = body_mut.data().await;
                     match data {
-                        None => { break }
-                        Some(data) => {
-                            match data {
+                        None => {
+                            // Stream ended but we still expected more bytes!
+                            return err;
+                        }
+                        Some(data_result) => {
+                            match data_result {
                                 Ok(data) => {
-                                    if callback(data.as_ref()).is_err()  { return err}
-                                    remaining-=data.len();
-                                    continue;
+                                    let chunk_bytes = data.as_ref();
+
+                                    // Protect against client sending more data than Content-Length
+                                    let to_consume = remaining.min(chunk_bytes.len());
+                                    if to_consume == 0 {
+                                        break;
+                                    }
+
+                                    if callback(&chunk_bytes[..to_consume]).is_err() {
+                                        return err;
+                                    }
+
+                                    remaining -= to_consume;
                                 }
                                 Err(_) => {
-                                    return err
+                                    return err;
                                 }
                             }
                         }
                     }
                 }
-                return Ok(())
+
+                // If remaining is 0, we got everything perfectly.
+                if remaining == 0 {
+                    return Ok(());
+                } else {
+                    return err;
+                }
             }
         }
 

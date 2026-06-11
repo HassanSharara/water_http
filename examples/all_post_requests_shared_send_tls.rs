@@ -1,5 +1,7 @@
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
 use water_http::server::{HttpContext, ServerConfigurations};
 use water_http::{functions_builder, InitControllersRoot, WaterController};
 
@@ -10,6 +12,7 @@ use water_http::http::status_code::HttpStatusCode;
 InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
+    shared_type:u8,
 }
 type MainHolderType = CHolder;
 
@@ -30,24 +33,27 @@ fn main() {
             .expect("no thing");
     }
 
-    let   config = ServerConfigurations::bind("0.0.0.0",8084);
-    // if you want to make it tls configure you need to make config mut
-    // let mut config
-    // and then -->
-    // config.set_tls_certificate(
-    //     "./cert/cert.pem",
-    //     "./cert/key.pem",
-    //     None
-    // );
+    let mut config = ServerConfigurations::bind("0.0.0.0",8084);
+    config.set_tls_certificate(
+        "./cert/cert.pem",
+        "./cert/key.pem",
+        None
+    );
     water_http::RunServer!(
         config,
         MAIN_ROOT,
-        MainController
+        MainController,
+        shared
     );
+}
+
+fn shared()->Pin<Box<dyn Future<Output=u8> + Send >>{
+    Box::pin(async {8})
 }
 
 WaterController! {
     holder -> super::MainHolderType,
+    shared -> u8,
     name -> MainController ,
     functions -> {
 
@@ -60,7 +66,7 @@ WaterController! {
     }
 }
 
-async fn upload_bin<H:Send,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,HS,QS> ){
+async fn upload_bin<H:Send,SHARED:Clone+Send,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,H,SHARED,HS,QS> ){
     #[cfg(feature = "debugging")]
     {
         tracing::info!("upload binary request invoked");
@@ -70,7 +76,7 @@ async fn upload_bin<H:Send,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,
     // println!("res is {:?}",puller);
     if let ParsingBodyResults::Chunked(IBodyChunks::Bytes(mut puller)) = puller {
         if puller.on_chunk(|data|{
-             println!("binary data is {:?}",String::from_utf8_lossy(data));
+            println!("binary data is {:?}",String::from_utf8_lossy(data));
             return Ok(());
         }).await.is_ok() {
             println!("sending response from bytes puller");
@@ -79,7 +85,7 @@ async fn upload_bin<H:Send,const HS:usize,const QS:usize>(g:&mut HttpContext<'_,
         }
     }
     else if let ParsingBodyResults::FullBody(
-    water_http::http::request::IBody::Bytes(_b)
+        water_http::http::request::IBody::Bytes(_b)
     ) = puller {
         _= g.send_str("Success").await;
     }

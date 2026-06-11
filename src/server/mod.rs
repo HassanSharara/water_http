@@ -27,15 +27,18 @@ pub use encoding::*;
 pub use capsule::*;
 
 use std::io as stdio;
-use std::net::{SocketAddr, ToSocketAddrs};
+#[cfg(not(feature = "use_io_uring"))]
+use std::net::SocketAddr;
+#[cfg(not(feature = "use_io_uring"))]
+use std::net::{ ToSocketAddrs};
 #[cfg(feature = "debugging")]
 use std::ops::Deref;
 
-#[cfg(feature = "support_tls")]
+#[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 use std::sync::{Arc};
-#[cfg(not(feature = "use_tokio_send"))]
+#[cfg(all(not(feature = "use_tokio_send"),not(feature = "use_io_uring")))]
 use tokio::task::LocalSet;
-#[cfg(feature = "support_tls")]
+#[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 use tokio_rustls::TlsAcceptor;
 #[cfg(feature = "debugging")]
 use tracing::{debug};
@@ -134,7 +137,7 @@ pub  fn run_server<
         let controller_ptr: &'static CapsuleWaterController<Holder, SHARED, HS, QS> = unsafe { &*(controller as *const _) };
     #[cfg(not(feature = "thread_shared_struct"))]
         let controller_ptr: &'static CapsuleWaterController<Holder, HS, QS> = unsafe { &*(controller as *const _) };
-
+    #[cfg(all(not(feature = "use_io_uring"),not(feature = "use_tokio_send")))]
     let listener_count = conf.listeners_count;
     // 3. MULTI-THREADED (TOKIO SEND) ARCHITECTURE
     #[cfg(feature = "use_tokio_send")]
@@ -207,6 +210,8 @@ pub  fn run_server<
 
 
                     #[cfg(tokio_unstable)]
+
+
                     {
                         let rt = tokio::runtime::Builder::new_current_thread()
                             .enable_all()
@@ -271,7 +276,7 @@ pub  fn run_server<
 
 
 #[cfg(feature = "use_io_uring")]
-fn create_tokio_uring_listener(address: &str, port: &u16, backlog: u32) -> tokio_uring::net::TcpListener {
+fn create_tokio_uring_listener(address: &str, port: &u16, _backlog: u32) -> tokio_uring::net::TcpListener {
     let ad = format!("{address}:{port}");
     let listener = tokio_uring::net::TcpListener::bind(ad.parse().unwrap());
     listener.unwrap()
@@ -338,6 +343,7 @@ async fn run_server_with_address<
     matcher:Matcher<Holder,HS,QS>
 )->stdio::Result<()>
 {
+
     let server_config = get_server_config();
 
     // 1. Listener Initialization
@@ -371,7 +377,7 @@ async fn run_server_with_address<
     #[cfg(feature = "thread_shared_struct")]
         let shared_struct = shared_factory().await;
 
-    #[cfg(feature = "support_tls")]
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     let (tls_acceptor, is_secure) = {
         let mut acceptor = None;
         if let Some(cfg) = server_config.tls_certificate.as_ref() {
@@ -388,7 +394,10 @@ async fn run_server_with_address<
 
     loop {
         match listener.accept().await {
+
             Ok((stream, socket_addr)) => {
+
+
                 #[cfg(feature = "debugging")]
                 connections_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
@@ -396,19 +405,23 @@ async fn run_server_with_address<
                 let matcher = matcher.clone();
                 #[cfg(feature = "thread_shared_struct")]
                  let shared_struct = shared_struct.clone();
-                #[cfg(feature = "support_tls")]
+                #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                  let tls_acceptor = tls_acceptor.clone();
                 #[cfg(feature = "debugging")]
                     let connections_count = connections_count.clone();
 
                 let handler_future = async move {
-                    #[cfg(feature = "support_tls")]
+
+                    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                     if is_secure {
                         if let Some(acc) = tls_acceptor {
                             if let Ok(tls_stream) = acc.accept(stream).await {
-                                let connection = ConnectionStream::new(WaterStream::TLS(tls_stream), socket_addr);
+                                let connection = ConnectionStream::new(
+                                    WaterStream::TLS(tls_stream), socket_addr);
                                 #[cfg(feature = "thread_shared_struct")]
                                 serve_connection(connection, controller, shared_struct, matcher).await;
+
+
                                 #[cfg(not(feature = "thread_shared_struct"))]
                                 serve_connection(connection, controller, matcher).await;
                             }
@@ -450,6 +463,7 @@ async fn run_server_with_address<
                 // }
             }
             Err(_) => {
+
                 // Yield on errors to prevent a hot-loop (e.g. EMFILE)
                 // tokio::task::yield_now().await;
             }

@@ -32,7 +32,6 @@ fn main() {
         tracing::subscriber::set_global_default(subscriber)
             .expect("no thing");
     }
-
     let  config = ServerConfigurations::bind("0.0.0.0",8084);
     water_http::RunServer!(
         config,

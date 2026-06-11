@@ -1,4 +1,4 @@
-#![cfg(feature = "support_tls")]
+#![cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 use std::path::Path;
 use tokio_rustls::rustls::pki_types::{CertificateDer,PrivateKeyDer};
 use rustls_pemfile::{certs, private_key};

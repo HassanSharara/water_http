@@ -1,4 +1,4 @@
-#![cfg(not(feature = "use_io_uring"))]
+#![cfg(all(not(feature = "use_io_uring"),feature = "mini"))]
 use std::future::Future;
 use std::net::{SocketAddr, ToSocketAddrs};
 use integer_to_bytes::HumanInt;

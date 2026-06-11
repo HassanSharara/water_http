@@ -3,7 +3,7 @@
 use std::ffi::OsStr;
 use std::fmt::Display;
 use std::future::Future;
-
+#[cfg(not(feature = "use_io_uring"))]
 use std::io:: SeekFrom;
 
 #[cfg(not(feature = "use_only_http1"))]
@@ -16,7 +16,8 @@ use http::{HeaderName, HeaderValue, Response as H2Response, response::Builder as
 use integer_to_bytes::HumanInt;
 use serde::de::Error;
 use serde::Serialize;
-use tokio::io::{ AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+#[cfg(not(feature = "use_io_uring"))]
+use tokio::io::{AsyncSeekExt,AsyncWriteExt,AsyncReadExt};
 use water_buffer::WaterBuffer;
 use crate::http::{FileRSender, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
@@ -62,12 +63,18 @@ pub  trait HttpSenderTrait {
     -> impl Future<Output=Result<(),()>>;
 
 
-    #[cfg(not(feature = "use_io_uring"))]
+    #[cfg(feature = "use_io_uring")]
    /// to send files as response to client ,
    ///and it takes [FileRSender]
    fn send_file(&mut self,path:FileRSender<'_>)->
                                                      impl Future<
-                                                         Output = SendingFileResults> + Send;
+                                                         Output = SendingFileResults> ;
+    #[cfg(not(feature = "use_io_uring"))]
+    /// to send files as response to client ,
+    ///and it takes [FileRSender]
+    fn send_file(&mut self,path:FileRSender<'_>)->
+    impl Future<
+        Output = SendingFileResults > ;
 
 
     /// for flushing response stream into route connection
@@ -361,34 +368,31 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
 
 
     #[cfg(feature = "use_io_uring")]
-    async fn send_file(&mut self,mut pc: FileRSender<'_>)-> SendingFileResults {
-
-
-
-        let mut file = match tokio_uring::fs::File::open(pc.path).await {
-            Ok(f) => {f}
-            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
+    async fn send_file(&mut self, mut pc: FileRSender<'_>) -> SendingFileResults {
+        // Open the file using tokio_uring's specialized File type
+        let file = match tokio_uring::fs::File::open(pc.path).await {
+            Ok(f) => f,
+            Err(_) => return SendingFileResults::ErrorWhileOpeningTheFile,
         };
 
-        #[cfg(feature = "use_io_uring")]
-            let mut file = match tokio_uring::fs::File::open(pc.path).await {
-            Ok(f) => {f}
-            Err(_) => {return SendingFileResults::ErrorWhileOpeningTheFile}
+        // Since metadata() on tokio_uring::fs::File might be different or unavailable depending on versions,
+        // ensure your setup handles standard metadata conversion or use standard fs for stateless size checks:
+        let meta = match std::fs::metadata(pc.path) {
+            Ok(m) => m,
+            Err(_) => return SendingFileResults::ErrorWhileOpeningTheFile,
         };
-        let meta = match file.metadata().await {
-            Ok(m) => {m}
-            Err(_) => { return SendingFileResults::ErrorWhileOpeningTheFile}
-        };
-        let  file_size  = meta.len() as usize;
+
+        let file_size = meta.len() as usize;
         let file_name = match pc.path.file_name() {
-            None => { return SendingFileResults::FileNotFound}
-            Some(f) => {f}
+            None => return SendingFileResults::FileNotFound,
+            Some(f) => f,
         };
+
         let file_content_type = crate::util::content_type_from_file_path(&pc.path);
         let mut start = 0_usize;
         let mut end = file_size;
 
-        // check if we need to send the whole file or just range of it
+        // Check ranges
         match pc.range {
             None => {
                 self.send_status_code(HttpStatusCode::OK);
@@ -399,58 +403,76 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
                     (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream)
                         .min(file_size)
                 });
-                if (end - start)  == file_size {
+                if (end - start) == file_size {
                     self.send_status_code(HttpStatusCode::OK);
                 } else {
                     self.send_status_code(HttpStatusCode::PARTIAL_CONTENT);
                 }
             }
         }
-        self.handle_content_type_while_sending_file(&file_content_type,file_name,pc.content_disposition.as_ref());
-        if end >= file_size { end = file_size;}
-        if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size)}
-        if  start == end || start > end || end > file_size {
-            return SendingFileResults::RangesNotSatisfied
+
+        self.handle_content_type_while_sending_file(&file_content_type, file_name, pc.content_disposition.as_ref());
+
+        if end >= file_size { end = file_size; }
+        if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size) }
+        if start == end || start > end || end > file_size {
+            return SendingFileResults::RangesNotSatisfied;
         }
-        let mut to_send = end - start  ;
+
+        let mut to_send = end - start;
         if to_send != file_size {
-            self.set_header("Content-Range",format!("bytes {start}-{}/{}",{end-1},file_size));
+            self.set_header("Content-Range", format!("bytes {start}-{}/{}", {end - 1}, file_size));
         }
-        self.set_header("Content-Length",to_send);
-        if file.seek(SeekFrom::Start(start as u64)).await.is_err() {return SendingFileResults::RangesNotSatisfied}
-        let mut buffer = Vec::with_capacity(
-            WRITING_FILES_BUF_LEN.min(
-                to_send
-            )
-        );
+        self.set_header("Content-Length", to_send);
 
         if self.write_headers_and_get_ready().await.is_err() {
             return SendingFileResults::ErrorWhileSendingBytesToClient;
         }
+
+        // Initialize our tracking file offset instead of using .seek()
+        let mut current_offset = start as u64;
+
+        // Allocate the chunk buffer vector explicitly for tokio_uring
+        let buf_capacity = WRITING_FILES_BUF_LEN.min(to_send);
+        let mut buffer = vec![0u8; buf_capacity];
+
         while to_send > 0 {
-            buffer.clear();
-            match file.read_buf(&mut buffer).await {
+            let chunk_size = to_send.min(buffer.capacity());
+
+            // Resize buffer to represent the chunk slice target size safely
+            if buffer.len() != chunk_size {
+                buffer.resize(chunk_size, 0);
+            }
+
+            // tokio_uring uses positional ownership reads.
+            // .read_at() consumes the buffer vector and returns it in the tuple.
+            let (res, returned_buf) = file.read_at(buffer, current_offset).await;
+            buffer = returned_buf; // Re-claim the buffer ownership
+
+            match res {
+                Ok(0) => break, // EOF reached prematurely
                 Ok(size) => {
                     let index = to_send.min(size);
+
                     if let Some(ref mut callback) = pc.edit_each_chunk {
                         callback(&mut buffer[..index]);
                     }
+
                     if self.write_custom_bytes(&buffer[..index]).await.is_err() {
-                        return SendingFileResults::ErrorWhileSendingBytesToClient
+                        return SendingFileResults::ErrorWhileSendingBytesToClient;
                     }
+
+                    current_offset += index as u64;
                     to_send -= index;
-                    continue;
                 }
                 Err(_) => {
-                    return  SendingFileResults::ReadingFileBytesError
+                    return SendingFileResults::ReadingFileBytesError;
                 }
             }
-
         }
-        return SendingFileResults::Success
+
+        SendingFileResults::Success
     }
-
-
 
 
 
@@ -578,7 +600,6 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
         }
     }
 
-     #[cfg(not(feature = "use_io_uring"))]
 
     async fn send_file(&mut self, pc: FileRSender<'_>) ->SendingFileResults {
         match self {
@@ -640,7 +661,7 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
         #[cfg(feature = "use_io_uring")]
         {
             match self.context.stream {
-                #[cfg(feature = "support_tls")]
+                #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
                 HttpStream::AsyncSecure(_) => {
                     todo!()
                 }
@@ -903,6 +924,115 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
 
 
+    #[inline(always)]
+    #[cfg(feature = "use_io_uring")]
+    async fn send_file(&mut self, mut pc: FileRSender<'_>) -> SendingFileResults {
+        // Open the file using tokio_uring's specialized stateless File type
+        let file = match tokio_uring::fs::File::open(pc.path).await {
+            Ok(f) => f,
+            Err(_) => return SendingFileResults::ErrorWhileOpeningTheFile,
+        };
+
+        // Leverage standard fs blocking metadata check safely before entering the hot loop
+        let meta = match std::fs::metadata(pc.path) {
+            Ok(m) => m,
+            Err(_) => return SendingFileResults::ErrorWhileOpeningTheFile,
+        };
+
+        let file_size = meta.len() as usize;
+        let file_name = match pc.path.file_name() {
+            None => return SendingFileResults::FileNotFound,
+            Some(f) => f,
+        };
+
+        let file_content_type = crate::util::content_type_from_file_path(&pc.path);
+        let mut start = 0_usize;
+        let mut end = file_size;
+
+        // Evaluate if range processing or a full response is expected
+        match pc.range {
+            None => {
+                self.send_status_code(HttpStatusCode::OK);
+            }
+            Some(ranges) => {
+                start = ranges.0.unwrap_or(0);
+                end = ranges.1.unwrap_or({
+                    (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream)
+                        .min(file_size)
+                });
+                if (end - start) == file_size {
+                    self.send_status_code(HttpStatusCode::OK);
+                } else {
+                    self.send_status_code(HttpStatusCode::PARTIAL_CONTENT);
+                }
+            }
+        }
+
+        self.handle_content_type_while_sending_file(&file_content_type, file_name, pc.content_disposition.as_ref());
+
+        if end >= file_size { end = file_size; }
+        if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size) }
+
+        if start == end || start > end || end > file_size {
+            return SendingFileResults::RangesNotSatisfied;
+        }
+
+        let mut to_send = end - start;
+
+        if to_send != file_size {
+            self.set_header("Content-Range", format!("bytes {start}-{}/{}", {end - 1}, file_size));
+        }
+
+        self.set_header("Content-Length", to_send);
+
+        // Flush HTTP headers to the connection buffer and write the protocol delimiter
+        if self.flush().await.is_err() || self.write_bytes(b"\r\n").await.is_err() {
+            return SendingFileResults::ErrorWhileSendingBytesToClient;
+        }
+
+        // Initialize positional tracker offset since io_uring is stateless
+        let mut current_offset = start as u64;
+
+        // Allocate block capacity for ownership transferring reads
+        let buf_capacity = WRITING_FILES_BUF_LEN.min(to_send);
+        let mut buffer = vec![0u8; buf_capacity];
+
+        while to_send > 0 {
+            let chunk_size = to_send.min(buffer.capacity());
+
+            if buffer.len() != chunk_size {
+                buffer.resize(chunk_size, 0);
+            }
+
+            // tokio_uring handles structural completion memory allocation via tuple ownership
+            let (res, returned_buf) = file.read_at(buffer, current_offset).await;
+            buffer = returned_buf; // Regain vector ownership safely
+
+            match res {
+                Ok(0) => break, // Premature End Of File encountered
+                Ok(size) => {
+                    let index = to_send.min(size);
+
+                    if let Some(ref mut callback) = pc.edit_each_chunk {
+                        callback(&mut buffer[..index]);
+                    }
+
+                    // Push chunk out through Http1Sender's low-level stream handler
+                    if self.write_bytes(&buffer[..index]).await.is_err() {
+                        return SendingFileResults::ErrorWhileSendingBytesToClient;
+                    }
+
+                    current_offset += index as u64;
+                    to_send -= index;
+                }
+                Err(_) => {
+                    return SendingFileResults::ReadingFileBytesError;
+                }
+            }
+        }
+
+        SendingFileResults::Success
+    }
     #[cfg(feature = "use_io_uring")]
     #[inline(always)]
     async fn flush(&mut self) -> Result<(),()>{
