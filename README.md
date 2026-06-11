@@ -178,7 +178,24 @@ fn enabling_tls(config:&mut ServerConfigurations){
 ```
 
  Note: you could choose your needed file from examples folder
- 
+ # 🚀 Benchmarking
+
+Water_http is now officially included in TechEmpower Framework Benchmarks, the most trusted and widely recognized benchmarking organization for web frameworks.
+
+Benchmarking results for water_http will appear in the next official round, but you can already view and test it manually through the TechEmpower repository.
+
+Current status:
+
+✔️ water_http has been approved and merged into the TechEmpower project
+
+✔️ Source and benchmark implementation are publicly available
+
+⏳ Official numbers will be published in the upcoming round
+
+🔍 You can manually inspect or run the benchmark now:
+https://github.com/TechEmpower/FrameworkBenchmarks
+
+This marks a major milestone for water_http, showcasing its speed, stability, and production-grade performance.
 
 # Starting
  

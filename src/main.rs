@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use water_http::server::{ServerConfigurations};
+
+use water_http::server::{ ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
 
@@ -9,16 +9,13 @@ InitControllersRoot! {
     holder_type:MainHolderType,
 }
 type MainHolderType = CHolder;
-
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct CHolder {
-    pub user:Option<HashMap<String,String>>,
+    pub user:Option<std::collections::HashMap<String,String>>,
 
 }
 
-#[tokio::main]
-async fn main() {
-
+ fn main() {
     // when debugging feature enabled
     #[cfg(feature = "debugging")]
     {
@@ -30,13 +27,45 @@ async fn main() {
     }
 
 
-    let  config = ServerConfigurations::bind("127.0.0.1",8084);
-    water_http::RunServer!(
+    let  config = ServerConfigurations::bind_multi_ports(
+        vec![
+            8084
+        ]
+    );
+     // config.set_tls_certificate(
+     //     "cert/cert.pem",
+     //     "cert/key.pem",
+     //     None
+     // );
+
+     water_http::RunServer!(
         config,
         MAIN_ROOT,
         MainController
     );
 }
+
+
+
+
+//
+// pub async fn upload_file<'a,H:Send + 'static ,const HS:usize,const Q:usize>(context:&mut HttpContext<'a,H,HS,Q>) {
+//
+//     let body = context.get_body_as_multipart().await;
+//     if let Ok(body) = body {
+//         let image = body.get_as_bytes("image");
+//         if let Some(image) = image  {
+//             let path = std::path::Path::new("./public/images/test.png");
+//             let file = tokio::fs::File::create(path).await;
+//             if let Ok(mut file) = file {
+//              _= file.write_all(image).await;
+//             }
+//             _= context.send_str("success").await;
+//         }
+//     }
+//     _= context.send_str("hello world").await;
+// }
+
 
 // you can use one style to make it your default and favorite one
 // my personal favorite one is
@@ -50,8 +79,16 @@ WaterController! {
 
           // in this case path is "/" while method is GET
         "/" hello_world(context){
-            _=context.send_str("hello world").await;
+            let mut sender = context.sender();
+            _= sender.send_str("Hello World").await;
         }
+
+        "queries" q(context){
+            _= context.send_str("hello").await;
+
+        }
+
+        // POST -> upload -> upload(context) [super::upload_file]
          // in this case POST is Method and api/auth/login is path
         POST => api/auth/login => login_handler(context) async {
             response!(context -> "hello from login api endpoint");
@@ -63,8 +100,7 @@ WaterController! {
         // in this case GET is the method and 'api/v1/users/' the path
         // and this type could inject string parameter like
         // 'api/v1/users/t22' so t22 is now represented by id variable
-        GET -> api/v1/users/{id} -> get_user(context) async{
-            println!("user id is {id}");
+        GET -> api/v1/users/{_id} -> get_user(context) async{
             super::get_response(context).await;
         }
 
@@ -107,7 +143,7 @@ WaterController! {
         // in this example GET is the method and api/v23 is path
         #[GET,api/v23]
         get_profiles_v2(context) async {
-          super::get_response(context).await;
+         super::get_response(context).await;
         }
 
          // in this example GET is the method and api/v3 is path
@@ -130,10 +166,12 @@ WaterController! {
         getFile(context) [super::send_files]
 
     }
-    extra_code->(..{
 
-    })
+    prefix -> ("hello"),
 
+    children -> ([
+        SecondController
+    ])
     // , middleware-> (context {
     //     println!("middleware function invoked");
     //
@@ -150,6 +188,19 @@ WaterController! {
     // })
 }
 
+WaterController! {
+    holder -> crate::MainHolderType,
+    name -> SecondController,
+    functions -> {
+        get -> version2 -> g(context){_= context.send_str("go").await;}
+    }
+    prefix -> ("version2_prefix"),
+     middleware -> (context {
+
+        _= context.send_str("middleware 2  stopping").await;
+        server::MiddlewareResult::Stop
+    })
+}
 // notice that writing methods like POST,post,Post,posT,POst
 // it would give the same result cause the framework has auto under table requests handler
 
@@ -171,7 +222,8 @@ water_http::functions_builder!{
 
     pub async fn send_files(context)  {
 
-           response!(context file -> "./public/text/test1.txt");
+
+         response!(context download -> "./public/text/test1.txt");
 
         // response!(context file -> "./public/text/test1.txt",|c|{
         //     // if we need to modify or encrypt every chunk sent to the user

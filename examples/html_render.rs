@@ -6,8 +6,7 @@ InitControllersRoot! {
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }
-#[tokio::main]
-async fn main() {
+ fn main() {
     let config = ServerConfigurations::bind("127.0.0.1", 8084);
     water_http::RunServer!(
         config,
@@ -29,7 +28,7 @@ WaterController! {
                   downloading_path.as_str()
                 )
             ).await;
-        },
+        }
 
         GET => "favicon.ico" => favicon_serving(context) async {
             _=context.send_file(
@@ -37,7 +36,7 @@ WaterController! {
                   "./public/favicon.ico"
                 )
             ).await;
-        },
+        }
         GET => / => main(context) async {
             let html_page = MainPage;
             if let Ok(html_page) = html_page.render() {

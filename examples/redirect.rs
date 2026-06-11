@@ -7,8 +7,7 @@ InitControllersRoot!{
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }
-#[tokio::main]
-async fn main() {
+ fn main() {
     let  config = ServerConfigurations::bind("127.0.0.1",8084);
     water_http::RunServer!(
         config,
@@ -27,7 +26,7 @@ WaterController! {
         GET => / => main(context) async {
            let route =  route!("create_posts").expect("can not fount route name");
            _= context.redirect(route.as_ref()).await;
-        },
+        }
         GET_create_posts => create/posts => create(context)async {
             _= context.send_str("hello from create posts route").await;
         }

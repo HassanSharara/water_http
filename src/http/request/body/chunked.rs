@@ -1,23 +1,29 @@
+#[cfg(feature = "accept_transfer_chunked")]
 use bytes::{Buf, Bytes};
-#[cfg(feature = "debugging")]
-use tracing::{field::debug,debug, error, info};
+#[cfg(feature = "accept_transfer_chunked")]
 use crate::http::request::{FieldCallBackResult, H1StreamHolder, MultipartStreamHolder};
+#[cfg(feature = "accept_transfer_chunked")]
 use crate::server::connection::BodyReadingBuffer;
+#[cfg(feature = "accept_transfer_chunked")]
 use crate::util::hex_bytes_to_usize;
 
 
-
+#[cfg(feature = "accept_transfer_chunked")]
 /// check if reading bytes is going well or not
 pub type BodyChunksReadingResult = Result<Bytes,()>;
 
 /// incoming body chunked bytes
+#[cfg(feature = "accept_transfer_chunked")]
 
-#[derive(Debug)]
 /// for handling multipart from data in both protocols http1 and http2
 pub struct BodyChunkedReader<'a> {
     stream_holder:MultipartStreamHolder<'a>,
     reading_buffer:&'a mut BodyReadingBuffer,
     chunk_indexes_count:usize,
+    #[cfg(feature = "accept_transfer_chunked")]
+    original_left_bytes_length:usize,
+    #[cfg(feature = "accept_transfer_chunked")]
+    to_advance_bytes: &'a mut Option<usize>
     // remaining:usize,
 }
 
@@ -33,6 +39,7 @@ pub struct  Chunk {
 
 
 
+#[cfg(feature = "accept_transfer_chunked")]
 
 macro_rules! try_call_back {
     ($callback:expr,$chunk:expr,$data:expr) => {
@@ -48,6 +55,8 @@ macro_rules! try_call_back {
                                }
     };
 }
+#[cfg(feature = "accept_transfer_chunked")]
+
 impl<'a> BodyChunkedReader<'a> {
 
 
@@ -56,12 +65,21 @@ impl<'a> BodyChunkedReader<'a> {
      pub (crate) fn new(
          stream_holder:MultipartStreamHolder<'a>,
          reading_buffer:&'a mut BodyReadingBuffer,
-
+         #[cfg(feature = "accept_transfer_chunked")]
+         to_advance_bytes:&'a mut Option<usize>
      )->BodyChunkedReader<'a>{
          BodyChunkedReader {
-             stream_holder,
+
              reading_buffer,
-             chunk_indexes_count:0
+             chunk_indexes_count:0,
+             #[cfg(feature = "accept_transfer_chunked")]
+             original_left_bytes_length:match &stream_holder {
+                 MultipartStreamHolder::H1(holder) => { holder.left_bytes.len() }
+                 MultipartStreamHolder::H2(_) => {0}
+             },
+             #[cfg(feature = "accept_transfer_chunked")]
+             to_advance_bytes,
+             stream_holder,
          }
      }
 
@@ -78,17 +96,17 @@ impl<'a> BodyChunkedReader<'a> {
 
                      match &chunk {
                          None => {
-                             match find_new_line(holder.left_bytes,16) {
+                             return  match find_new_line(holder.left_bytes,16) {
                                  Ok(index_option) => {
                                      #[cfg(feature = "debugging")]
                                      {
-                                         debug!("trying to find chunk on {:?}",index_option)
+                                         tracing::debug!("trying to find chunk on {:?}",index_option)
                                      }
-                                     return match index_option {
+                                      match index_option {
                                          None => {
                                              #[cfg(feature = "debugging")]
                                              {
-                                                 debug!("the left data is {}",String::from_utf8_lossy(holder.left_bytes));
+                                                 tracing::debug!("the left data is {}",String::from_utf8_lossy(holder.left_bytes));
                                              }
                                              self.reading_buffer.extend_from_slice(holder.left_bytes);
                                              holder.left_bytes = &[];
@@ -106,7 +124,7 @@ impl<'a> BodyChunkedReader<'a> {
                                              if let Some(chunk_size) = chunk_size {
                                                  #[cfg(feature = "debugging")]
                                                  {
-                                                     debug!("chunk size is {}",chunk_size)
+                                                     tracing::debug!("chunk size is {}",chunk_size)
                                                  }
                                                  chunk = Some(Chunk { index: *chunk_index, chunk_size });
 
@@ -124,7 +142,7 @@ impl<'a> BodyChunkedReader<'a> {
                                                  holder.left_bytes = &holder.left_bytes[i+2..];
                                                  #[cfg(feature = "debugging")]
                                                  {
-                                                     debug!("data after advanced {}",
+                                                     tracing::debug!("data after advanced {}",
                                                        String::from_utf8_lossy(holder.left_bytes)
                                                      )
                                                  }
@@ -134,7 +152,7 @@ impl<'a> BodyChunkedReader<'a> {
                                          }
                                      }
                                  }
-                                 Err(_) => {}
+                                 Err(_) => {  Err(())}
                              }
                          }
                          Some(chunk_op) => {
@@ -148,6 +166,7 @@ impl<'a> BodyChunkedReader<'a> {
                                      Ok(index_option) => {
                                          match index_option {
                                              None => {
+
                                                  h1_chunk_detecting_on_stream(
                                                      holder,
                                                      self.reading_buffer,
@@ -162,9 +181,19 @@ impl<'a> BodyChunkedReader<'a> {
                                                      )
                                                  }
                                                  if holder.left_bytes.len() < 2 { return Err(()) }
-                                                 if i == 0 { holder.left_bytes = &holder.left_bytes[2..] }
+                                                 if i == 0 {
+                                                     holder.left_bytes = &holder.left_bytes[2..];
+                                                     #[cfg(feature = "accept_transfer_chunked")]
+                                                     {
+                                                            if let Some(to_advance_bytes) = &mut self.to_advance_bytes {
+                                                             *to_advance_bytes = self.original_left_bytes_length - holder.left_bytes.len();
+                                                            } else {
+                                                                *self.to_advance_bytes = Some(self.original_left_bytes_length - holder.left_bytes.len());
+                                                            }
+                                                     }
+                                                 }
                                                  #[cfg(feature = "debugging")]{
-                                                     info!("after chunked payload proceed {:?}",
+                                                     tracing::info!("after chunked payload proceed {:?}",
                                                        String::from_utf8_lossy(holder.left_bytes)
                                                      )
                                                  }
@@ -207,7 +236,7 @@ impl<'a> BodyChunkedReader<'a> {
                                              holder.left_bytes = &holder.left_bytes[n+2..];
                                              #[cfg(feature = "debugging")]
                                              {
-                                                 debug!("left bytes after advanced {:?}",
+                                                 tracing::debug!("left bytes after advanced {:?}",
                                                   String::from_utf8_lossy(holder.left_bytes
                                                   )
                                               )
@@ -220,7 +249,7 @@ impl<'a> BodyChunkedReader<'a> {
                                  Err(_) => {
                                      #[cfg(feature = "debugging")]
                                      {
-                                         error!("there is no new line when it should be {:?}",
+                                         tracing::error!("there is no new line when it should be {:?}",
                                            String::from_utf8_lossy(holder.left_bytes )
                                          )
                                      }
@@ -231,8 +260,57 @@ impl<'a> BodyChunkedReader<'a> {
                      }
                  }
              }
-             MultipartStreamHolder::H2(_) => {
-                 todo!()
+
+
+
+             MultipartStreamHolder::H2(h2) => {
+                 let mut chunk_count = *chunk_index;
+                 let body_reader = h2.batch.body_mut();
+
+                 // 1. Process anything currently sitting in our local reading buffer
+                 let local_chunk = self.reading_buffer.chunk();
+                 if !local_chunk.is_empty() {
+                     let current_chunk = Chunk {
+                         index: chunk_count,
+                         chunk_size: local_chunk.len(),
+                     };
+                     try_call_back!(callback, &current_chunk, local_chunk);
+                     chunk_count += 1;
+                     self.reading_buffer.clear();
+                 }
+
+                 // 2. Drive the active incoming stream
+                 // Check if the stream has reached EOF natively
+                 if body_reader.is_end_stream() {
+                     *chunk_index = chunk_count;
+                     return Ok(());
+                 }
+
+                 // Await the next frame fragment.
+                 // If this is a half-send, this will unblock the moment frame 1 hits,
+                 // execute the callback, and exit cleanly so your router handles it immediately.
+                 if let Some(frame_result) = body_reader.data().await {
+                     match frame_result {
+                         Ok(raw_bytes) => {
+                             let frame_data = raw_bytes.as_ref();
+                             if !frame_data.is_empty() {
+                                 let current_chunk = Chunk {
+                                     index: chunk_count,
+                                     chunk_size: frame_data.len(),
+                                 };
+
+                                 try_call_back!(callback, &current_chunk, frame_data);
+                                 chunk_count += 1;
+                             }
+                         }
+                         Err(_) => {
+                             return Err(());
+                         }
+                     }
+                 }
+
+                 *chunk_index = chunk_count;
+                 return Ok(());
              }
          }
      }
@@ -242,6 +320,7 @@ impl<'a> BodyChunkedReader<'a> {
  }
 
 
+#[cfg(feature = "accept_transfer_chunked")]
 
 async fn h1_chunk_detecting_on_stream(
     holder:& mut H1StreamHolder<'_>,
@@ -250,30 +329,110 @@ async fn h1_chunk_detecting_on_stream(
     mut callback:impl FnMut(&Chunk,&[u8])->FieldCallBackResult,
     mut chunk: Option<Chunk>,
 )->Result<(),()>{
+
+    #[cfg(feature = "debugging")]
+    {
+        tracing::debug!("[h1_chunk_detecting_on_stream] function called");
+    }
+
+
     loop {
         match &mut chunk {
+
             None => {
+                #[cfg(feature = "debugging")]
+                {
+                    tracing::debug!("now chunk size is None so we need to find next chunk size");
+                }
                 if reader.is_empty()  {
+                    #[cfg(feature = "debugging")]
+                    tracing::info!("[Chunk Handler]: trying to read more data from stream ");
                     if reader.read_buf(holder.stream).await.is_err() {return Err(())}
+                    #[cfg(feature = "debugging")]
+                    tracing::info!("[Chunk Handler]: after reading data from stream {:?}",String::from_utf8_lossy(reader.chunk()));
                 }
                 let data = reader.chunk();
-                if data.is_empty() {return Err(())}
+
+                #[cfg(feature = "debugging")]
+                {
+                    tracing::info!("while chunk is None data is {:?}",String::from_utf8_lossy(data));
+                }
+
+                if data.is_empty() {
+                    #[cfg(feature = "debugging")]{
+                        tracing::error!("body chunk ended with error");
+                    }
+                    return Err(())
+                }
+
+                #[cfg(feature = "debugging")]{
+                    tracing::debug!("try to find new line");
+                }
                 match find_new_line(data,16) {
                     Ok(index_option)=>{
+                        #[cfg(feature = "debugging")]{
+                            tracing::debug!("new line  {:?}",index_option);
+                        }
                         match  index_option {
-                            None => { continue}
+                            None => {
+                                #[cfg(feature = "debugging")]
+                                {
+                                    tracing::debug!("trying to read more data"
+                                    );
+                                }
+                                if reader.read_buf(holder.stream).await.is_err() {return Err(())}
+                                #[cfg(feature = "debugging")]
+                                {
+                                    tracing::debug!("[Chunk:reading within chunk index] None {:?}",
+                                      String::from_utf8_lossy(reader.chunk())
+                                    );
+                                }
+                                continue
+                            }
                             Some(index) => {
                                 let  c = &data[..index];
-                                if index + 2 >= data.len() { continue }
+                                if index + 2 >= data.len() {
+                                    #[cfg(feature = "debugging")]
+                                    {
+                                        tracing::debug!(
+                                            "after found new line the data is not complete {:?}",
+                                            String::from_utf8_lossy(c)
+                                        );
+                                    }
+
+                                    if !c.is_empty() {
+                                        if reader.read_buf(holder.stream).await.is_err() {
+                                            return  Err(())
+                                        }
+                                    }
+                                    continue
+                                }
+                                #[cfg(feature = "debugging")]{
+                                    tracing::debug!("chunk size as hex {:?}",String::from_utf8_lossy(c));
+                                }
                                 let chunk_size = match hex_bytes_to_usize(c) {
                                     None => { return Err(())}
                                     Some(r) => {r}
                                 };
+                                #[cfg(feature = "debugging")]{
+                                    tracing::debug!("chunk size is {}",chunk_size);
+                                }
                                 chunk  = Some(Chunk { index:*chunk_index,chunk_size});
+                                *chunk_index+=1;
                                 reader.advance(index+2);
+                                if chunk_size == 0 {
+                                    if reader.len() < 2{return  Err(()) }
+                                    reader.advance(2);
+                                    return Ok(())
+                                }
+                                else if chunk_size > reader.len() {
+                                    if reader.read_buf(holder.stream).await.is_err() {
+                                        return Err(())
+                                    }
+                                }
                                 #[cfg(feature = "debugging")]
                                 {
-                                    debug!("bytes after advanced {}",String::from_utf8_lossy(reader.chunk()))
+                                    tracing::debug!("bytes after advanced {}",String::from_utf8_lossy(reader.chunk()))
                                 }
                             }
                         }
@@ -282,20 +441,37 @@ async fn h1_chunk_detecting_on_stream(
                 }
             }
             Some(chunk_oop) => {
-                if reader.is_empty()  {
+                #[cfg(feature = "debugging")]
+                {
+                    tracing::debug!("now chunk size is {}",chunk_oop.chunk_size);
+                }
+
+                if reader.is_empty()   {
+                    #[cfg(feature = "debugging")]
+                    tracing::info!("[Chunk Handler]: trying to read more data from stream ");
                     if reader.read_buf(holder.stream).await.is_err() {return Err(())}
+                    #[cfg(feature = "debugging")]
+                    tracing::info!("[Chunk Handler]: after reading data from stream {:?}",String::from_utf8_lossy(reader.chunk()));
                 }
                 let data = reader.chunk();
                 if data.is_empty() {return Err(())}
-
-                match find_new_line(data,chunk_oop.chunk_size) {
+                #[cfg(feature = "debugging")]
+                {
+                    tracing::debug!("looking for new line in {:?}",String::from_utf8_lossy(data));
+                }
+                match find_new_line(data,chunk_oop.chunk_size  + 2 ) {
                     Ok(op) => {
                         match op {
                             None => {
                                 match callback(chunk_oop,data) {
                                     Ok(f)=>{
                                         if let Some(f) = f {
-                                            if f.await.is_err() {return Err(())}
+                                            if f.await.is_err() {
+                                                #[cfg(feature = "debugging")]
+                                                {
+                                                    tracing::error!("error while processing chunk future ");
+                                                }
+                                                return Err(())}
                                         }
                                         reader.clear();
 
@@ -310,7 +486,7 @@ async fn h1_chunk_detecting_on_stream(
                                         ) = future {
                                             if future.await.is_err()  { return Err(())}
                                         }
-                                        if data.len() <= i +2 { return Err(()) }
+                                        if data.len() < i + 2 { return Err(()) }
                                         else {reader.advance(i+2);}
                                         chunk = None;
                                     }
@@ -319,12 +495,23 @@ async fn h1_chunk_detecting_on_stream(
                             }
                         }
                     }
-                    Err(_) => {return Err(())}
+                    Err(_) => {
+                        #[cfg(feature = "debugging")]
+                        {
+                            tracing::error!("failed to found new line while chunk_size = {} while data is {:?}",
+                                chunk_oop.chunk_size,
+                                 String::from_utf8_lossy(data)
+                            );
+                        }
+
+                        return Err(())}
                 }
             }
         }
     }
 }
+
+#[cfg(feature = "accept_transfer_chunked")]
 
 #[inline]
 fn find_new_line(data:&[u8],cap:usize)->Result<Option<usize>,()>{

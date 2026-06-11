@@ -6,7 +6,9 @@ use crate::server::WRITING_FILES_BUF_LEN;
      pub path:&'a Path,
      pub buffer_size_for_reading_from_file_and_writing_to_stream:usize,
      pub range:Option<(Option<usize>,Option<usize>)>,
-     pub edit_each_chunk:Option<Box<dyn FnMut(&mut [u8] )+ Send >>
+     pub edit_each_chunk:Option<Box<dyn FnMut(&mut [u8] )+ Send >>,
+     /// for setting custom content disposition
+     pub content_disposition:Option<String>
  }
 
 
@@ -15,16 +17,17 @@ impl <'a> FileRSender<'a> {
     /// creating new file response config
     pub fn custom(path:&Path,
                buffer_size_for_reading_from_file_and_writing_to_stream:usize,
-    )->FileRSender{
+    )->FileRSender<'_>{
         FileRSender {
             path,
             buffer_size_for_reading_from_file_and_writing_to_stream,
             range:None,
-            edit_each_chunk:None
+            edit_each_chunk:None,
+            content_disposition:None
         }
     }
     /// creating new file response with only path
-    pub fn new(path:&str)->FileRSender{
+    pub fn new(path:&str)->FileRSender<'_>{
         Self::custom(Path::new(path),WRITING_FILES_BUF_LEN)
     }
 
@@ -36,6 +39,12 @@ impl <'a> FileRSender<'a> {
     /// and this is used to determine what is the start and the end of bytes that sending
     pub fn set_bytes_range(&mut self,start:Option<usize>,end:Option<usize>){
         self.range = Some((start,end));
+    }
+
+
+    /// for setting custom content disposition
+    pub fn set_content_disposition(&mut self,ct:&str){
+        self.content_disposition = Some(ct.to_string());
     }
 }
 

@@ -2,7 +2,6 @@ mod body;
 mod header;
 mod getter;
 pub use getter::*;
-use std::borrow::Cow;
 use std::fmt::{Display,  Formatter};
 pub use body::*;
 pub use crate::http::request::header::{KeyValueList};
@@ -55,10 +54,12 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
 {
 
     /// getting total headers length
-    pub fn get_total_headers_length(&self)->usize{
+    #[inline(always)]
+    pub  fn get_total_headers_length(&self)->usize{
         self.http_request.headers().headers_length
         + self.http_request.first_line().first_line_length
     }
+
 
     /// first line
     pub fn first_line(&self)->&HttpFirstLine<'a>{
@@ -66,7 +67,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     }
 
     /// get headers
-    pub fn headers(&self) -> &HttpHeaders<'a,HEADERS_COUNT>{
+    pub  fn headers(&self) -> &HttpHeaders<'a,HEADERS_COUNT>{
         self.http_request.headers()
     }
 
@@ -105,7 +106,7 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     }
 
     /// parsing incoming http method
-    pub fn method(&self)->& str {
+    pub fn method(&self)->&'a str {
         self.http_request.method()
     }
 
@@ -116,7 +117,8 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
 
     /// getting content length in headers
     pub fn content_length(&self)->Option<&usize> {
-            return  self.http_request.headers().content_length.as_ref();
+          self.http_request.headers().content_length()
+
         }
 
 
@@ -124,11 +126,13 @@ IncomingRequest<'a, HEADERS_COUNT,PATH_QUERY_COUNT>
     /// for examples
     /// - http:://examples.com/posts?id=1 the key is `id` and the value is `1`
     /// - http:://examples.com/posts?year=2024 the key is `year` and the value is `2024`
-    pub fn get_from_path_query(&self,key:&str)->Option<Cow<str>>{
-      let (_,query) =    self.http_request.path().split_to_path_and_query();
-        if let Some(v) = query.get(key) {
-            return Some(Cow::Owned(v.into()));
-        }
+    pub fn get_from_path_query(&self,key:&str)->Option<&'a str>{
+      if let Some((_,q)) = self.http_request.path().to_query() {
+          let q = q.get(key);
+          if let Some(q) = q {
+              return Some(*q);
+          }
+      }
         None
     }
 
@@ -155,7 +159,8 @@ impl <'a,const HEADERS_COUNT:usize,const PATH_QUERY_COUNT:usize> FormingRequestR
 
 #[cfg(test)]
 mod test {
-    use bytes::{ BytesMut};
+    use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
+    // use bytes::{ BytesMut};
     use crate::http::request::{FormingRequestResult, IncomingRequest};
     #[allow(unused_variables)]
     #[test]
@@ -197,6 +202,9 @@ mod test {
         match request {
             FormingRequestResult::Success( request ) => {
                 let data = &request_bytes[request.http_request.headers().headers_length+1..];
+                let s = request.http_request.path().to_query().unwrap();
+                let id  = s.1.get("id").unwrap();
+                assert_eq!(*id,"2");
             }
             _ =>  {}
         }

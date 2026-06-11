@@ -32,7 +32,6 @@ pub enum IBody<'a> {
     /// handling x-www-form-data within request
     XWWWFormUrlEncoded(XWWWFormUrlEncoded<'a>)
 }
-#[derive(Debug)]
 /// if the incoming body need to be handled as chunks
 pub enum IBodyChunks<'a> {
     /// handling incoming body bytes as chunked
@@ -44,6 +43,7 @@ pub enum IBodyChunks<'a> {
     FormData(
         MultipartData<'a>
     ),
+    #[cfg(feature = "accept_transfer_chunked")]
     /// handling incoming body as chunked body
     Chunked(BodyChunkedReader<'a>)
 }
@@ -62,12 +62,11 @@ pub enum IBodyChunks<'a> {
     FormData,
     /// parse incoming body bytes to [XWWWFormUrlEncoded] struct
     XWWWFormData,
-
+    #[cfg(feature = "accept_transfer_chunked")]
     /// when body is chunked transfer-encoding
     ChunkedTransferEncoding
  }
 
-#[derive(Debug)]
 /// parsing body mechanism results
 pub enum  ParsingBodyResults<'a> {
     /// handling the incoming body as chunks because of the size
@@ -98,11 +97,11 @@ pub enum  ParsingBodyResults<'a> {
 impl <'a> ParsingBodyResults<'a> {
 
     pub async fn on_multipart_form_data_detect(
-        payload:&'a[u8],
+        payload:&'a [u8],
         mut on_detect: impl FnMut(
         Result<MultiPartFormDataField<'a>,&str>
     ) -> Pin<Box<dyn Future<Output=HandlingFormDataResult> + Send>>
-    )->Result<(),&str>{
+    )->Result<(),&'a str>{
         let mut index:usize = 0;
         loop {
             match MultiPartFormDataField::new(&payload[index..]) {
@@ -206,7 +205,7 @@ impl DynamicBodyMapTrait for FormDataAll {
         None
     }
 
-    fn get(&self, key: &str) -> Option<Cow<str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
         if let Some(data) = self.get_as_bytes(key){
            return Some(String::from_utf8_lossy(data))
         }
@@ -307,6 +306,7 @@ pub enum  HandlingChunkResult<'a> {
 /// ```
 /// ignore defining context because it would be ready for you by the framework
 /// and this is the wright way to get `HttpGetter`
+#[derive(Debug)]
 pub enum  DynamicBodyMap{
     /// form field
     FormField(FormDataAll),
@@ -321,7 +321,7 @@ impl DynamicBodyMapTrait for DynamicBodyMap {
         }
     }
 
-    fn get(&self, key: &str) -> Option<Cow<str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
         match self {
             DynamicBodyMap::FormField(data) => { data.get(key)}
             DynamicBodyMap::Xww(data) => {data.get(key)}
@@ -354,8 +354,8 @@ pub trait DynamicBodyMapTrait{
     /// getting field or any data key value as bytes or [&[u8]]
     fn get_as_bytes(&self,key:&str)-> Option<&[u8]>;
 
-    /// getting field or any data key value as [`Cow<str>`]
-    fn get (&self,key:&str)->Option<Cow<str>>;
+    /// getting field or any data key value as [`Cow<'_,str>`]
+    fn get (&self,key:&str)->Option<Cow<'_,str>>;
 
     /// getting all incoming keys and values as hashmap
     fn all(&self)-> HashMap<String,Bytes>;

@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 #[cfg(feature = "debugging")]
 use tracing::error;
+#[cfg(feature = "auto_encode_response")]
 use crate::server::encoding::{EncodingConfigurations};
 
-pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 1024*4;
+pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 4096*4;
 // pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
-pub (crate) const READING_BUF_LEN:usize = 1024*8;
-pub (crate) const WRITING_BUF_LEN:usize = 1024*8;
-pub (crate) const WRITING_FILES_BUF_LEN:usize = 1024*80;
+pub (crate) const READING_BUF_LEN:usize = 4096*4;
+pub (crate) const WRITING_BUF_LEN:usize = 4096*8;
+pub (crate) const WRITING_FILES_BUF_LEN:usize = 1024*20;
 
 
 
@@ -20,6 +21,7 @@ pub (crate) static mut ___ALL_ROUTES:Option<HashMap<String,String>> = None;
 ///
 ///in this example ("categories_post") is the name of this route , so we could call
 /// our function [___get_from_all_routes] and parse "categories_post" as our parameter
+#[allow(static_mut_refs)]
 #[doc(hidden)]
 pub fn ___get_from_all_routes(key:&str,mut params:Option<HashMap<&str,&str>>)->Option<String>{
    unsafe {
@@ -72,7 +74,7 @@ pub fn ___get_from_all_routes(key:&str,mut params:Option<HashMap<&str,&str>>)->O
    }
     None
 }
-
+#[allow(static_mut_refs)]
 pub (crate) fn push_named_route(name:String,route:String){
     unsafe  {
         match ___ALL_ROUTES.as_mut() {
@@ -127,15 +129,26 @@ pub struct ServerConfigurations {
     ///
     pub addresses:Vec<(String,u16)>,
 
+
+    /// worker threads count means the number of threads that tokio runtime would
+    /// spawn for handling async tasks which includes handling incoming requests
+    /// the default value is the number of cpu cores in your system
+    /// you could set it to any value that you want,
+    /// but it is recommended to set it to the number of cpu cores
+    pub worker_threads_count:usize,
+
     /// - specifying which ip to accept connection and which not
     pub restricted_ips:Option<RestrictionRule>,
 
+
+    #[cfg(feature = "auto_encode_response")]
     /// http encoding configurations ,
     /// which takes [EncodingConfigurations] struct
     /// # Note :
     /// the default value for encoding logic [`EncodingLogic::None`]
     pub (crate) responding_encoding_configurations:EncodingConfigurations,
 
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     /// - if you need your server to support tls or ssl encryption
     /// just provide the path of your [private.key] and [certificate.cer]
     /// and also you can provide [ca_bundle.cert]
@@ -143,11 +156,29 @@ pub struct ServerConfigurations {
     /// the fastest results
     pub tls_certificate:Option<TLSCertificate>,
 
+    /// by enabling core affinity it is simply let every single thread bind to single core without
+    /// letting operating system scheduling across multiple cores which decrease cache usage and increase performance depending on
+    /// the env that you are working on
+    pub core_affinity:bool,
+
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
     /// - specify where should the system apply tls protocol on which ports
     /// the default value is ['443']
     pub tls_ports:Vec<u16>,
 
+    /// how many listeners
+    pub listeners_count:usize,
+    pub max_buffer_size_for_cache:usize,
 
+    /// default buffer size for initiating buffer for reading
+    pub default_read_buffer_size:usize,
+    /// default buffer size for initiating buffer for writing
+    pub default_write_buffer_size:usize,
+    /// default buffer size for initiating buffer for requests body
+    pub default_body_buffer_size:usize,
+    /// how many cached buffers for each type of buffer
+    pub max_cached_buffers_count:usize,
+    /// default buffer size for initiating buffer for writing and writing
     ///backlog defines the maximum number of pending connections are queued by the operating system at any given time. Connection are removed from the queue with accepting connection from tcp listener When the queue is full, the operating-system will start rejecting connections.
     pub backlog:u32,
     /// defining the max size for handling single request
@@ -165,7 +196,7 @@ pub struct ServerConfigurations {
     // pub max_http1_query_length:usize,
 }
 
-
+#[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 /// - struct for parsing tls certificates resources files paths
 ///  to  [ServerConfigurations]
 pub struct TLSCertificate {
@@ -186,19 +217,33 @@ impl ServerConfigurations {
     /// # return [ ServerConfigurations]
     ///
     pub fn default()->Self {
+        let worker_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
         ServerConfigurations{
             addresses:vec![("0.0.0.0".to_string(),80),],
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             tls_certificate:None,
+            core_affinity:false,
             restricted_ips:None,
+            #[cfg(feature = "auto_encode_response")]
             responding_encoding_configurations:EncodingConfigurations::default(),
-            tls_ports:vec![443],
+            #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
+            tls_ports:vec![],
             backlog:1028,
             max_request_size:10000,
+            listeners_count:1,
+            worker_threads_count:worker_threads,
+            max_buffer_size_for_cache:65536,
+            default_read_buffer_size:READING_BUF_LEN,
+            default_write_buffer_size:WRITING_BUF_LEN,
+            default_body_buffer_size:EACH_REQUEST_BODY_READING_BUFFER,
+            max_cached_buffers_count:512
         }
     }
 
 
-
+    #[cfg(feature = "auto_encode_response")]
     /// set config encoding configurations
     /// when framework responding to client
     ///
@@ -213,6 +258,10 @@ impl ServerConfigurations {
     }
 
 
+    /// for changing how many listeners would be start
+    pub fn set_listeners_count(&mut self,c:usize){
+        self.listeners_count = c;
+    }
     ///
     /// # setting role to connect the server
     /// this role would be a type of `WaterIpAddressesRestriction`
@@ -221,6 +270,11 @@ impl ServerConfigurations {
         self.restricted_ips = Some(roll);
     }
 
+    /// enable cpu affinity or core affinity which pin every single thread to single core from available cores
+    pub fn enable_core_affinity(&mut self){
+        self.core_affinity = true;
+    }
+    #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 
     /// # creating [TLSCertificate] from certificate path and private key path
     /// - (optional) also you could provide bundle path

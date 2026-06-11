@@ -2,6 +2,7 @@
 #![allow(non_snake_case)]
 
 
+#[cfg(feature = "thread_shared_struct")]
 /// Initiating Controller Root is very important to detect the max important requirements for
 /// building controller struct
 /// you need to know that `headers_length` means that how many headers could the framework read
@@ -20,6 +21,99 @@ macro_rules! InitControllersRoot {
     /// defining the name of static Controller Root and it`s should be uppercase
     name: $name:ident ,
     holder_type:$holder:ty,
+    shared_type:$shared:ty,
+
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           shared_type:$shared,
+           headers_length:16,
+           queries_length:16
+       }
+    };
+    {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    name: $name:ident ,
+    holder_type:$holder:ty,
+    shared_type:$shared:ty,
+    headers_length:$hl:literal,
+    queries_length:$ql:literal
+     } => {
+             use water_http::server::matcher::*;
+        pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$shared,$hl,$ql>> = None;
+        pub static mut STATIC_PATHS: Option<std::collections::HashMap<String, PathHolder<$holder,$shared,$hl,$ql>>> = None;
+        pub static mut DYNAMIC_PATHS: Option<std::collections::HashMap<usize, DynamicPathVec<$holder,$shared,$hl,$ql>>> = None;
+    };
+
+      {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    $name:ident ,
+    $holder:ty,
+    $shared:ty,
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           shared_type:$shared,
+           headers_length:16,
+           queries_length:16
+       }
+    };
+
+      {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    $name:ident ,
+    $holder:ty,
+    $shared:ty,
+          $hl:literal
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           shared_type:$shared,
+           headers_length:$hl,
+           queries_length:16
+       }
+    };
+      {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    $name:ident ,
+    $holder:ty,
+    $shared:ty,
+          $hl:literal,
+          $hq:literal
+     } => {
+       InitControllersRoot! {
+           name:$name,
+           holder_type:$holder,
+           shared_type:$shared,
+           headers_length:$hl,
+           queries_length:$hq
+       }
+    };
+}
+
+#[cfg(not(feature = "thread_shared_struct"))]
+/// Initiating Controller Root is very important to detect the max important requirements for
+/// building controller struct
+/// you need to know that `headers_length` means that how many headers could the framework read
+/// at single request and the reason why we initiate something like that is to provide
+/// a good structure for framework and allocating memory in stack instead of heap
+/// to provide fast operation which is very importing when dealing with
+/// quit high load of traffic and also for security and protecting against
+/// headers  attackers
+/// and the query_length is also the same
+/// but it`s works on the incoming request path query and for examples
+/// [.com/post?name=hello&description=desc]
+#[macro_export]
+macro_rules! InitControllersRoot {
+
+    {
+    /// defining the name of static Controller Root and it`s should be uppercase
+    name: $name:ident ,
+    holder_type:$holder:ty,
+
      } => {
        InitControllersRoot! {
            name:$name,
@@ -35,7 +129,10 @@ macro_rules! InitControllersRoot {
     headers_length:$hl:literal,
     queries_length:$ql:literal
      } => {
+        use water_http::server::matcher::*;
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
+        pub static mut STATIC_PATHS: Option<std::collections::HashMap<String, PathHolder<$holder,$hl,$ql>>> = None;
+        pub static mut DYNAMIC_PATHS: Option<std::collections::HashMap<usize, DynamicPathVec<$holder,$hl,$ql>>> = None;
     };
 
       {
@@ -102,8 +199,40 @@ macro_rules! route {
 
 
 
+#[cfg(feature = "thread_shared_struct")]
+/// for running server in appropriate way,
+/// and it takes 3 arguments
+/// - the first one is config `ServerConfigurations`
+/// - the second one is Root which is a defining of holder of entry controller
+/// - the third one is the entry point of the server which is the start point controller
+/// # Note :
+///  you really need to make sure to not interrupt or change values in root holder or the second arguments
+/// it`s may lead to very unpredicted behavior cause it designed to provide a higher speed not for editing specially during
+/// multithreading and multiprocessing operations by the framework
+#[macro_export]
+macro_rules! RunServer {
+    (
+        $config:expr,
+        $controller:expr,
+        $entry:ident,
+        $shared_factory:expr
+    ) => {
+        #[allow(static_mut_refs)]
+        unsafe {
+            let co = $entry::build();
+            $controller = Some(co);
+           water_http::server::run_server(
+            $config,
+            $controller.as_mut().unwrap(),
+            $shared_factory,
+                    &mut STATIC_PATHS,
+                &mut  DYNAMIC_PATHS
+            );
+        };
 
-
+    };
+}
+#[cfg(not(feature = "thread_shared_struct"))]
 /// for running server in appropriate way,
 /// and it takes 3 arguments
 /// - the first one is config `ServerConfigurations`
@@ -120,13 +249,17 @@ macro_rules! RunServer {
         $controller:expr,
         $entry:ident
     ) => {
+        #[allow(static_mut_refs)]
         unsafe {
             let co = $entry::build();
+
             $controller = Some(co);
            water_http::server::run_server(
             $config,
-            $controller.as_mut().unwrap()
-           ).await;
+            $controller.as_mut().unwrap(),
+                         &mut STATIC_PATHS,
+                &mut  DYNAMIC_PATHS
+           );
         };
 
     };
@@ -985,6 +1118,228 @@ macro_rules! FunctionsMacroBuilderTow {
     };
 }
 
+#[cfg(feature = "thread_shared_struct")]
+
+/// constructing functions builder
+#[doc(hidden)]
+#[macro_export]
+macro_rules! FunctionsMacroBuilder {
+      (
+     functions -> {
+         $(
+           #[route($method:ident,$($path:tt)/+)]
+           fn $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) =>{
+            water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 $method => $($path)/+ => $fn_name($context) $async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+     };
+
+      (
+     functions -> {
+         $(
+           #[route($method:ident,$($path:tt)/+)]
+           pub async  $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) =>{
+            water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 $method => $($path)/+ => $fn_name($context) $async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+     };
+
+     (
+     functions -> {
+         $(
+           #[route($method:ident,$($path:tt)/+)]
+           pub async fn $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) =>{
+            water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 $method => $($path)/+ => $fn_name($context) $async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+     };
+
+     (
+     functions -> {
+         $(
+           #[route($method:ident,$($path:tt)/+)]
+           $async:tt $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) => {
+          water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 $method => $($path)/+ => $fn_name($context) $async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+    };
+    (
+     functions -> {
+         $(
+           #[route($method:ident,$($path:tt)/+)]
+           $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) => {
+          water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 $method => $($path)/+ => $fn_name($context) async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+    };
+
+
+         (
+     functions -> {
+         $(
+            $($path:tt)/+ => $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) => {
+         water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 GET => $($path)/+ => $fn_name($context) async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+    };
+
+
+         (
+     functions -> {
+         $(
+            $($path:tt)/+ => $fn_name:ident($context:ident) $async:tt {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) => {
+         water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 GET => $($path)/+ => $fn_name($context) $async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+    };
+
+     (
+     functions -> {
+         $(
+           $method:ident => $($path:tt)/+ => $fn_name:ident($context:ident) {
+              $($function_body_tokens:tt)*
+          }
+         ),*
+     }
+    ) => {
+         water_http::FunctionsMacroBuilder!(
+             functions -> {
+                 $(
+                 $method => $($path)/+ => $fn_name($context) async {
+                     $($function_body_tokens)*
+                 }
+                 ),*
+             }
+         );
+    };
+
+
+
+
+    // for building
+    (
+     functions -> {
+         $(
+           $method:ident => $($path:tt)/+ => $fn_name:ident($context:ident) $async:tt {
+              $($function_body_tokens:tt)*
+          },
+         )*
+     }
+    ) => {
+
+        $(pub $async fn $fn_name<'context,
+
+        const header_length:usize,const query_length:usize>
+        ($context:&mut water_http::server::HttpContext<'context,Holder,Shared,header_length,query_length>) {
+            water_http::path_setter!($context->$($path)/+);
+            $($function_body_tokens)*
+        }
+        )*
+
+
+
+      pub fn build<const header_length:usize,const query_length:usize>()->
+        water_http::server::CapsuleWaterController<Holder,Shared,header_length,query_length>{
+          let mut controller  = water_http::server::CapsuleWaterController::new();
+            $(
+             controller.push_handler(
+                 (
+                     stringify!($method).replace('"',"").replace(" ",""),
+                     stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
+                     | context |   unsafe{std::pin::Pin::new_unchecked(
+                         smallbox::smallbox!( async move {
+                         $fn_name(context).await;
+                     }))}
+                 )
+             );
+            )*
+            check_up_controller(&mut controller);
+            controller
+       }
+    };
+
+
+
+
+}
+#[cfg(not(feature = "thread_shared_struct"))]
 
 /// constructing functions builder
 #[doc(hidden)]
@@ -1187,9 +1542,10 @@ macro_rules! FunctionsMacroBuilder {
                  (
                      stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
-                     | context | Box::pin( async move {
+                     | context | unsafe{std::pin::Pin::new_unchecked(
+                         smallbox::smallbox!( async move {
                          $fn_name(context).await;
-                     })
+                     }))}
                  )
              );
             )*
@@ -1216,9 +1572,17 @@ macro_rules! CheckupAutoGenerator {
     };
 
     ( $controller:path >> middleware-> $context:ident $block:block) => {
-        $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,header_length,query_length>| Box::pin( async move  $block)
-        );
+        #[cfg(not(feature = "thread_shared_struct"))]
+         {
+             $controller.middleware = Some(
+            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+         }
+
+           #[cfg(feature = "thread_shared_struct")]
+         {
+             $controller.middleware = Some(
+            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+         }
     };
 
     ($controller:path >> children-> [$($child:ident),*] )=>{
@@ -1244,6 +1608,88 @@ macro_rules! CheckExtraCode {
     };
 }
 
+
+#[cfg(feature = "thread_shared_struct")]
+/// for creating single water controller or capsule for encapsulating objects handlers and routes
+/// creating Water Controller is very easy
+/// default creating
+/// ```rust
+/// use water_http::WaterController;
+/// WaterController! {
+///  holder -> u8,
+///  name -> WebMainController,
+///  functions -> {
+///   GET => / => main(context){
+///    let mut sender = context.sender();
+///    if let Ok(_) = sender.send_str("hello from server").await {
+///
+///   }
+///  }
+/// }
+/// }
+/// ```
+#[macro_export]
+macro_rules! WaterController {
+    {
+     holder -> $holder:path,
+     shared -> $shared:ty,
+     name -> $name:ident,
+     functions -> {$($function_tokens:tt)*}
+
+     $($key:tt -> ($($value:tt)*)),*
+    } => {
+        #[allow(non_snake_case)]
+        pub mod $name {
+
+            use water_http::http::{HttpSenderTrait,request::{HttpGetterTrait,IBodyChunks,IBody,ParsingBodyResults,ParsingBodyMechanism}};
+            use water_http::server::HttpContext;
+            use water_http::*;
+            pub type Holder = $holder;
+            pub type Shared = $shared;
+
+            water_http::FunctionsMacroBuilderTow!(
+                @entry
+                functions -> {$($function_tokens)*}
+            );
+
+            $(
+           water_http::CheckExtraCode!(
+               $key -> $($value)*
+           );
+           )*
+
+            fn check_up_controller
+            <const header_length:usize,const query_length:usize>(controller:&mut water_http::server::CapsuleWaterController<Holder,Shared,header_length,query_length>){
+                $(
+                water_http::CheckupAutoGenerator!(
+                    controller >> $key -> $($value)*
+                );
+                )*
+            }
+
+
+        }
+    };
+
+
+    {
+     holder -> $holder:path,
+     name -> $name:ident,
+     functions -> {$($function_tokens:tt)*} $separator:tt
+     $($key:tt -> ($($value:tt)*)),*
+    } => {
+       water_http::WaterController!(
+          holder -> $holder,
+          name -> $name,
+          functions -> { $($function_tokens)* }
+           $($key -> ($($value)*)),*
+       );
+    };
+
+}
+
+
+#[cfg(not(feature = "thread_shared_struct"))]
 /// for creating single water controller or capsule for encapsulating objects handlers and routes
 /// creating Water Controller is very easy
 /// default creating
@@ -1322,7 +1768,6 @@ macro_rules! WaterController {
 
 
 
-
 /// for setting path from another macro
 /// it`s for another macros call so do not worry about it ,
 /// we just had to make it public for re calling it from another macros
@@ -1363,6 +1808,26 @@ macro_rules! response {
             _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
         }
     };
+
+     ($context:ident download -> $res:expr) => {
+        let mut sender = $context.sender();
+        let mut __f = water_http::http::FileRSender::new($res);
+        __f.set_content_disposition("attachment");
+            let sending_result= sender.send_file(__f).await;
+           if !sending_result.is_success() {
+            _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
+        }
+    };
+  ($context:ident download -> $res:expr , $($function_tokens:tt)*) => {
+        let mut __sender = $context.sender();
+        let mut __f = water_http::http::FileRSender::new($res);
+        __f.set_content_disposition("attachment");
+        __f.set_edit_each_chunk( $($function_tokens)*);
+            let sending_result= __sender.send_file(__f).await;
+           if !sending_result.is_success() {
+            _= __sender.send_status_code(water_http::http::status_code::HttpStatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
     ($context:ident file -> $res:expr , $($function_tokens:tt)*) => {
         let mut __sender = $context.sender();
         let mut __f = water_http::http::FileRSender::new($res);
@@ -1394,6 +1859,243 @@ macro_rules! functions_builder {
     };
 }
 
+
+#[cfg(feature = "thread_shared_struct")]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! hidden_functions_builder {
+    (
+        @parsed[$($d:tt)*],
+        $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* ) $async:tt
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+
+     (
+        @parsed[$($d:tt)*],
+        $pub:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* ) $async:tt
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            $pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+       (
+        @parsed[$($d:tt)*],
+        pub $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+
+     (
+        @parsed[$($d:tt)*],
+        $pub:tt $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            $pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+     (
+        @parsed[$($d:tt)*],
+        $pub:tt $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            $pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+      (
+        @parsed[$($d:tt)*],
+         $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+        (
+        @parsed[$($d:tt)*],
+         $async:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) $async {
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+          (
+        @parsed[$($d:tt)*],
+        $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+        ($($param:ident),*) {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) async {
+                $(let $param = $context.get_from_path_params(stringify!($param)).unwrap();)*
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+           (
+        @parsed[$($d:tt)*],
+        $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* )
+       {
+
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+            ],
+            pub $fn $fn_name($context$(,$parameter_name:$typ)*) async {
+                    $($body_tokens)*
+            }
+            $($res)*
+        );
+    };
+
+    // for building results
+      (
+        @parsed[$($d:tt)*],
+        $pub:tt $fn:tt $fn_name:ident($context:ident $(, $parameter_name:ident : $typ:ty)* ) $async:tt {
+            $($body_tokens:tt)*
+        }
+        $($res:tt)*
+    ) => {
+        $crate::hidden_functions_builder! (
+            @parsed[
+                $($d)*
+                $pub $async $fn $fn_name<
+                    'context,
+                    MainHolderType: Send + 'static,
+                    #[cfg(feature = "use_tokio_send")]
+                    Shared:Clone + Send + 'static,
+                    #[cfg(not(feature = "use_tokio_send"))]
+                    Shared:Clone ,
+
+                    const header_length: usize,
+                    const query_length: usize
+                >(
+                    $context: &mut $crate::server::HttpContext<
+                        'context,
+                    MainHolderType,
+                    Shared,
+                    header_length,
+                    query_length
+                    >
+                    $(, $parameter_name: $typ)*
+                ) {
+                    $($body_tokens)*
+                }
+            ],
+            $($res)*
+        );
+    };
+
+
+    (@parsed[$($d:tt)*],) => {
+        $($d)*
+    };
+}
+#[cfg(not(feature = "thread_shared_struct"))]
 #[doc(hidden)]
 #[macro_export]
 macro_rules! hidden_functions_builder {
@@ -1603,7 +2305,9 @@ macro_rules! hidden_functions_builder {
                     const query_length: usize
                 >(
                     $context: &mut $crate::server::HttpContext<
-                        'context, MainHolderType, header_length, query_length
+                        'context,
+                    MainHolderType,
+                    header_length,query_length
                     >
                     $(, $parameter_name: $typ)*
                 ) {

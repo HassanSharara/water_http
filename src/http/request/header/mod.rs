@@ -35,7 +35,7 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
     }
 
     /// returning all data that hold valid key-value pair
-    pub fn all_pairs(&self)->&'a [KeyValuePair]{
+    pub fn all_pairs(&self)->&'a [KeyValuePair<'_>]{
         &self.data[..self.cursor]
     }
 
@@ -66,8 +66,8 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
         None
     }
 
-    /// getting value as [`Cow<str>`] from pair using key
-    pub fn get_as_str(&self,key:&str)->Option<Cow<str>>{
+    /// getting value as [`Cow<'_,str>`] from pair using key
+    pub fn get_as_str(&self,key:&str)->Option<Cow<'_,str>>{
         if let Some(value) = self.get_as_bytes(key){
             return Some(String::from_utf8_lossy(value));
         }
@@ -83,8 +83,7 @@ impl <'a,const DATA_LENGTH:usize> KeyValueList<'a,DATA_LENGTH> {
     }
 
     /// for try parsing bytes into headers key and value
-    pub  fn try_parse<const L: usize>(bytes: &[u8]) ->Option<(KeyValueList<L>,usize)> {
-
+    pub  fn try_parse<const L: usize>(bytes: &[u8]) ->Option<(KeyValueList<'_,L>,usize)> {
         let mut key_list = KeyValueList::empty();
         let mut end_indicators = 0_u16;
         let mut last_index_used = 0_usize;
@@ -256,7 +255,7 @@ impl<'a> HeaderValue<'a> {
     }
 
     /// converting the total value to str
-    pub fn to_str(&self)->Cow<str>{
+    pub fn to_str(&self)->Cow<'_,str>{
         String::from_utf8_lossy(self.bytes)
     }
 
@@ -291,7 +290,7 @@ impl <'a> KeyValuePair <'a> {
     }
 
     /// converting value pair to header value
-    pub fn to_header_value(&self)->HeaderValue{
+    pub fn to_header_value(&self)->HeaderValue<'_>{
         HeaderValue::new(self.value,Some(self.key))
     }
     /// get empty key value pair
@@ -338,15 +337,15 @@ impl KeyValueMap {
 
 
     /// getting value as HeaderValue from pair using key
-    pub fn get_as_header_value(&self,key:&str)->Option<HeaderValue>{
+    pub fn get_as_header_value(&self,key:&str)->Option<HeaderValue<'_>>{
         if let Some(bytes) = self.get_as_bytes(key){
             HeaderValue::new(bytes.as_slice(),Some(key.as_bytes()));
         }
         None
     }
 
-    /// getting value as [`Cow<str>`] from pair using key
-    pub fn get_as_str(&self,key:&str)->Option<Cow<str>>{
+    /// getting value as [`Cow<'_,str>`] from pair using key
+    pub fn get_as_str(&self,key:&str)->Option<Cow<'_,str>>{
         if let Some(value) = self.get_as_bytes(key){
             return Some(String::from_utf8_lossy(value));
         }
@@ -396,8 +395,8 @@ mod test_key_list {
                 println!("content-disposition:filename = {}",filename);
 
                 assert_eq!(cd,"attachment");
-                assert_eq!(name,"\"file1\"");
-                assert_eq!(filename,"\"example.txt\"");
+                assert_eq!(name,"file1");
+                assert_eq!(filename,"example.txt");
             }
         }
         assert!(v.is_some());

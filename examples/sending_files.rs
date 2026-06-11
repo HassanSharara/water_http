@@ -7,8 +7,7 @@ InitControllersRoot!{
 }
 pub type RootControllersType = u8;
 
-#[tokio::main]
-async fn main() {
+ fn main() {
     let configs = water_http::server::ServerConfigurations::bind("127.0.0.1",8084);
     RunServer!(
       configs,
@@ -33,7 +32,7 @@ WaterController! {
             ).await;
         }
 
-          GET => v3 => file3(context) async {
+        GET => v3 => file3(context) async {
             let mut sender = context.sender();
             let mut file = http::FileRSender::new("./public/text/test1.txt");
             // when you need to modify each chunk
@@ -45,6 +44,13 @@ WaterController! {
                 }
             );
             _= sender.send_file(file).await;
+        }
+
+        GET => v4 => download(context) async {
+            // the difference between serving file and download is serving file automatically serve
+            // like streaming the videos while download will always set content disposition to attachment which will always trigger downloading at
+            // client side
+            response!(context download -> "./public/text/test1.txt");
         }
     }
 }

@@ -3,7 +3,9 @@ use std::future::Future;
 use bytes::Buf;
 use h2::RecvStream;
 use http::{ Request};
-use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller, BodyChunkedReader};
+use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller};
+#[cfg(feature = "accept_transfer_chunked")]
+use crate::http::request::BodyChunkedReader;
 use crate::http::request::MultipartStreamHolder::H1;
 use crate::http::status_code::HttpStatusCode;
 use crate::server::connection::BodyReadingBuffer;
@@ -30,6 +32,8 @@ const PATH_QUERY_COUNT:usize
     pub(crate)left_bytes:&'a [u8],
     pub(crate)stream:&'a mut HttpStream,
     pub(crate)request:&'a IncomingRequest<'request,HEADER_SIZE,PATH_QUERY_COUNT>,
+    #[cfg(feature = "accept_transfer_chunked")]
+    pub (crate)to_advance_bytes:&'a mut  Option<usize>,
 }
 
 
@@ -40,7 +44,7 @@ impl <'a:'request,'request
 > Http1Getter<'a,'request,HEADER_SIZE,PATH_QUERY_COUNT> {
 
     #[inline]
-   fn t_bytes_puller(&mut self,content_length:usize)->ParsingBodyResults{
+   fn t_bytes_puller(&mut self,content_length:usize)->ParsingBodyResults<'_>{
         let puller = BytesPuller::new(
             StreamBytesPuller::H1(
                 H1BytesPuller {
@@ -59,8 +63,8 @@ impl <'a:'request,'request
     }
 
     /// getting full body if the body was using multipart form data content type during incoming request
-    pub  async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8],content_length:&usize)
-    -> Result<FormDataAll,WaterErrors>{
+    pub  async fn get_full_body_multipart_mechanism(& mut self,content_type:&[u8],content_length:&usize)
+    -> Result<FormDataAll,WaterErrors<'_>>{
         let split = split(content_type,b"boundary=");
         if let Some(boundary) = split.last() {
             if !boundary.is_empty() {
@@ -102,6 +106,7 @@ impl <'a:'request,'request
         ))
     }
 
+    #[cfg(feature = "accept_transfer_chunked")]
 
     pub (crate) async fn get_body_as_chunked_transferred(&'a mut self)->ParsingBodyResults<'a>{
 
@@ -113,7 +118,9 @@ impl <'a:'request,'request
         );
         let r = BodyChunkedReader::new(
             holder,
-            self.body_reading_buffer
+            self.body_reading_buffer,
+            #[cfg(feature = "accept_transfer_chunked")]
+            self.to_advance_bytes
         );
         ParsingBodyResults::Chunked(
             IBodyChunks::Chunked(
@@ -152,11 +159,24 @@ impl <'a:'request,'request
     #[inline]
     pub (crate) async fn get_xxx_ff(&'a mut self,content_length:&usize)
     ->ParsingBodyResults<'a>{
-        let  remaining = *content_length - self.left_bytes.len();
+
+        let left_bytes_length = self.left_bytes.len();
+        let  remaining = *content_length - left_bytes_length ;
         let mut rem = remaining;
+
+        self.body_reading_buffer.extend_from_slice(self.left_bytes);
+
+        #[cfg(feature = "debugging")]
+        {
+            tracing::debug!("body reading buffer now is {:?}",String::from_utf8_lossy(self.body_reading_buffer.chunk()));
+        }
         while rem > 0 {
             match self.body_reading_buffer.read_buf(self.stream).await {
                 Ok(s) => {
+                    #[cfg(feature = "debugging")]
+                    {
+                        tracing::debug!("[xxx-form-data-field] Reader : we road {:?}",String::from_utf8_lossy(&self.body_reading_buffer[..s]));
+                    }
                     rem -= rem.min(s);
                 }
                 Err(_) => {
@@ -169,10 +189,9 @@ impl <'a:'request,'request
             }
 
         }
-        let data = self.left_bytes;
-        let second_data = &self.body_reading_buffer[..remaining];
-        let data = XWWWFormUrlEncoded::from_multiple_payloads(
-            (data,second_data)
+        let data = &self.body_reading_buffer[..remaining+left_bytes_length];
+        let data = XWWWFormUrlEncoded::new(
+           data
         );
         return ParsingBodyResults::FullBody(
             IBody::XWWWFormUrlEncoded(data)
@@ -195,6 +214,9 @@ impl <'a:'request,'request
         let content_length = self.request.content_length();
         if let Some( content_length) = content_length {
             let body_should_handled_as_chunks = self.left_bytes.len() < *content_length;
+            #[cfg(feature = "debugging")]{
+                tracing::debug!("[Body_Should Handled as Chunks] : {}",body_should_handled_as_chunks );
+            }
             if body_should_handled_as_chunks {
                 match mechanism {
                     ParsingBodyMechanism::Default => {
@@ -242,14 +264,24 @@ impl <'a:'request,'request
                                                 content_length
                         ).await
                     }
+                    #[cfg(feature = "accept_transfer_chunked")]
                     ParsingBodyMechanism::ChunkedTransferEncoding => {
                         return self.get_body_as_chunked_transferred().await
                     }
+
+
                 }
             }
             else {
+                #[cfg(feature = "debugging")]
+                {
+                }
                 return match mechanism {
                     ParsingBodyMechanism::Default => {
+                        #[cfg(feature = "debugging")]
+                        {
+                            tracing::debug!("mechanism is Default");
+                        }
                         match self.request.headers()
                             .get_as_bytes("Content-Type") {
                             None => { ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST)) }
@@ -263,7 +295,8 @@ impl <'a:'request,'request
                                             x_fields
                                         )
                                     )
-                                } else if lower_case.contains("multipart/form-data") {
+                                }
+                                else if lower_case.contains("multipart/form-data") {
                                     return self.get_chunked_body_multipart(
                                         content_type,
                                         &content_length
@@ -278,6 +311,10 @@ impl <'a:'request,'request
                         }
                     }
                     ParsingBodyMechanism::JustBytes => {
+                        #[cfg(feature = "debugging")]
+                        {
+                            tracing::debug!("full body is {:?}",String::from_utf8_lossy(&self.left_bytes[..*content_length]));
+                        }
                         ParsingBodyResults::FullBody(
                             IBody::Bytes(
                                 &self.left_bytes[..*content_length]
@@ -306,12 +343,16 @@ impl <'a:'request,'request
                             )
                         )
                     }
+                    #[cfg(feature = "accept_transfer_chunked")]
+
                     ParsingBodyMechanism::ChunkedTransferEncoding => {
                         self.get_body_as_chunked_transferred().await
                     }
                 };
             }
         }
+        #[cfg(feature = "accept_transfer_chunked")]
+
         if let Some(transfer_encoding) = self.request.headers()
             .get_as_str("Transfer-Encoding") {
             if transfer_encoding.to_lowercase() == "chunked" {
@@ -340,6 +381,8 @@ pub  struct Http2Getter<'a> {
     pub(crate)batch:&'a mut Request<RecvStream>,
     pub(crate)content_length:usize,
     pub(crate)reading_buffer:&'a mut BodyReadingBuffer,
+    #[cfg(feature = "accept_transfer_chunked")]
+    pub(crate)to_advance:&'a mut Option<usize>
 }
 impl<'a>   Http2Getter<'a> {
 
@@ -366,8 +409,8 @@ impl<'a>   Http2Getter<'a> {
 
 
     /// getting full body if the body was using multipart form data content type during incoming request
-    pub   async fn get_full_body_multipart_mechanism(&'a mut self,content_type:&[u8])
-                                                    -> Result<FormDataAll,WaterErrors>{
+    pub   async fn get_full_body_multipart_mechanism(& mut self,content_type:&[u8])
+                                                    -> Result<FormDataAll,WaterErrors<'_>>{
         let split = split(content_type,b"boundary=");
         if let Some(boundary) = split.last() {
             if !boundary.is_empty() {
@@ -439,6 +482,7 @@ impl<'a>   Http2Getter<'a> {
         );
 
         while remaining > 0 {
+
             let data = body_mut.data().await;
             match data {
                 None => { break }
@@ -456,7 +500,6 @@ impl<'a>   Http2Getter<'a> {
                 }
             }
         }
-
         return ParsingBodyResults::FullBody(
             IBody::XWWWFormUrlEncoded(
                 XWWWFormUrlEncoded::new(
@@ -467,6 +510,8 @@ impl<'a>   Http2Getter<'a> {
 
     }
 
+    #[cfg(feature = "accept_transfer_chunked")]
+
     pub (crate) async fn get_body_as_chunked_transferred(&'a mut self)->ParsingBodyResults<'a>{
 
         let holder  = MultipartStreamHolder::H2(
@@ -476,7 +521,9 @@ impl<'a>   Http2Getter<'a> {
         );
         let r = BodyChunkedReader::new(
             holder,
-            self.reading_buffer
+            self.reading_buffer,
+            #[cfg(feature = "accept_transfer_chunked")]
+            self.to_advance
         );
         ParsingBodyResults::Chunked(
             IBodyChunks::Chunked(
@@ -558,6 +605,8 @@ impl<'a> HttpGetterTrait<'a> for Http2Getter<'a> {
             ParsingBodyMechanism::XWWWFormData => {
                 return self.get_body_as_xww().await;
             }
+            #[cfg(feature = "accept_transfer_chunked")]
+
             ParsingBodyMechanism::ChunkedTransferEncoding => {
                 self.get_body_as_chunked_transferred().await
             }

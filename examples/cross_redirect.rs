@@ -7,8 +7,7 @@ InitControllersRoot!{
     name:MAIN_ROOT,
     holder_type:MainHolderType,
 }
-#[tokio::main]
-async fn main() {
+ fn main() {
     let  config = ServerConfigurations::bind("127.0.0.1",8084);
     water_http::RunServer!(
         config,
