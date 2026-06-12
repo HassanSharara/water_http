@@ -8,7 +8,7 @@ InitControllersRoot!{
 pub type RootControllersType = u8;
 
  fn main() {
-    let configs = water_http::server::ServerConfigurations::bind("127.0.0.1",8084);
+    let configs = water_http::server::ServerConfigurations::bind("0.0.0.0",8084);
     RunServer!(
       configs,
         ROOTTYPE,
@@ -27,8 +27,9 @@ WaterController! {
         }
 
         GET => v2 => file2(context) async {
+            let  sender = http::FileRSender::new("./public/text/test1.txt");
             _= context.send_file(
-                http::FileRSender::new("./public/text/test1.txt")
+                sender
             ).await;
         }
 

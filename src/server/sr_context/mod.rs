@@ -11,17 +11,17 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 // use bytes:: BytesMut;
 use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use bytes::Bytes;
 
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use h2::RecvStream;
 #[cfg(not(feature = "use_io_uring"))]
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf,AsyncReadExt};
 
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use h2::server::SendResponse;
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use http::Request;
 use serde::{Deserialize, Serialize};
 use serde::ser::Error;
@@ -30,13 +30,14 @@ use tokio_uring::net::TcpStream;
 #[cfg(not(feature = "use_io_uring"))]
 use tokio::net::TcpStream;
 
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use crate::http::Http2Sender;
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use crate::http::request::Http2Getter;
-#[cfg(not(feature = "use_io_uring"))]
 use crate::http::{FileRSender,SendingFileResults};
-use crate::http::{ Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
+#[cfg(feature = "lazy_response")]
+use crate::http::LazyResponse;
+use crate::http::{Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
 use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
@@ -47,7 +48,7 @@ use crate::server::matcher::Matcher;
 
 pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>{
-    #[cfg(not(feature = "use_only_http1"))]
+    #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
     Http2(Http2Context<'a,>),
     Http1(Http1Context<'a,HEADERS_COUNT,PATH_QUERY_COUNT>)
 }
@@ -60,7 +61,7 @@ impl <'a,const HEADERS_COUNT:usize
         Protocol::Http1(context)
     }
 
-    #[cfg(not(feature = "use_only_http1"))]
+    #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
     pub (crate) fn from_http2_context(context:Http2Context<'a,>)
     ->Protocol<'a, HEADERS_COUNT, PATH_QUERY_COUNT> {
         Protocol::Http2(context)
@@ -68,7 +69,7 @@ impl <'a,const HEADERS_COUNT:usize
 }
 
 
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 
 pub (crate) struct  Http2Context<'a> {
     pub request_batch:(Request<RecvStream>,SendResponse<Bytes>),
@@ -78,7 +79,7 @@ pub (crate) struct  Http2Context<'a> {
     #[cfg(feature = "accept_transfer_chunked")]
     to_advance:Option<usize>
 }
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 
  fn parse_query_string_to_map(query:Option<&str>,map:&mut Option<HashMap<String,String>>){
      let mut query = match query {
@@ -106,7 +107,7 @@ pub (crate) struct  Http2Context<'a> {
          }
      }
  }
-#[cfg(not(feature = "use_only_http1"))]
+#[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 
 impl<'a> Http2Context<'a> {
 
@@ -192,6 +193,8 @@ pub struct HttpContext<
     pub path_params_map:UnsafeCell<Option<HashMap<String,String>>>,
     body_bytes_holder:Option<Vec<u8>>,
     pub thread_shared_struct:Option<SHARED>,
+    #[cfg(feature = "lazy_response")]
+    pub lazy_response:Option<LazyResponse>,
 }
 
 
@@ -211,6 +214,8 @@ pub struct HttpContext<
     /// saving generic parameters injected with requested path
     pub path_params_map:UnsafeCell<Option<HashMap<String,String>>>,
     body_bytes_holder:Option<Vec<u8>>,
+    #[cfg(feature = "lazy_response")]
+    pub lazy_response:Option<LazyResponse>,
 }
 
 
@@ -230,13 +235,27 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         self.peer
     }
 
+    #[cfg(feature = "lazy_response")]
+    #[inline(always)]
+    pub fn set_lazy_response(&mut self,res:LazyResponse){
+        self.lazy_response = Some(res);
+    }
     pub (crate) fn new(
         protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
         socket:&'a SocketAddr
     )->
         HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
-        HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None}
+        #[cfg(not(feature = "lazy_response"))]
+        {
+            return   HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None)
+                ,body_bytes_holder:None,
+            };
+        }
+        #[cfg(feature = "lazy_response")]
+        HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
+         lazy_response:None
+        }
     }
 
     #[inline(always)]
@@ -244,7 +263,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for making a less ram usage for better performance
     pub fn getter<'f>(&'f mut self)->HttpGetter<'f,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         match &mut self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {HttpGetter::H2(h2.getter())}
             Protocol::Http1(h1) => {HttpGetter::H1(h1.getter())}
         }
@@ -420,7 +439,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// it is very fast and memory safe function ,and it has zero allocation for data
     pub fn get_from_headers_as_bytes(&self,key:&str)->Option<&[u8]>{
         match &self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {
                 return  h2.get_from_headers(key)
             }
@@ -449,7 +468,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// else it's returning [None]
     pub fn content_length(&mut self) ->Option<&usize>{
         match &mut self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {
                 h2.content_length()
             }
@@ -471,7 +490,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     #[inline(always)]
     pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
         return match &mut self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {
                 HttpSender::H2(Http2Sender::new(h2))
             }
@@ -543,7 +562,6 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     // }
 
     #[inline(always)]
-    #[cfg(not(feature = "use_io_uring"))]
     /// for sending files this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
         if !file.path.exists() { return SendingFileResults::FileNotFound}
@@ -564,21 +582,16 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
             file.set_bytes_range(start,end);
         }
-        #[cfg(not(feature = "use_io_uring"))]
-        {
-            let mut  sender = self.sender();
 
-            return sender.send_file(file).await
-        }
-        #[cfg(feature = "use_io_uring")]
-        return  SendingFileResults::ErrorWhileOpeningTheFile
+            let mut  sender = self.sender();
+            return sender.send_file(file).await;
     }
 
     #[inline(always)]
     /// getting the path from incoming request
     pub fn path(&self)->&str{
         match &self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
@@ -594,7 +607,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// getting incoming request method
     pub fn method(&self)->&str{
         match &self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {
                 let ref request = h2.request_batch.0;
                 request.method().as_str()
@@ -624,7 +637,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// here you can get id value using this method
     pub  fn get_from_path_query(&self,key:&str)->Option<Cow<'_,str>>{
         match &self.protocol {
-            #[cfg(not(feature = "use_only_http1"))]
+            #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {
                 if let Some(pq)  = h2.path_query.as_ref() {
                     if let Some(v) = pq.get(key){
@@ -666,7 +679,12 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 let middlewares_ptr = holder.father_middlewares.as_ptr();
                 let middlewares_len = holder.father_middlewares.len();
                 let handler = holder.func;
-
+                #[cfg(feature = "lazy_response")]
+                let interceptors_ptr = holder.father_interceptors.as_ptr();
+                #[cfg(feature = "lazy_response")]
+                let interceptors_len = holder.father_interceptors.len();
+                #[cfg(feature = "lazy_response")]
+                let apply_interceptors = holder.controller.apply_parents_interceptors;
                 // Drop the borrow by ending the scope
                 drop(r); // Explicitly drop to end borrow
 
@@ -688,6 +706,32 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 }
                 // handler
                 handler(self).await;
+                #[cfg(feature = "lazy_response")]
+                {
+                    if apply_interceptors {
+                        let interceptors = unsafe {
+                            std::slice::from_raw_parts(interceptors_ptr, interceptors_len)
+                        };
+
+                        for interceptor in interceptors {
+                            interceptor(self).await;
+                        }
+                    }
+
+                    if let Some(response) = self.lazy_response.take() {
+                        let mut sender = self.sender();
+                        sender.send_status_code(response.http_status_code.clone());
+                        _=(&response.headers).iter().for_each(|(k,v)|{
+                            sender.set_header(k,v);
+                        });
+                        if sender.send_data_as_final_response(
+                            ResponseData::Slice(&response.response_data)
+                        ).await.is_err() {
+                            return  ServingRequestResults::Stop
+                        }
+
+                    }
+                }
                 return ServingRequestResults::Done;
             }
         }
@@ -724,13 +768,46 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         self.peer
     }
 
+    #[cfg(feature = "lazy_response")]
+    pub fn set_lazy_response(&mut self,lazy_response: LazyResponse){
+        self.lazy_response = Some(lazy_response);
+    }
+
+    #[cfg(feature = "lazy_response")]
     pub (crate) fn new(
         protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
         socket:&'a SocketAddr
     )->
         HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
     {
-        HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None,thread_shared_struct:None}
+        #[cfg(feature = "lazy_response")]
+        {
+            return   HttpContext {
+                holder:None,protocol,peer:socket,
+                path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
+                thread_shared_struct:None,
+                lazy_response:None
+
+            }
+        }
+        HttpContext {
+            holder:None,protocol,peer:socket,
+            path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
+            thread_shared_struct:None,
+        }
+    }
+    #[cfg(not(feature = "lazy_response"))]
+    pub (crate) fn new(
+        protocol: Protocol<'a,HEADERS_COUNT,PATH_QUERY_COUNT>,
+        socket:&'a SocketAddr
+    )->
+        HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
+    {
+        HttpContext {
+            holder:None,protocol,peer:socket,
+            path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
+            thread_shared_struct:None
+        }
     }
 
 
@@ -1041,7 +1118,6 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
-    #[cfg(not(feature = "use_io_uring"))]
     /// for sending files
     /// this function auto support for sending videos
     pub async fn send_file(&mut self,mut file:FileRSender<'_>)->SendingFileResults{
@@ -1138,7 +1214,8 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     pub(crate) async fn serve_ef(
         &mut self,
         matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
-    ) -> ServingRequestResults {
+    ) -> ServingRequestResults
+    {
         let path = self.path();
         let r = matcher.match_path(path);
         if let Some((holder,ref param)) = r {
@@ -1154,6 +1231,12 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 let middlewares_ptr = holder.father_middlewares.as_ptr();
                 let middlewares_len = holder.father_middlewares.len();
                 let handler = holder.func;
+                #[cfg(feature = "lazy_response")]
+                let interceptors_ptr = holder.father_interceptors.as_ptr();
+                #[cfg(feature = "lazy_response")]
+                let interceptors_len = holder.father_interceptors.len();
+                #[cfg(feature = "lazy_response")]
+                 let apply_interceptors = holder.controller.apply_parents_interceptors;
                 // Drop the borrow by ending the scope
                 drop(r); // Explicitly drop to end borrow
                 // Now reconstruct the slice from raw pointer
@@ -1172,8 +1255,33 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                         }
                     }
                 }
-                // handler
                 handler(self).await;
+                #[cfg(feature = "lazy_response")]
+                {
+                    if apply_interceptors {
+                        let interceptors = unsafe {
+                            std::slice::from_raw_parts(interceptors_ptr, interceptors_len)
+                        };
+
+                        for interceptor in interceptors {
+                            interceptor(self).await;
+                        }
+                    }
+
+                    if let Some(response) = self.lazy_response.take() {
+                        let mut sender = self.sender();
+                        sender.send_status_code(response.http_status_code.clone());
+                        _=(&response.headers).iter().for_each(|(k,v)|{
+                            sender.set_header(k,v);
+                        });
+                        if sender.send_data_as_final_response(
+                            ResponseData::Slice(&response.response_data)
+                        ).await.is_err() {
+                            return  ServingRequestResults::Stop
+                        }
+
+                    }
+                }
                 return ServingRequestResults::Done;
             }
         }

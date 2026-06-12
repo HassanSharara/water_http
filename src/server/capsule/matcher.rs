@@ -2,6 +2,8 @@
 use std::collections::HashMap;
 use crate::server::capsule::WaterSingleFunction;
 use crate::server::{CapsuleWaterController, MiddlewareCallback};
+#[cfg(feature = "lazy_response")]
+use crate::server::capsule::response_interceptors::InterceptorCallback;
 
 #[cfg(not(feature = "thread_shared_struct"))]
 pub struct CapsuleHolder<
@@ -14,7 +16,9 @@ pub struct CapsuleHolder<
     pub (crate) method:String,
     pub (crate)  controller:&'static CapsuleWaterController<H,HS,QS>,
     pub (crate)  func:&'static WaterSingleFunction<H, HS,QS >,
-    pub (crate) father_middlewares:Vec<&'static MiddlewareCallback<H,HS,QS>>
+    pub (crate) father_middlewares:Vec<&'static MiddlewareCallback<H,HS,QS>>,
+    #[cfg(feature = "lazy_response")]
+    pub (crate) father_interceptors: Vec<&'static InterceptorCallback<H, HS, QS>>,
 }
 
 #[cfg(feature = "thread_shared_struct")]
@@ -33,7 +37,9 @@ pub struct CapsuleHolder<
     pub (crate) method:String,
     pub (crate) controller:&'static CapsuleWaterController<H,SHARED,HS,QS>,
     pub (crate) func:&'static WaterSingleFunction<H,SHARED, HS,QS, >,
-    pub (crate) father_middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HS,QS>>
+    pub (crate) father_middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HS,QS>>,
+    #[cfg(feature = "lazy_response")]
+    pub (crate) father_interceptors: Vec<&'static InterceptorCallback<H,SHARED,HS, QS>>,
 }
 
 // -------------------- Types --------------------
@@ -281,8 +287,12 @@ impl <
             if path.contains("{") || path.contains("}") {
                 let s = path.split("/");
                 let mut father_middlewares = vec![];
-
+                #[cfg(feature = "lazy_response")]
+                let mut father_interceptors = vec![];
                 controller.push_all_ancestors_middlewares(&mut father_middlewares);
+                #[cfg(feature = "lazy_response")]
+                controller.push_all_ancestors_interceptors(&mut father_interceptors);
+                #[cfg(feature = "lazy_response")]
                 dynamic_paths.insert(
                     s.count()
                     ,
@@ -292,20 +302,49 @@ impl <
                             controller,
                             func,
 
-                            father_middlewares
+                            father_middlewares,
+                            father_interceptors
+                        })
+                    ]
+                );
+
+                #[cfg(not(feature = "lazy_response"))]
+                dynamic_paths.insert(
+                    s.count()
+                    ,
+                    vec![
+                        (path,CapsuleHolder{
+                            method:method.split("_").next().unwrap().to_uppercase(),
+                            controller,
+                            func,
+
+                            father_middlewares,
                         })
                     ]
                 );
                 continue
             }
             let mut father_middlewares = vec![];
+            #[cfg(feature = "lazy_response")]
+            let mut father_interceptors = vec![];
 
             controller.push_all_ancestors_middlewares(&mut father_middlewares);
+            #[cfg(feature = "lazy_response")]
+            controller.push_all_ancestors_interceptors(&mut father_interceptors);
+            #[cfg(feature = "lazy_response")]
             static_paths.insert(path,CapsuleHolder{
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
-                father_middlewares
+                father_middlewares,
+                father_interceptors
+            });
+            #[cfg(not(feature = "lazy_response"))]
+            static_paths.insert(path,CapsuleHolder{
+                method:method.split("_").next().unwrap().to_uppercase(),
+                controller,
+                func,
+                father_middlewares,
             });
         }
         father_controllers.push(controller);
@@ -403,9 +442,13 @@ impl <
             if path.contains("{") || path.contains("}") {
                 let s = path.split("/");
                 let mut father_middlewares = vec![];
+                #[cfg(feature = "lazy_response")]
+                let mut father_interceptors = vec![];
 
                 controller.push_all_ancestors_middlewares(&mut father_middlewares);
-
+                #[cfg(feature = "lazy_response")]
+                controller.push_all_ancestors_interceptors(&mut father_interceptors);
+                #[cfg(feature = "lazy_response")]
                 dynamic_paths.insert(
                     s.count()
                     ,
@@ -414,20 +457,48 @@ impl <
                             method:method.split("_").next().unwrap().to_uppercase(),
                             controller,
                             func,
-                            father_middlewares
+                            father_middlewares,
+                            father_interceptors
+                        })
+                    ]
+                );
+                #[cfg(not(feature = "lazy_response"))]
+                dynamic_paths.insert(
+                    s.count()
+                    ,
+                    vec![
+                        (path,CapsuleHolder{
+                            method:method.split("_").next().unwrap().to_uppercase(),
+                            controller,
+                            func,
+                            father_middlewares,
                         })
                     ]
                 );
                 continue
             }
             let mut father_middlewares = vec![];
+            #[cfg(feature = "lazy_response")]
+            let mut father_interceptors = vec![];
 
             controller.push_all_ancestors_middlewares(&mut father_middlewares);
+            #[cfg(feature = "lazy_response")]
+            controller.push_all_ancestors_interceptors(&mut father_interceptors);
+            #[cfg(feature = "lazy_response")]
+
             static_paths.insert(path,CapsuleHolder{
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
-                father_middlewares
+                father_middlewares,
+                father_interceptors
+            });
+            #[cfg(not(feature = "lazy_response"))]
+            static_paths.insert(path,CapsuleHolder{
+                method:method.split("_").next().unwrap().to_uppercase(),
+                controller,
+                func,
+                father_middlewares,
             });
         }
 

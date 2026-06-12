@@ -61,6 +61,37 @@ required-features = ["use_io_uring"]
 name = "water_http"
 path = "src/main.rs"
 
+[[example]]
+name = "all_post_requests"
+path = "examples/all_post_requests.rs"
+required-features = []
+
+
+[[example]]
+name = "all_post_requests_shared"
+path = "examples/all_post_requests_shared.rs"
+required-features = ["thread_shared_struct"]
+
+[[example]]
+name = "all_post_requests_shared_send_tls"
+path = "examples/all_post_requests_shared_send_tls.rs"
+required-features = ["thread_shared_struct","support_tls","use_tokio_send"]
+
+[[example]]
+name = "mini_server"
+path = "examples/mini_server.rs"
+required-features = ["mini"]
+
+[[example]]
+name = "lazy_response"
+path = "examples/lazy_response.rs"
+required-features = ["lazy_response"]
+
+
+[[example]]
+name = "lazy_response_interceptor"
+path = "examples/lazy_response_interceptor.rs"
+required-features = ["lazy_response"]
 
 
 [features]
@@ -72,6 +103,8 @@ use_only_http1 = []
 accept_transfer_chunked = []
 use_tokio_send = []
 mini = []
+lazy_response = []
+
 thread_shared_struct = []
 use_io_uring = ["tokio-uring","water_buffer/uring"]
 cpu_affinity = ["dep:core_affinity"]
