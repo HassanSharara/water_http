@@ -1,3 +1,15 @@
+## [4.0.1] - 2026-06-13
+
+### 🚀 Added
+- **`fast_build!` Engine Feature:** Introduced a unified macro abstraction layer that automates server boilerplate, root initialization, and controller configurations. Features seamless signature flexibility supporting raw properties, multi-threaded state sharing (`thread_shared_struct`), nested controller trees (`children`), and interceptor middleware blocks.
+- **Zero-Overhead `mini` Module:** Added bare-metal server building support meticulously optimized for tiny edge applications. Operates with strictly zero heap allocations and zero routing overhead via stack-allocated const generics and raw socket ring-buffer interaction through `CtxPtr`.
+- **`LazyResponse` Pipeline Integration:** Added a high-performance deferred response layer (`LazyResponse`) to delay data assembly until the final microsecond of the connection cycle, maximizing throughput efficiency.
+- **Advanced Interceptor Hierarchy:** Introduced parent interceptor cascading blocks (`apply_parents_interceptors`). Response interceptors are fully compatible and natively synchronized with the new `LazyResponse` architecture.
+
+### ⚡ Optimized & Upgraded
+- **`water_buffer` Core Overhaul:** Re-engineered internal buffers to scale raw throughput aggressively. Optimized single-byte iteration loops and per-connection allocation reuse to guarantee ultra-high performance and a stable workload baseline across major OS environments.
+- **Parsing Velocity:** Enhanced internal memory layouts to keep HTTP/1 payload parsing speeds sustained down to a raw **1 microsecond runtime baseline**.
+
 ## 3.1.1 - 3.1.0
 - Major performance optimizations and internal updates to ensure extremely high efficiency and speed, targeting top-tier benchmark results and aligning with the highest industry standards.
 ## 3.0.6
