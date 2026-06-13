@@ -18,6 +18,7 @@ mod encoding;
 pub (crate) mod io;
 #[cfg(not(feature = "use_io_uring"))]
 pub mod mini;
+mod macros;
 // pub mod channels;
 // pub(crate) mod io;
 
@@ -140,6 +141,10 @@ pub  fn run_server<
     #[cfg(all(not(feature = "use_io_uring"),not(feature = "use_tokio_send")))]
     let listener_count = conf.listeners_count;
     // 3. MULTI-THREADED (TOKIO SEND) ARCHITECTURE
+
+    // for (ip,port) in &conf.addresses {
+    //     println!("Listening on ip = {} , port {}",ip,port);
+    // }
     #[cfg(feature = "use_tokio_send")]
     {
         let rt = tokio::runtime::Builder::new_multi_thread()

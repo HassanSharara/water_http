@@ -1571,6 +1571,10 @@ macro_rules! CheckupAutoGenerator {
         $controller.apply_parents_middlewares = $value;
     };
 
+    ( $controller:path >> apply_parents_interceptors->$value:expr) => {
+        $controller.apply_parents_interceptors = $value;
+    };
+
     ( $controller:path >> middleware-> $context:ident $block:block) => {
         #[cfg(not(feature = "thread_shared_struct"))]
          {
@@ -1581,6 +1585,20 @@ macro_rules! CheckupAutoGenerator {
            #[cfg(feature = "thread_shared_struct")]
          {
              $controller.middleware = Some(
+            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+         }
+    };
+
+    ( $controller:path >> interceptor-> $context:ident $block:block) => {
+        #[cfg(not(feature = "thread_shared_struct"))]
+         {
+             $controller.interceptor = Some(
+            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+         }
+
+           #[cfg(feature = "thread_shared_struct")]
+         {
+             $controller.interceptor = Some(
             |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
          }
     };

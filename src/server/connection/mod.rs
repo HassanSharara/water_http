@@ -982,11 +982,6 @@ impl BodyReadingBuffer {
 
 
 
-    // #[inline(always)]
-    // pub (crate) fn is_empty(&self) -> bool {
-    //     self.buffer.is_empty()
-    // }
-
 
     #[inline(always)]
     pub (crate) fn new(buffer:BytesMut)->Self{
@@ -997,15 +992,6 @@ impl BodyReadingBuffer {
             advanced_bytes:0
         }
     }
-    // #[inline(always)]
-    // pub (crate) fn with_capacity(len:usize)->Self{
-    //     Self {
-    //         buffer:BytesMut::with_capacity(len),
-    //         bytes_red_by_buffer:0,
-    //         extended_bytes:0,
-    //         advanced_bytes:0,
-    //     }
-    // }
 
 
     #[inline(always)]
@@ -1016,14 +1002,6 @@ impl BodyReadingBuffer {
         self.advanced_bytes = 0;
     }
 
-    // #[cfg(feature = "use_io_uring")]
-    // #[inline(always)]
-    // pub (crate) fn reset(&mut self){
-    //     self.bytes_red_by_buffer = 0;
-    //     self.advanced_bytes = 0;
-    //     self.clear();
-    // }
-
     #[inline(always)]
     pub (crate) fn extend_from_slice(&mut self,slice:&[u8]) {
         self.extended_bytes += slice.len();
@@ -1031,11 +1009,6 @@ impl BodyReadingBuffer {
     }
 
 
-    //
-    // #[inline]
-    // pub (crate) fn as_str(&self)->Cow<'_,str>{
-    //     String::from_utf8_lossy(self.chunk())
-    // }
 
 
 

@@ -35,6 +35,7 @@ and all the important features for servers
 
 
 
+
 # Nice Information
 - we need to understand that http request is based on another protocols like 
 tcp (http1 and htt2) or udp (http3) and what framework is basically do is to read incoming bytes
@@ -690,3 +691,179 @@ water_http::functions_builder!{
 
 
 ```
+
+# 🚀 The `fast_build!` Macro (Easy & Rapid Prototyping)
+
+When you need to spin up a structured server with full routing support instantly, `water_http` offers the `fast_build!` macro. It eliminates boilerplate entirely, automatically managing controller root initializations, server configurations, and setup hooks behind the scenes for an incredibly fast and straightforward development cycle.
+
+### Feature Variants & Syntax Flexibility
+
+The `fast_build!` macro adapts to your architecture natively. Whether you need a minimal single-file endpoint or a complex tree of controllers with shared multi-threaded state, `fast_build!` handles it effortlessly.
+
+#### 1. The Ultra-Fast Bare Minimum
+Great for simple microservices. Bypasses structure configuration overhead and assumes default bindings automatically.
+```rust
+use water_http::fast_build;
+fn main() {
+  start_fast_server();
+}
+
+fast_build!{
+    port -> 8081,
+    functions -> {
+
+        GET => / => hello(context)async{
+            _= context.send_str("hello from fast server").await;
+        }
+    }
+}
+
+```
+
+# ⏳ The `LazyResponse` Architecture (Deferred Payload Pipeline)
+
+In standard server configurations, writing a response immediately pushes byte chunks down into the active socket stream. While fast for simple handlers, immediate execution strips away the ability to modify or abort responses during deep controller routing traversals or middleware execution phases.
+
+`water_http` solves this with `LazyResponse`. A lazy response defers payload assembly and socket writes until the final microsecond of the connection cycle. It holds the payload in a non-allocating, deferred structure until the entire controller tree validation finishes, ensuring all headers, state changes, and interceptors have had their absolute final say before committing to a network transmit.
+
+### Key Advantages
+* **Perfect Middleware Compatibility:** Parent interceptors can safely override, augment, or drop down-tree handlers because no bytes have physically touched the socket yet.
+* **Dynamic Header Mutation:** Append or alter headers anywhere along the pipeline route without triggering pre-mature chunk transmission errors.
+* **Early-Exit Guarantees:** Instantly stop expensive nested database/serialization logic if an upper-tier interceptor completely overrides the response context.
+
+### Code Example: Cascade Interception & Lazy Deferral
+
+The example below demonstrates how multiple nested controllers handle `LazyResponse` contexts, and how parent interceptors seamlessly intercept and rewrite down-tree executions when `apply_parents_interceptors -> (true)` is configured.
+
+```rust
+use water_http::server::ServerConfigurations;
+use water_http::{InitControllersRoot, WaterController};
+
+type MainHolderType = u8;
+InitControllersRoot!{
+    name: MAIN_ROOT,
+    holder_type: MainHolderType,
+}
+
+fn main() {
+    let config = ServerConfigurations::bind("127.0.0.1", 8084);
+    water_http::RunServer!(
+        config,
+        MAIN_ROOT,
+        MainController
+    );
+}
+
+// =============================================================================
+// ROOT CONTROLLER
+// =============================================================================
+WaterController! {
+    holder -> crate::MainHolderType,
+    name -> MainController,
+    functions -> {
+        GET => / => main(context) async {
+            let mut response = http::LazyResponse::new();
+            response.set_text_response("hello world from lazy response");
+            context.set_lazy_response(response);
+        }
+    }
+    children -> ([
+        SecondController
+    ]),
+    interceptor -> (context {
+        let mut response = http::LazyResponse::new();
+        response.set_text_response("response intercepted by root interceptor");
+        context.set_lazy_response(response);
+    })
+}
+
+// =============================================================================
+// SECONDARY NESTED CONTROLLER
+// =============================================================================
+WaterController! {
+    holder -> crate::MainHolderType,
+    name -> SecondController,
+    functions -> {
+        GET => secondController => main(context) async {
+            let mut response = http::LazyResponse::new();
+            response.set_text_response("hello world from lazy response");
+            context.set_lazy_response(response);
+        }
+    }
+    interceptor -> (context {
+        let mut response = http::LazyResponse::new();
+        response.set_text_response("response intercepted by SecondController");
+        context.set_lazy_response(response);
+    }),
+    children -> ([
+        ThirdController
+    ])
+}
+
+// =============================================================================
+// THIRD NESTED CONTROLLER (INHERITING PARENT PIPELINES)
+// =============================================================================
+WaterController! {
+    holder -> crate::MainHolderType,
+    name -> ThirdController,
+    functions -> {
+        GET => thirdController => main(context) async {
+            let mut response = http::LazyResponse::new();
+            
+            // This evaluation is completely bypassed at runtime!
+            // Because 'apply_parents_interceptors' is true, SecondController's 
+            // interceptor overwrites the deferred context first. The socket never
+            // registers the string below.
+            response.set_text_response("hello world from ThirdController");
+            context.set_lazy_response(response);
+        }
+    }
+    
+    // Forces execution of upstream middleware trees before final pipeline generation
+    apply_parents_interceptors -> (true)
+}
+```
+# ⚡ The `mini` Engine (Zero-Overhead Hyper-Performance)
+
+For deployment environments where every single CPU cycle, byte of memory, and nano-second matters, `water_http` provides a dedicated `mini` engine.
+
+It is designed specifically to serve ultra-tiny services with **absolute zero runtime overhead**. By bypassing traditional macro routers, allocations, and controller hierarchies, `mini` gives you direct, raw, bare-metal access to the underlying socket ring-buffers using stack-allocated const-generics.
+
+### Key Highlights
+* **Strictly Zero Heap Allocation:** Memory layout is completely determined at compile time.
+* **No Routing Overhead:** Requests drop straight into a single, lightning-fast direct callback handler.
+* **Bare-Metal Context Control:** Uses direct raw static pointer structures (`CtxPtr`) instead of heavy abstraction layers.
+
+### Code Example
+
+```rust
+use water_http::server::mini::{CtxPtr, HandlerFn, serve};
+use water_http::server::ServerConfigurations;
+
+fn main() {
+    let no_init = || async {};
+    let conf = ServerConfigurations::bind("0.0.0.0", 8084);
+    serve::<16, 10, _,_,_>(conf, HandlerFn(|ctx: CtxPtr<16, 10>| handler(ctx)),Some(no_init));
+}
+
+async fn handler(mut ctx: CtxPtr<16,10>){
+    let ctx = ctx.get();
+    ctx.set_header("Content-Length", "11");
+    ctx.write_body_bytes(b"Hello World");
+}
+```
+
+
+# ⚠️ Current Architecture Limitations
+
+While `water_http` is engineered for extreme raw performance, certain feature combinations are explicitly restricted due to fundamental architectural trade-offs.
+
+### 1. `io_uring` is Restricted to Plaintext HTTP/1.x Only
+
+The high-performance asynchronous `io_uring` completion-based engine is strictly scoped to plaintext HTTP/1.x. It is deliberately not supported alongside TLS or HTTP/2 for the following system-level reasons:
+
+* **TLS Devalues `io_uring` (System Call Optimization Defeat):** The core purpose of utilizing `io_uring` is to eliminate runtime system calls (`read`/`write`) by sharing submission and completion queues directly with the kernel. When using TLS, encrypted data must constantly be brought back up to user-space cryptographic libraries (like `rustls` or `openssl`) for decryption and processing before the server can even understand the HTTP payload. This user-space memory thrashing and parsing overhead completely negates the syscall-limitation benefits that `io_uring` provides, making it functionally useless for encrypted streams.
+
+* **HTTP/2 Requires a Separate From-Scratch Architecture:** HTTP/2 shifts the network paradigm to a highly multiplexed, single-connection stream framework. Mapping asynchronous, independent kernel completion events back to a heavily stateful, multiplexed frame system requires an entirely custom I/O architecture built from scratch specifically for that purpose.
+
+> 🛠️ **Fallback Behavior:** When your server configurations enable TLS/SSL or require HTTP/2 features, `water_http` transparently shifts routing traffic to its highly optimized, stable **epoll/Tokio-driven runtime network backend**, ensuring 100% feature reliability.
