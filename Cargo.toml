@@ -68,6 +68,12 @@ required-features = []
 
 
 [[example]]
+name = "fast_start_server_shared"
+path = "examples/fast_start_server_shared.rs"
+required-features = ["thread_shared_struct"]
+
+
+[[example]]
 name = "all_post_requests_shared"
 path = "examples/all_post_requests_shared.rs"
 required-features = ["thread_shared_struct"]

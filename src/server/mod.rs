@@ -18,6 +18,7 @@ mod encoding;
 pub (crate) mod io;
 #[cfg(not(feature = "use_io_uring"))]
 pub mod mini;
+mod macros;
 // pub mod channels;
 // pub(crate) mod io;
 
