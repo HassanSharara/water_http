@@ -852,3 +852,18 @@ async fn handler(mut ctx: CtxPtr<16,10>){
     ctx.write_body_bytes(b"Hello World");
 }
 ```
+
+
+# ⚠️ Current Architecture Limitations
+
+While `water_http` is engineered for extreme raw performance, certain feature combinations are explicitly restricted due to fundamental architectural trade-offs.
+
+### 1. `io_uring` is Restricted to Plaintext HTTP/1.x Only
+
+The high-performance asynchronous `io_uring` completion-based engine is strictly scoped to plaintext HTTP/1.x. It is deliberately not supported alongside TLS or HTTP/2 for the following system-level reasons:
+
+* **TLS Devalues `io_uring` (System Call Optimization Defeat):** The core purpose of utilizing `io_uring` is to eliminate runtime system calls (`read`/`write`) by sharing submission and completion queues directly with the kernel. When using TLS, encrypted data must constantly be brought back up to user-space cryptographic libraries (like `rustls` or `openssl`) for decryption and processing before the server can even understand the HTTP payload. This user-space memory thrashing and parsing overhead completely negates the syscall-limitation benefits that `io_uring` provides, making it functionally useless for encrypted streams.
+
+* **HTTP/2 Requires a Separate From-Scratch Architecture:** HTTP/2 shifts the network paradigm to a highly multiplexed, single-connection stream framework. Mapping asynchronous, independent kernel completion events back to a heavily stateful, multiplexed frame system requires an entirely custom I/O architecture built from scratch specifically for that purpose.
+
+> 🛠️ **Fallback Behavior:** When your server configurations enable TLS/SSL or require HTTP/2 features, `water_http` transparently shifts routing traffic to its highly optimized, stable **epoll/Tokio-driven runtime network backend**, ensuring 100% feature reliability.
