@@ -1,3 +1,7 @@
+## [4.0.2] = 2026-06-25
+- updating sending file macros to best version
+- exporting smallbox crate so you won`t get an error if you don`t have it locally
+
 ## [4.0.1] - 2026-06-13
 
 ### 🚀 Added

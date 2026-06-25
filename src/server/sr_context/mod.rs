@@ -1286,6 +1286,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             }
         }
         self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
+
         ServingRequestResults::Stop
     }
 
