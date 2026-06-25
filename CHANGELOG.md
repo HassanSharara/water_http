@@ -3,7 +3,7 @@
 - Updated file-sending macros to the optimized versions.
 - Exported the `smallbox` crate dependency so users won't encounter local missing crate errors.
 - Added recursive swallowing support for dynamic paths (e.g., catching trailing slashes/wildcards).
-- 
+
 ## [4.0.1] - 2026-06-13
 
 ### 🚀 Added
