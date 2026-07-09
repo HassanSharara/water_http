@@ -20,10 +20,10 @@ pub (crate) static mut ___ALL_ROUTES:Option<HashMap<String,String>> = None;
 /// }
 ///
 ///in this example ("categories_post") is the name of this route , so we could call
-/// our function [___get_from_all_routes] and parse "categories_post" as our parameter
+/// our function [get_route] and parse "categories_post" as our parameter
 #[allow(static_mut_refs)]
 #[doc(hidden)]
-pub fn ___get_from_all_routes(key:&str,mut params:Option<HashMap<&str,&str>>)->Option<String>{
+pub fn get_route(key:&str,mut params:Option<HashMap<&str,&str>>)->Option<String>{
    unsafe {
        match ___ALL_ROUTES.as_ref() {
            None => {}

@@ -185,14 +185,14 @@ macro_rules! InitControllersRoot {
 macro_rules! route {
     ($key:expr) => {
         {
-           water_http::server::___get_from_all_routes($key,None)
+           water_http::server::get_route($key,None)
         }
     };
     ($key:expr,[$($k:expr => $value:expr),*]) => {
         {
             let mut map:std::collections::HashMap<&str,&str> = std::collections::HashMap::new();
             $(map.insert($k,$value);)*
-            water_http::server::___get_from_all_routes($key,Some(map))
+            water_http::server::get_route($key,Some(map))
         }
     };
 }
@@ -1324,7 +1324,7 @@ macro_rules! FunctionsMacroBuilder {
                      stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
                      | context |   unsafe{std::pin::Pin::new_unchecked(
-                         smallbox::smallbox!( async move {
+                         water_http::smallbox::smallbox!( async move {
                          $fn_name(context).await;
                      }))}
                  )
@@ -1525,8 +1525,8 @@ macro_rules! FunctionsMacroBuilder {
      }
     ) => {
 
-        $(pub $async fn $fn_name<'context,CONTEXT_HOLDER:Send + 'static,const header_length:usize,const query_length:usize>
-        ($context:&mut water_http::server::HttpContext<'context,CONTEXT_HOLDER,header_length,query_length>) {
+        $(pub $async fn $fn_name<'context,const header_length:usize,const query_length:usize>
+        ($context:&mut water_http::server::HttpContext<'context,Holder,header_length,query_length>) {
             water_http::path_setter!($context->$($path)/+);
             $($function_body_tokens)*
         }
@@ -1543,7 +1543,7 @@ macro_rules! FunctionsMacroBuilder {
                      stringify!($method).replace('"',"").replace(" ",""),
                      stringify!($($path)/+).replace('"',"").replace(" ","").replace("//","/"),
                      | context | unsafe{std::pin::Pin::new_unchecked(
-                         smallbox::smallbox!( async move {
+                         water_http::smallbox::smallbox!( async move {
                          $fn_name(context).await;
                      }))}
                  )
@@ -1576,30 +1576,34 @@ macro_rules! CheckupAutoGenerator {
     };
 
     ( $controller:path >> middleware-> $context:ident $block:block) => {
-        #[cfg(not(feature = "thread_shared_struct"))]
+        #[allow(unexpected_cfgs)]
+        {
+            #[cfg(not(feature = "thread_shared_struct"))]
          {
              $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+            |$context | unsafe{std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
          }
+
 
            #[cfg(feature = "thread_shared_struct")]
          {
              $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
          }
+       }
     };
 
     ( $controller:path >> interceptor-> $context:ident $block:block) => {
         #[cfg(not(feature = "thread_shared_struct"))]
          {
              $controller.interceptor = Some(
-            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
          }
 
            #[cfg(feature = "thread_shared_struct")]
          {
              $controller.interceptor = Some(
-            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(smallbox::smallbox!( async move $block))});
+            |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
          }
     };
 
@@ -1823,7 +1827,7 @@ macro_rules! response {
         let mut sender = $context.sender();
             let sending_result= sender.send_file(water_http::http::FileRSender::new($res)).await;
            if !sending_result.is_success() {
-            _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
+            _= $context.send_status_code_as_final_response(water_http::http::status_code::HttpStatusCode::NOT_FOUND).await;
         }
     };
 
@@ -1833,7 +1837,7 @@ macro_rules! response {
         __f.set_content_disposition("attachment");
             let sending_result= sender.send_file(__f).await;
            if !sending_result.is_success() {
-            _= sender.send_status_code(water_http::http::status_code::HttpStatusCode::NOT_FOUND);
+            _= $context.send_status_code_as_final_response(water_http::http::status_code::HttpStatusCode::NOT_FOUND).await;
         }
     };
   ($context:ident download -> $res:expr , $($function_tokens:tt)*) => {
@@ -1843,7 +1847,7 @@ macro_rules! response {
         __f.set_edit_each_chunk( $($function_tokens)*);
             let sending_result= __sender.send_file(__f).await;
            if !sending_result.is_success() {
-            _= __sender.send_status_code(water_http::http::status_code::HttpStatusCode::INTERNAL_SERVER_ERROR);
+            _= $context.send_status_code_as_final_response(water_http::http::status_code::HttpStatusCode::INTERNAL_SERVER_ERROR).await;
         }
     };
     ($context:ident file -> $res:expr , $($function_tokens:tt)*) => {
@@ -1852,7 +1856,7 @@ macro_rules! response {
         __f.set_edit_each_chunk( $($function_tokens)*);
             let sending_result= __sender.send_file(__f).await;
            if !sending_result.is_success() {
-            _= __sender.send_status_code(water_http::http::status_code::HttpStatusCode::INTERNAL_SERVER_ERROR);
+            _= $context.send_status_code_as_final_response(water_http::http::status_code::HttpStatusCode::INTERNAL_SERVER_ERROR).await;
         }
     };
 

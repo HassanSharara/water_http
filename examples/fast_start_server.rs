@@ -1,4 +1,4 @@
-use water_http::fast_build;
+use water_http::{fast_build};
 fn main() {
   start_fast_server();
 }

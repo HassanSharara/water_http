@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.1"
+version = "4.0.4"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -21,7 +21,6 @@ bzip2 = "0.5.0"
 flate2 = "1.0.35"
 h2 = "0.4.12"
 http = "1.1.0"
-httparse = "1.9.5"
 lz4 = "1.28.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
@@ -34,7 +33,7 @@ tracing = {version = "0.1.40",optional = true}
 tracing-subscriber = {version = "0.3.18",optional = true,features = ["env-filter"]}
 twoway = "0.2.2"
 zstd = "0.13.2"
-pin-project = "1.1.10"
+#pin-project = "1.1.10"
 #path = "P:\\projects\\rust\\packages\\water_http_utils"
 #chrono = "0.4.42"
 itoa = "1.0.15"
@@ -47,8 +46,8 @@ water_buffer = {version = "1.2.10" , features = ["bytes","unsafe_clone"]}
 #water_http_utils = { version = "0.4.1-beta.10", features = ["server"],git = "https://github.com/HassanSharara/water_http_utils"}
 water_http_utils = {version = "0.4.2",features = ["server"]}
 smallbox = "0.8.8"
-libc = "0.2.172"
 futures = "0.3.32"
+urlencoding = "2.1.3"
 #bytes = "1.11.0"
 
 

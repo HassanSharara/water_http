@@ -1,7 +1,7 @@
 
 
 pub (crate) mod connection;
-mod configurations;
+pub(crate) mod configurations;
 mod tls;
 mod sr_context;
 
@@ -32,8 +32,8 @@ use std::io as stdio;
 use std::net::SocketAddr;
 #[cfg(not(feature = "use_io_uring"))]
 use std::net::{ ToSocketAddrs};
-#[cfg(feature = "debugging")]
-use std::ops::Deref;
+// #[cfg(feature = "debugging")]
+// use std::ops::Deref;
 
 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 use std::sync::{Arc};
@@ -41,8 +41,8 @@ use std::sync::{Arc};
 use tokio::task::LocalSet;
 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
 use tokio_rustls::TlsAcceptor;
-#[cfg(feature = "debugging")]
-use tracing::{debug};
+// #[cfg(feature = "debugging")]
+// use tracing::{debug};
 pub use configurations::*;
 use crate::server::connection::{ConnectionStream, WaterStream};
 use crate::server::matcher::{DynamicPathVec, Matcher, MatcherInitializer, PathHolder};
@@ -394,7 +394,7 @@ async fn run_server_with_address<
     };
 
     #[cfg(feature = "debugging")]
-    let connections_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let connections_count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
 
     loop {
