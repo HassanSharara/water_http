@@ -2,7 +2,7 @@
 ## [4.0.4] - 2026-07-08
 - removed canceling the connection when there is unpredicted route
 - much stable and widley tested version
-
+- adding a lot of flexible methods like get_route for getting named routes
 ## [4.0.3] - 2026-06-25
 
 - Updated file-sending macros to the optimized versions.
