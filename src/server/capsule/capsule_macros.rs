@@ -185,14 +185,14 @@ macro_rules! InitControllersRoot {
 macro_rules! route {
     ($key:expr) => {
         {
-           water_http::server::___get_from_all_routes($key,None)
+           water_http::server::get_route($key,None)
         }
     };
     ($key:expr,[$($k:expr => $value:expr),*]) => {
         {
             let mut map:std::collections::HashMap<&str,&str> = std::collections::HashMap::new();
             $(map.insert($k,$value);)*
-            water_http::server::___get_from_all_routes($key,Some(map))
+            water_http::server::get_route($key,Some(map))
         }
     };
 }
@@ -1525,8 +1525,8 @@ macro_rules! FunctionsMacroBuilder {
      }
     ) => {
 
-        $(pub $async fn $fn_name<'context,CONTEXT_HOLDER:Send + 'static,const header_length:usize,const query_length:usize>
-        ($context:&mut water_http::server::HttpContext<'context,CONTEXT_HOLDER,header_length,query_length>) {
+        $(pub $async fn $fn_name<'context,const header_length:usize,const query_length:usize>
+        ($context:&mut water_http::server::HttpContext<'context,Holder,header_length,query_length>) {
             water_http::path_setter!($context->$($path)/+);
             $($function_body_tokens)*
         }
@@ -1576,17 +1576,21 @@ macro_rules! CheckupAutoGenerator {
     };
 
     ( $controller:path >> middleware-> $context:ident $block:block) => {
-        #[cfg(not(feature = "thread_shared_struct"))]
+        #[allow(unexpected_cfgs)]
+        {
+            #[cfg(not(feature = "thread_shared_struct"))]
          {
              $controller.middleware = Some(
-            |$context :&mut HttpContext<Holder,header_length,query_length>| unsafe{std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
+            |$context | unsafe{std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
          }
+
 
            #[cfg(feature = "thread_shared_struct")]
          {
              $controller.middleware = Some(
             |$context :&mut HttpContext<Holder,Shared,header_length,query_length>|  unsafe {std::pin::Pin::new_unchecked(water_http::smallbox::smallbox!( async move $block))});
          }
+       }
     };
 
     ( $controller:path >> interceptor-> $context:ident $block:block) => {

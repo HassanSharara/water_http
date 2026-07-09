@@ -212,6 +212,9 @@ impl DynamicBodyMapTrait for FormDataAll {
         None
     }
 
+
+
+
     fn all(&self) -> HashMap<String, Bytes> {
         let mut map = HashMap::new();
         for field in &self.fields {
@@ -328,6 +331,8 @@ impl DynamicBodyMapTrait for DynamicBodyMap {
         }
     }
 
+
+
     fn all(&self) -> HashMap<String, Bytes> {
         match self {
             DynamicBodyMap::FormField(data) => { data.all()}
@@ -357,7 +362,19 @@ pub trait DynamicBodyMapTrait{
     /// getting field or any data key value as [`Cow<'_,str>`]
     fn get (&self,key:&str)->Option<Cow<'_,str>>;
 
+
     /// getting all incoming keys and values as hashmap
     fn all(&self)-> HashMap<String,Bytes>;
+
+    /// auto implementation for encoding strings
+    fn get_as_encoded_string(&self, key: &str) -> Option<String> {
+        let bytes = self.get(key);
+        if let Some(s) = bytes {
+            let e = urlencoding::decode(s.as_ref());
+            if let Ok(c) = e{return Some(c.to_string())}
+            return Some(s.to_string())
+        }
+        None
+    }
 }
 

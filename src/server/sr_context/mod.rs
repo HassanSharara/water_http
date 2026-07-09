@@ -45,6 +45,8 @@ use crate::server::{MiddlewareResult};
 use crate::server::connection::BodyReadingBuffer;
 use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::matcher::Matcher;
+#[cfg(feature = "use_only_http1")]
+use water_http_utils::request::headers::HeaderValue;
 
 pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>{
@@ -449,6 +451,19 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         }
     }
 
+
+    #[cfg(feature = "use_only_http1")]
+    #[inline]
+    pub fn get_from_headers_as_header_value(&self,key:&str)->Option<&HeaderValue<'a>>{
+        match &self.protocol {
+
+            Protocol::Http1(h1) => {
+                h1.request.headers().get(key)
+            }
+            // _=>{None}
+        }
+    }
+
     #[inline(always)]
     /// this function just convert the bytes that come from [self.get_from_headers]
     /// to `Cow<'_,str>`
@@ -550,7 +565,15 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for returning redirect response to the client
     pub async fn redirect(&mut self,url:&str)->Result<(),()>{
         let mut sender = self.sender();
-        sender.send_status_code(HttpStatusCode::TEMPORARY_REDIRECT);
+        sender.send_status_code(HttpStatusCode::SEE_OTHER);
+        sender.set_header_ef("Location",url.as_bytes());
+        sender.send_data_as_final_response(ResponseData::Slice(&[])).await
+    }
+    #[inline(always)]
+    /// for returning redirect response to the client with specific status code
+    pub async fn redirect_with_status(&mut self,url:&str,status:HttpStatusCode<'_>)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_status_code(status);
         sender.set_header_ef("Location",url.as_bytes());
         sender.send_data_as_final_response(ResponseData::Slice(&[])).await
     }
@@ -661,6 +684,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         &mut self,
         matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults {
+
         let path = self.path();
         let r = matcher.match_path(path);
 
@@ -741,7 +765,8 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             println!("Not Found incoming path {:?}",path);
         }
         self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
-        ServingRequestResults::Stop
+
+        ServingRequestResults::Done
     }
 
 
@@ -997,6 +1022,19 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
+
+    #[cfg(feature = "use_only_http1")]
+    #[inline]
+    pub fn get_from_headers_as_header_value(&self,key:&str)->Option<&HeaderValue<'a>>{
+        match &self.protocol {
+
+            Protocol::Http1(h1) => {
+                h1.request.headers().get(key)
+            }
+            // _=>{None}
+        }
+    }
+
     /// this function just convert the bytes that come from [self.get_from_headers]
     /// to `Cow<'_,str>`
     ///  return [`Cow<'_,str>`]
@@ -1112,8 +1150,17 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for returning redirect response to the client
     pub async fn redirect(&mut self,url:&str)->Result<(),()>{
         let mut sender = self.sender();
-        sender.send_status_code(HttpStatusCode::TEMPORARY_REDIRECT);
+        sender.send_status_code(HttpStatusCode::SEE_OTHER);
         sender.set_header("Location",url);
+        sender.send_data_as_final_response(ResponseData::Slice(&[])).await
+    }
+
+    #[inline(always)]
+    /// for returning redirect response to the client with specific status code
+    pub async fn redirect_with_status(&mut self,url:&str,status:HttpStatusCode<'_>)->Result<(),()>{
+        let mut sender = self.sender();
+        sender.send_status_code(status);
+        sender.set_header_ef("Location",url.as_bytes());
         sender.send_data_as_final_response(ResponseData::Slice(&[])).await
     }
 
@@ -1285,9 +1332,13 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 return ServingRequestResults::Done;
             }
         }
+        #[cfg(feature = "debugging")]
+        {
+            println!("Not Found incoming path {:?}", path);
+        }
         self.send_status_code_as_final_response(HttpStatusCode::NOT_FOUND).await;
 
-        ServingRequestResults::Stop
+        ServingRequestResults::Done
     }
 
 
@@ -1630,7 +1681,7 @@ impl <'a,const HEADERS_COUNT:usize
 
 }
 
-
+#[allow(unused)]
 pub (crate) enum ServingRequestResults{
     Stop,
     Done,

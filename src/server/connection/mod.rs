@@ -79,6 +79,7 @@ impl  ConnectionStream {
              debug!("new connection from  : {:?}",self.address);
         }
 
+
         match  self.io {
             #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             WaterStream::TLS( stream) => {
@@ -335,6 +336,7 @@ impl  ConnectionStream {
                         if buf_bytes.is_empty() { break }
                         #[cfg(feature = "count_connection_parsing_speed")]
                             let t1 = std::time::SystemTime::now();
+
                         let request =
                             IncomingRequest::<HS,QS>::new(buf_bytes);
                         #[cfg(feature = "count_connection_parsing_speed")]
@@ -564,7 +566,6 @@ impl  ConnectionStream {
 
                             }
                             FormingRequestResult::ReadMore => {
-
                                 #[cfg(feature = "debugging")]
                                 {
                                     tracing::info!("incoming request is not enough: now we need to read more ");

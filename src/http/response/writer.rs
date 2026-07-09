@@ -86,40 +86,40 @@ impl<'a> ResponseData<'a> {
 unsafe impl<'a>  Send for ResponseData<'a> {
 
 }
-#[cfg(test)]
-mod test_buffer {
-    // use bytes::BytesMut;
-    use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
-    use crate::http::status_code::HttpStatusCode as StatusCode;
-    use crate::http::HttpVersion;
-
-    #[test]
-    pub fn buffer_writing_speed(){
-        let status = StatusCode::OK;
-        let version = HttpVersion::Http1_1.to_str();
-
-
-        let v1 = std::time::SystemTime::now();
-        let mut buffer =BytesMut::with_capacity(4048);
-        buffer.extend_from_slice(version.as_bytes());
-        buffer.extend_from_slice(b" ");
-        let (code,la) = status.to_bytes();
-        buffer.extend_from_slice(format!("{}",code).as_bytes());
-        buffer.extend_from_slice(b" ");
-        buffer.extend_from_slice(la);
-        buffer.extend_from_slice(b"\r\n");
-        let v2 = std::time::SystemTime::now();
-        let dif = v1.duration_since(v2);
-        println!("difference with each writing mod {:?}",dif);
-
-        let v1 = std::time::SystemTime::now();
-        let mut buffer =BytesMut::with_capacity(4048);
-        buffer.extend_from_slice(
-            format!("{} {} {}\r\n",version,status.status,status.label).as_bytes()
-        );
-        let v2 = std::time::SystemTime::now();
-        let dif = v1.duration_since(v2);
-        println!("difference with each format mod {:?}",dif);
-    }
-}
+// #[cfg(test)]
+// mod test_buffer {
+//     // use bytes::BytesMut;
+//     use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
+//     use crate::http::status_code::HttpStatusCode as StatusCode;
+//     use crate::http::HttpVersion;
+//
+//     #[test]
+//     pub fn buffer_writing_speed(){
+//         let status = StatusCode::OK;
+//         let version = HttpVersion::Http1_1.to_str();
+//
+//
+//         let v1 = std::time::SystemTime::now();
+//         let mut buffer =BytesMut::with_capacity(4048);
+//         buffer.extend_from_slice(version.as_bytes());
+//         buffer.extend_from_slice(b" ");
+//         let (code,la) = status.to_bytes();
+//         buffer.extend_from_slice(format!("{}",code).as_bytes());
+//         buffer.extend_from_slice(b" ");
+//         buffer.extend_from_slice(la);
+//         buffer.extend_from_slice(b"\r\n");
+//         let v2 = std::time::SystemTime::now();
+//         let dif = v1.duration_since(v2);
+//         println!("difference with each writing mod {:?}",dif);
+//
+//         let v1 = std::time::SystemTime::now();
+//         let mut buffer =BytesMut::with_capacity(4048);
+//         buffer.extend_from_slice(
+//             format!("{} {} {}\r\n",version,status.status,status.label).as_bytes()
+//         );
+//         let v2 = std::time::SystemTime::now();
+//         let dif = v1.duration_since(v2);
+//         println!("difference with each format mod {:?}",dif);
+//     }
+// }
 
