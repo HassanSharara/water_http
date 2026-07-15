@@ -2,7 +2,7 @@
 pub mod capsule_macros;
 /// providing matching tech
 pub mod matcher;
-mod response_interceptors;
+pub mod response_interceptors;
 
 use std::future::Future;
 use std::pin::Pin;

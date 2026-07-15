@@ -8,7 +8,6 @@ use std::io:: SeekFrom;
 
 #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use bytes::Bytes;
-// use bytes::{BufMut, BytesMut};
 #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 use h2::SendStream;
 #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
@@ -23,7 +22,7 @@ use crate::http::{FileRSender, ResponseData};
 use crate::http::status_code::{HttpStatusCode as StatusCode, HttpStatusCode};
 use crate::server::connection::handle_responding;
 use crate::server::errors::{ServerError, WaterErrors};
-use crate::server::{Http1Context, WRITING_FILES_BUF_LEN};
+use crate::server::{ContextAccessories, Http1Context, WRITING_FILES_BUF_LEN};
 
 #[cfg(feature = "auto_encode_response")]
 use crate::server::get_server_config;
@@ -99,21 +98,24 @@ pub  trait HttpSenderTrait {
 #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 /// Http2 Sender for providing [HttpSenderTrait] implementations for http context that using http 2 protocol to serve connections
 #[doc(hidden)]
-pub struct  Http2Sender<'a,'b> {
+pub struct  Http2Sender<'a,'b,const H:usize,const Q:usize> {
     context:&'a mut Http2Context<'b>,
     send_stream: Option<SendStream<Bytes>>,
-    response_builder:Option<H2ResponseBuilder>
+    response_builder:Option<H2ResponseBuilder>,
+    context_accessories: &'a mut ContextAccessories<H,Q>
 }
 #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
 
-impl <'a,'b> Http2Sender<'a,'b>{
+impl <'a,'b,const H:usize,const Q:usize>  Http2Sender<'a,'b,H,Q>{
     pub (crate) fn new(
         context:&'a mut Http2Context<'b>,
-    )->Http2Sender<'a,'b> {
+        context_accessories: &'a mut ContextAccessories<H,Q>
+    )->Http2Sender<'a,'b,H,Q> {
         Http2Sender {
             context,
             send_stream: None,
-            response_builder:None
+            response_builder:None,
+            context_accessories
         }
     }
 
@@ -145,11 +147,11 @@ impl <'a,'b> Http2Sender<'a,'b>{
                 }
             }
         }else {return  Ok(())}
-        return Err(())
+         Err(())
     }
 }
 #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
-impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
+impl<'a,'b,const H:usize,const Q:usize>  HttpSenderTrait for Http2Sender<'a,'b,H,Q> {
     fn send_status_code(&mut self, http_status: StatusCode) {
         if self.response_builder.is_some() {return;}
         let   response = H2Response::
@@ -178,7 +180,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
 
     async fn send_data_as_final_response(&mut self, data: ResponseData<'_>)->Result<(),()> {
 
-        return if let Some(ref mut stream) = self.send_stream {
+         if let Some(ref mut stream) = self.send_stream {
             let data = data.as_bytes().to_vec();
             _=stream.send_data(Bytes::from(data),true);
              Ok(())
@@ -257,7 +259,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
 
     async fn send_json<JSON: Serialize>(&mut self, value: &JSON)->serde_json::Result<()>{
         self.set_header_ef("content-type","application/json");
-        return match serde_json::to_vec(&value) {
+         match serde_json::to_vec(&value) {
             Ok(data) => {
                 _=self.send_data_as_final_response(ResponseData::Slice(
                     data.as_ref()
@@ -320,6 +322,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
                 }
             }
         }
+
         self.handle_content_type_while_sending_file(&file_content_type,file_name,pc.content_disposition.as_ref());
         if end >= file_size { end = file_size;}
         if end < start { end = (start + pc.buffer_size_for_reading_from_file_and_writing_to_stream).min(file_size)}
@@ -364,7 +367,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
             }
 
         }
-        return SendingFileResults::Success
+         SendingFileResults::Success
     }
 
 
@@ -489,7 +492,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
                 }
             }
         }
-        return Err(())
+         Err(())
     }
 
     async fn write_custom_bytes(&mut self, bytes: &[u8]) -> Result<(), WaterErrors<'_>> {
@@ -513,7 +516,7 @@ impl<'a,'b> HttpSenderTrait for Http2Sender<'a,'b> {
 pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> {
     H1(Http1Sender<'a,'context,HEADERS_COUNT,QUERY_COUNT>),
     #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
-    H2(Http2Sender<'a,'context>),
+    H2(Http2Sender<'a,'context,HEADERS_COUNT,QUERY_COUNT>),
 }
 
  impl<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> HttpSenderTrait
@@ -523,11 +526,28 @@ pub  enum HttpSender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usi
     fn send_status_code(&mut self, http_status: StatusCode) {
         match self {
             HttpSender::H1(h1) => {
-                h1.send_status_code(http_status)
+                if h1.is_status_written {return;}
+                if let Some((checker,f)) = h1.context_accessories.initial_interceptor.take() {
+                    if checker.can_apply(&http_status) {
+                        h1.send_status_code(http_status);
+                        f(self);
+                        return;
+                    }
+                }
+                h1.send_status_code(http_status);
+
             }
             #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             HttpSender::H2(h2) => {
-                h2.send_status_code(http_status)
+
+                if let Some((checker,f)) = h2.context_accessories.initial_interceptor.take() {
+                    if checker.can_apply(&http_status) {
+                        h2.send_status_code(http_status);
+                        f(self);
+                        return;
+                    }
+                }
+                h2.send_status_code(http_status);
             }
         }
     }
@@ -643,6 +663,7 @@ pub  struct Http1Sender<'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:
 > {
     pub context:&'a mut Http1Context<'context,HEADERS_COUNT,QUERY_COUNT>,
     is_status_written:bool,
+    pub (crate) context_accessories:&'a mut ContextAccessories<HEADERS_COUNT,QUERY_COUNT>
 }
 
 impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender<'a,'context,
@@ -650,10 +671,12 @@ impl <'a,'context,const HEADERS_COUNT:usize,const QUERY_COUNT:usize> Http1Sender
 > {
     pub (crate) fn new(
        context: &'a mut Http1Context<'context,HEADERS_COUNT,QUERY_COUNT>,
+       context_accessories:&'a mut ContextAccessories<HEADERS_COUNT,QUERY_COUNT>
     )->Http1Sender<'a,'context,HEADERS_COUNT,QUERY_COUNT>{
         Http1Sender {
             context,
             is_status_written:false,
+            context_accessories
         }
     }
 
@@ -713,7 +736,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
     #[inline(always)]
     fn send_status_code(&mut self, http_status: StatusCode) {
-        if self.is_status_written {return;}
+        if self.is_status_written {return}
         let buf = &mut self.context.response_buffer;
         buf.extend_from_slice(b"HTTP/1.1 ");
         // let mut iota_buffer = itoa::Buffer::new();
@@ -928,7 +951,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
            }
 
         }
-        return SendingFileResults::Success
+         SendingFileResults::Success
     }
 
 

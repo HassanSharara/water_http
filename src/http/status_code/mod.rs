@@ -1,28 +1,28 @@
 use std::num::NonZeroU16;
 macro_rules! form_http_status_tree {
     {$( $(#[$docs:meta])*($st:expr,$name:ident,$label:expr);)*} => {
-        impl<'a> HttpStatusCode<'a> {
+        impl HttpStatusCode {
             $(
         $(#[$docs])*
-         pub const $name:HttpStatusCode<'static> = HttpStatusCode::new(unsafe { NonZeroU16::new_unchecked($st)},$label);
+         pub const $name:HttpStatusCode = HttpStatusCode::new(unsafe { NonZeroU16::new_unchecked($st)},$label);
         )*
         }
     };
 }
 /// for handling http status
 #[derive(Debug,Clone)]
-pub struct HttpStatusCode<'a> {
+pub struct HttpStatusCode {
     pub status:NonZeroU16,
-    pub label:&'a str
+    pub label:&'static str
 }
 
 
 
 
-impl<'a> HttpStatusCode<'a> {
+impl HttpStatusCode {
 
     // creating new status code from given info
-    pub const fn new(status:NonZeroU16,data:&'a str)->HttpStatusCode<'a>{
+    pub const fn new(status:NonZeroU16,data:&'static str)->HttpStatusCode{
         HttpStatusCode {status,label:data}
     }
 

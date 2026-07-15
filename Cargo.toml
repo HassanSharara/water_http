@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.4"
+version = "4.0.5"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -109,7 +109,6 @@ accept_transfer_chunked = []
 use_tokio_send = []
 mini = []
 lazy_response = []
-
 thread_shared_struct = []
 use_io_uring = ["tokio-uring","water_buffer/uring"]
 cpu_affinity = ["dep:core_affinity"]
