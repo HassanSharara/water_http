@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use bytes::Bytes;
-use zstd::zstd_safe::WriteBuf;
+// use zstd::zstd_safe::WriteBuf;
 use crate::inc_start_pointer;
 
 
@@ -308,7 +308,7 @@ impl <'a> Display for  KeyValuePair<'a> {
         to_show.push_str(" : ");
         let value = String::from_utf8_lossy(self.value);
         to_show.push_str(&value);
-        std::fmt::Display::fmt(
+        Display::fmt(
             &to_show,
             f
         )
@@ -339,7 +339,7 @@ impl KeyValueMap {
     /// getting value as HeaderValue from pair using key
     pub fn get_as_header_value(&self,key:&str)->Option<HeaderValue<'_>>{
         if let Some(bytes) = self.get_as_bytes(key){
-            HeaderValue::new(bytes.as_slice(),Some(key.as_bytes()));
+            HeaderValue::new(bytes.iter().as_slice(),Some(key.as_bytes()));
         }
         None
     }
