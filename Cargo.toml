@@ -113,6 +113,7 @@ thread_shared_struct = []
 use_io_uring = ["tokio-uring","water_buffer/uring"]
 cpu_affinity = ["dep:core_affinity"]
 auto_encode_response = []
+enable_dynamic_body_cache = []
 
 [dev-dependencies]
 askama = "0.14.0"

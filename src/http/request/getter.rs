@@ -149,7 +149,7 @@ impl <'a:'request,'request
                 )
             }
 
-        return ParsingBodyResults::Err(
+         ParsingBodyResults::Err(
             WaterErrors::Http(
                 HttpStatusCode::BAD_REQUEST
             )

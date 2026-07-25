@@ -39,7 +39,7 @@ use crate::http::{FileRSender,SendingFileResults};
 #[cfg(feature = "lazy_response")]
 use crate::http::LazyResponse;
 use crate::http::{Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
-use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+use crate::http::request::{DynamicBodyMap, FieldCallBackResult, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, MultiPartFormDataField, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
 use crate::server::{MiddlewareResult};
@@ -354,7 +354,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                         (data.as_ref() as *const [u8]).as_ref().unwrap()
                     }
                 );
-                return res
+                 res
             }
             _ => {Err(serde_json::Error::custom("can not retrieve incoming body bytes"))}
         }
@@ -391,11 +391,31 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
+    /// getting body as multipart but in efficient way with zero allocation
+    pub async fn get_body_as_multipart_ef(&mut self,
+      callback: impl FnMut(& MultiPartFormDataField, & [u8]) -> FieldCallBackResult
+    )->Result<(),()>{
+        let mut getter = self.getter();
+        let body = getter.get_body_by_mechanism(
+            ParsingBodyMechanism::FormData
+        ).await ;
+
+        match body {
+            Chunked(IBodyChunks::FormData(mut data)) => {
+                data.on_field_detected(callback).await
+                    .map_err(|_|())?;
+            }
+            _=>{}
+        }
+        Err(())
+    }
+
+
+    #[cfg(not(feature = "enable_dynamic_body_cache"))]
     #[inline(always)]
     /// returning dynamic trait that would be for getting values from body using
     /// keys
     pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
-
         let mut getter = self.getter();
         match getter.get_body().await {
             Chunked(bo) => {
@@ -443,6 +463,73 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 HttpStatusCode::BAD_REQUEST
             )
         )
+    }
+
+
+
+
+
+
+
+    #[cfg(feature = "enable_dynamic_body_cache")]
+    #[inline(always)]
+    /// returning dynamic trait that would be for getting values from body using
+    /// keys
+    pub async fn get_body_map<'v>(
+        &'v mut self,
+    ) -> Result<&'v DynamicBodyMap, WaterErrors<'v>> {
+        if self.context_accessories.cached_body.is_none() {
+            let mut getter = self.getter();
+
+            let body = match getter.get_body().await {
+                Chunked(bo) => match bo {
+                    IBodyChunks::FormData(mut multipart_form) => {
+                        let mut fu = FormDataAll::new();
+                        if multipart_form
+                            .on_field_detected(|field, data| {
+
+                                fu.push(field, data);
+                                Ok(None)
+                            })
+                            .await
+                            .is_ok()
+                        {
+                            DynamicBodyMap::FormField(fu)
+                        } else {
+                            return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                        }
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                FullBody(full_body) => match full_body {
+                    IBody::MultiPartFormData(data) => {
+                        DynamicBodyMap::FormField(data)
+                    }
+
+                    IBody::XWWWFormUrlEncoded(data) => {
+                        DynamicBodyMap::Xww(
+                            HeapXWWWFormUrlEncoded::new(&data)
+                        )
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                _ => {
+                    return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                }
+            };
+
+            self.context_accessories.cached_body = Some(body);
+        }
+
+        Ok(self.context_accessories.cached_body.as_ref().unwrap())
     }
     #[inline(always)]
     /// this function return the original data on the request buffer on memory ,and
@@ -936,6 +1023,24 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         return Err( WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR))
     }
 
+    /// getting body as multipart but in efficient way with zero allocation
+    pub async fn get_body_as_multipart_ef(&mut self,
+                                          callback: impl FnMut(& MultiPartFormDataField, & [u8]) -> FieldCallBackResult
+    )->Result<(),()>{
+        let mut getter = self.getter();
+        let body = getter.get_body_by_mechanism(
+            ParsingBodyMechanism::FormData
+        ).await ;
+
+        match body {
+            Chunked(IBodyChunks::FormData(mut data)) => {
+                data.on_field_detected(callback).await
+                    .map_err(|_|())?;
+            }
+            _=>{}
+        }
+        Err(())
+    }
 
     /// for getting the body parsed as [Deserialize] json struct
     pub async fn get_body_as_json<'b,V:Deserialize<'b>>(&mut self)->Result<V,serde_json::Error>{
@@ -986,10 +1091,12 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
 
 
+
+    #[cfg(not(feature = "enable_dynamic_body_cache"))]
+    #[inline(always)]
     /// returning dynamic trait that would be for getting values from body using
     /// keys
     pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
-
         let mut getter = self.getter();
         match getter.get_body().await {
             Chunked(bo) => {
@@ -1038,6 +1145,70 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             )
         )
     }
+
+
+
+    #[cfg(feature = "enable_dynamic_body_cache")]
+    #[inline(always)]
+    /// returning dynamic trait that would be for getting values from body using
+    /// keys
+    pub async fn get_body_map<'v>(
+        &'v mut self,
+    ) -> Result<&'v DynamicBodyMap, WaterErrors<'v>> {
+        if self.context_accessories.cached_body.is_none() {
+            let mut getter = self.getter();
+
+            let body = match getter.get_body().await {
+                Chunked(bo) => match bo {
+                    IBodyChunks::FormData(mut multipart_form) => {
+                        let mut fu = FormDataAll::new();
+
+                        if multipart_form
+                            .on_field_detected(|field, data| {
+                                fu.push(field, data);
+                                Ok(None)
+                            })
+                            .await
+                            .is_ok()
+                        {
+                            DynamicBodyMap::FormField(fu)
+                        } else {
+                            return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                        }
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                FullBody(full_body) => match full_body {
+                    IBody::MultiPartFormData(data) => {
+                        DynamicBodyMap::FormField(data)
+                    }
+
+                    IBody::XWWWFormUrlEncoded(data) => {
+                        DynamicBodyMap::Xww(
+                            HeapXWWWFormUrlEncoded::new(&data)
+                        )
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                _ => {
+                    return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                }
+            };
+
+            self.context_accessories.cached_body = Some(body);
+        }
+
+        Ok(self.context_accessories.cached_body.as_ref().unwrap())
+    }
+
 
     /// this function return the original data on the request buffer on memory ,and
     /// it is very fast and memory safe function ,and it has zero allocation for data
@@ -1629,7 +1800,7 @@ impl <'a,const HEADERS_COUNT:usize
 
         #[cfg(not(feature = "accept_transfer_chunked"))]
         {
-            return   Http1Getter {
+               Http1Getter {
                 body_reading_buffer:  self.body_reading_buffer,
                 left_bytes:self.left_bytes,
                 stream: self.stream,

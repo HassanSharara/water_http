@@ -17,7 +17,7 @@ pub struct XWWWFormUrlEncoded<'a> {
 }
 
 /// heap implementation data for x-www form url encoded data
-#[derive(Debug)]
+#[derive(Debug,Clone)]
 pub struct HeapXWWWFormUrlEncoded{
     data:HashMap<String,Bytes>
 }
