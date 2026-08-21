@@ -77,6 +77,7 @@ impl <'a> BytesPuller <'a> {
                         let data = h1.reading_buffer.chunk();
                         let to_index = content_length.min(data.len());
                         if callback(&data[..to_index]).is_err() { return  err}
+                        
                         remaining-=remaining.min(data.len());
                         continue;
                     }

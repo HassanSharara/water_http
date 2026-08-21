@@ -6,7 +6,7 @@ use crate::http::status_code::HttpStatusCode;
 #[derive(Debug,Clone)]
 pub enum WaterErrors <'a>{
     Server(ServerError<'a>),
-    Http(HttpStatusCode<'a>)
+    Http(HttpStatusCode)
 }
 
 

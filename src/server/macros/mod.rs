@@ -597,3 +597,44 @@ macro_rules! fast_build {
         }
     };
 }
+
+
+#[macro_export]
+macro_rules! extract_request_body {
+    {
+        $context:ident [
+            $($body:ident -> $val:expr),*
+      ] else $block:block
+    } => {
+        use water_http::http::request::DynamicBodyMapTrait;
+        let body = match $context.get_body_map().await {
+            Ok(body) => body,
+            _ => {
+                $block
+                return
+            }
+        };
+        $(
+         let $body = body.get($val);
+        )*
+
+    };
+    {
+        $context:ident [
+            $($body:ident ),*
+      ] else $block:block
+    } => {
+        use water_http::http::request::DynamicBodyMapTrait;
+        let body = match $context.get_body_map().await {
+            Ok(body) => body,
+            _ => {
+                $block
+                return
+            }
+        };
+        $(
+         let $body = body.get(stringify!($body));
+        )*
+    };
+
+}

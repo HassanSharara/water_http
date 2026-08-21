@@ -1,3 +1,4 @@
+mod context_accessories;
 
 use std::borrow::Cow;
 use std::cell::UnsafeCell;
@@ -38,7 +39,7 @@ use crate::http::{FileRSender,SendingFileResults};
 #[cfg(feature = "lazy_response")]
 use crate::http::LazyResponse;
 use crate::http::{Http1Sender, HttpSender, HttpSenderTrait, request::IncomingRequest, ResponseData};
-use crate::http::request::{ DynamicBodyMap, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, ParsingBodyMechanism, ParsingBodyResults};
+use crate::http::request::{DynamicBodyMap, FieldCallBackResult, FormDataAll, HeapXWWWFormUrlEncoded, Http1Getter, HttpGetter, HttpGetterTrait, IBody, IBodyChunks, MultiPartFormDataField, ParsingBodyMechanism, ParsingBodyResults};
 use crate::http::request::ParsingBodyResults::{Chunked, FullBody};
 use crate::http::status_code::HttpStatusCode;
 use crate::server::{MiddlewareResult};
@@ -47,6 +48,8 @@ use crate::server::errors::{ServerError, WaterErrors};
 use crate::server::matcher::Matcher;
 #[cfg(feature = "use_only_http1")]
 use water_http_utils::request::headers::HeaderValue;
+pub use crate::server::sr_context::context_accessories::{ContextAccessories,HeaderInterceptorApplyFor};
+use crate::server::sr_context::context_accessories::HeaderInterceptorFunction;
 
 pub (crate) enum Protocol<'a,const HEADERS_COUNT:usize
     ,const PATH_QUERY_COUNT:usize>{
@@ -197,6 +200,7 @@ pub struct HttpContext<
     pub thread_shared_struct:Option<SHARED>,
     #[cfg(feature = "lazy_response")]
     pub lazy_response:Option<LazyResponse>,
+    context_accessories: ContextAccessories<HEADERS_COUNT,PATH_QUERY_COUNT>
 }
 
 
@@ -218,6 +222,7 @@ pub struct HttpContext<
     body_bytes_holder:Option<Vec<u8>>,
     #[cfg(feature = "lazy_response")]
     pub lazy_response:Option<LazyResponse>,
+    context_accessories: ContextAccessories<HEADERS_COUNT,PATH_QUERY_COUNT>
 }
 
 
@@ -252,11 +257,14 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         {
             return   HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None)
                 ,body_bytes_holder:None,
+                context_accessories:ContextAccessories::default()
             };
         }
         #[cfg(feature = "lazy_response")]
         HttpContext {holder:None,protocol,peer:socket,path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
-         lazy_response:None
+         lazy_response:None,
+            context_accessories:ContextAccessories::default()
+
         }
     }
 
@@ -346,7 +354,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                         (data.as_ref() as *const [u8]).as_ref().unwrap()
                     }
                 );
-                return res
+                 res
             }
             _ => {Err(serde_json::Error::custom("can not retrieve incoming body bytes"))}
         }
@@ -383,11 +391,31 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
+    /// getting body as multipart but in efficient way with zero allocation
+    pub async fn get_body_as_multipart_ef(&mut self,
+      callback: impl FnMut(& MultiPartFormDataField, & [u8]) -> FieldCallBackResult
+    )->Result<(),()>{
+        let mut getter = self.getter();
+        let body = getter.get_body_by_mechanism(
+            ParsingBodyMechanism::FormData
+        ).await ;
+
+        match body {
+            Chunked(IBodyChunks::FormData(mut data)) => {
+                data.on_field_detected(callback).await
+                    .map_err(|_|())?;
+            }
+            _=>{}
+        }
+        Err(())
+    }
+
+
+    #[cfg(not(feature = "enable_dynamic_body_cache"))]
     #[inline(always)]
     /// returning dynamic trait that would be for getting values from body using
     /// keys
     pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
-
         let mut getter = self.getter();
         match getter.get_body().await {
             Chunked(bo) => {
@@ -435,6 +463,73 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 HttpStatusCode::BAD_REQUEST
             )
         )
+    }
+
+
+
+
+
+
+
+    #[cfg(feature = "enable_dynamic_body_cache")]
+    #[inline(always)]
+    /// returning dynamic trait that would be for getting values from body using
+    /// keys
+    pub async fn get_body_map<'v>(
+        &'v mut self,
+    ) -> Result<&'v DynamicBodyMap, WaterErrors<'v>> {
+        if self.context_accessories.cached_body.is_none() {
+            let mut getter = self.getter();
+
+            let body = match getter.get_body().await {
+                Chunked(bo) => match bo {
+                    IBodyChunks::FormData(mut multipart_form) => {
+                        let mut fu = FormDataAll::new();
+                        if multipart_form
+                            .on_field_detected(|field, data| {
+
+                                fu.push(field, data);
+                                Ok(None)
+                            })
+                            .await
+                            .is_ok()
+                        {
+                            DynamicBodyMap::FormField(fu)
+                        } else {
+                            return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                        }
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                FullBody(full_body) => match full_body {
+                    IBody::MultiPartFormData(data) => {
+                        DynamicBodyMap::FormField(data)
+                    }
+
+                    IBody::XWWWFormUrlEncoded(data) => {
+                        DynamicBodyMap::Xww(
+                            HeapXWWWFormUrlEncoded::new(&data)
+                        )
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                _ => {
+                    return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                }
+            };
+
+            self.context_accessories.cached_body = Some(body);
+        }
+
+        Ok(self.context_accessories.cached_body.as_ref().unwrap())
     }
     #[inline(always)]
     /// this function return the original data on the request buffer on memory ,and
@@ -504,20 +599,27 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
     #[inline(always)]
     pub fn sender(&mut self)->HttpSender<'_,'a,HEADERS_COUNT,PATH_QUERY_COUNT>{
-        return match &mut self.protocol {
+         match &mut self.protocol {
             #[cfg(not(any(feature = "use_only_http1", feature = "use_io_uring")))]
             Protocol::Http2(h2) => {
-                HttpSender::H2(Http2Sender::new(h2))
+                HttpSender::H2(Http2Sender::new(h2,&mut self.context_accessories))
             }
             Protocol::Http1(h1) => {
-                HttpSender::H1( Http1Sender::new(h1))
+                HttpSender::H1( Http1Sender::new(h1,&mut self.context_accessories))
             }
         }
     }
+
+    #[inline]
+    pub fn set_headers_interceptor(&mut self,status:HeaderInterceptorApplyFor,interceptor:HeaderInterceptorFunction<HEADERS_COUNT,PATH_QUERY_COUNT>){
+        self.context_accessories.initial_interceptor = Some((status,interceptor));
+    }
+
     #[inline(always)]
     /// for setting Date header in http response with the current timestamp efficiently
     pub fn set_date_header(&mut self){
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
         sender.set_header_ef("Date",date);
     }
@@ -525,11 +627,15 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for sending [`&str`] values to the client
     pub async fn send_str(&mut self,value:&'static str)->Result<(),()>{
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         sender.send_str(value).await
     }
+
+
+
     #[inline(always)]
     /// for sending back status code as final response
-    pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode<'_>){
+    pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode){
         let mut sender = self.sender();
         sender.send_status_code(status);
         _=sender.send_data_as_final_response(ResponseData::Str("")).await;
@@ -541,6 +647,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// to let the browsers or the client knows what is coming
     pub async fn send_html_text(&mut self,value:&str)->Result<(),()>{
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         sender.set_header_ef("Content-Type","Text/html");
         sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
     }
@@ -548,8 +655,12 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for sending json data
     pub async fn send_json(&mut self,json:&impl Serialize)->serde_json::Result<()>{
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         return sender.send_json(json).await;
     }
+
+
+
 
     #[inline(always)]
     /// for sending normal str data without static lifetime
@@ -571,7 +682,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
     #[inline(always)]
     /// for returning redirect response to the client with specific status code
-    pub async fn redirect_with_status(&mut self,url:&str,status:HttpStatusCode<'_>)->Result<(),()>{
+    pub async fn redirect_with_status(&mut self,url:&str,status:HttpStatusCode)->Result<(),()>{
         let mut sender = self.sender();
         sender.send_status_code(status);
         sender.set_header_ef("Location",url.as_bytes());
@@ -604,9 +715,11 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 }
             }
             file.set_bytes_range(start,end);
+
         }
 
             let mut  sender = self.sender();
+
             return sender.send_file(file).await;
     }
 
@@ -811,7 +924,9 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
                 holder:None,protocol,peer:socket,
                 path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
                 thread_shared_struct:None,
-                lazy_response:None
+                lazy_response:None,
+                context_accessories:ContextAccessories::default()
+
 
             }
         }
@@ -819,6 +934,8 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             holder:None,protocol,peer:socket,
             path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
             thread_shared_struct:None,
+            context_accessories:ContextAccessories::default()
+
         }
     }
     #[cfg(not(feature = "lazy_response"))]
@@ -831,7 +948,9 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         HttpContext {
             holder:None,protocol,peer:socket,
             path_params_map:UnsafeCell::new(None),body_bytes_holder:None,
-            thread_shared_struct:None
+            thread_shared_struct:None,
+            context_accessories:ContextAccessories::default()
+
         }
     }
 
@@ -904,6 +1023,24 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         return Err( WaterErrors::Server(ServerError::HANDLING_INCOMING_BODY_ERROR))
     }
 
+    /// getting body as multipart but in efficient way with zero allocation
+    pub async fn get_body_as_multipart_ef(&mut self,
+                                          callback: impl FnMut(& MultiPartFormDataField, & [u8]) -> FieldCallBackResult
+    )->Result<(),()>{
+        let mut getter = self.getter();
+        let body = getter.get_body_by_mechanism(
+            ParsingBodyMechanism::FormData
+        ).await ;
+
+        match body {
+            Chunked(IBodyChunks::FormData(mut data)) => {
+                data.on_field_detected(callback).await
+                    .map_err(|_|())?;
+            }
+            _=>{}
+        }
+        Err(())
+    }
 
     /// for getting the body parsed as [Deserialize] json struct
     pub async fn get_body_as_json<'b,V:Deserialize<'b>>(&mut self)->Result<V,serde_json::Error>{
@@ -954,10 +1091,12 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
 
 
+
+    #[cfg(not(feature = "enable_dynamic_body_cache"))]
+    #[inline(always)]
     /// returning dynamic trait that would be for getting values from body using
     /// keys
     pub async fn get_body_map(&mut self)-> Result<DynamicBodyMap,WaterErrors<'_>> {
-
         let mut getter = self.getter();
         match getter.get_body().await {
             Chunked(bo) => {
@@ -1006,6 +1145,70 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             )
         )
     }
+
+
+
+    #[cfg(feature = "enable_dynamic_body_cache")]
+    #[inline(always)]
+    /// returning dynamic trait that would be for getting values from body using
+    /// keys
+    pub async fn get_body_map<'v>(
+        &'v mut self,
+    ) -> Result<&'v DynamicBodyMap, WaterErrors<'v>> {
+        if self.context_accessories.cached_body.is_none() {
+            let mut getter = self.getter();
+
+            let body = match getter.get_body().await {
+                Chunked(bo) => match bo {
+                    IBodyChunks::FormData(mut multipart_form) => {
+                        let mut fu = FormDataAll::new();
+
+                        if multipart_form
+                            .on_field_detected(|field, data| {
+                                fu.push(field, data);
+                                Ok(None)
+                            })
+                            .await
+                            .is_ok()
+                        {
+                            DynamicBodyMap::FormField(fu)
+                        } else {
+                            return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                        }
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                FullBody(full_body) => match full_body {
+                    IBody::MultiPartFormData(data) => {
+                        DynamicBodyMap::FormField(data)
+                    }
+
+                    IBody::XWWWFormUrlEncoded(data) => {
+                        DynamicBodyMap::Xww(
+                            HeapXWWWFormUrlEncoded::new(&data)
+                        )
+                    }
+
+                    _ => {
+                        return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                    }
+                },
+
+                _ => {
+                    return Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST));
+                }
+            };
+
+            self.context_accessories.cached_body = Some(body);
+        }
+
+        Ok(self.context_accessories.cached_body.as_ref().unwrap())
+    }
+
 
     /// this function return the original data on the request buffer on memory ,and
     /// it is very fast and memory safe function ,and it has zero allocation for data
@@ -1074,12 +1277,17 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         return match &mut self.protocol {
             #[cfg(not(feature = "use_only_http1"))]
             Protocol::Http2(h2) => {
-                HttpSender::H2(Http2Sender::new(h2))
+                HttpSender::H2(Http2Sender::new(h2,&mut self.context_accessories))
             }
             Protocol::Http1(h1) => {
-                HttpSender::H1( Http1Sender::new(h1))
+                HttpSender::H1( Http1Sender::new(h1,&mut self.context_accessories))
             }
         }
+    }
+
+    #[inline]
+    pub fn set_headers_interceptor(&mut self,status:HeaderInterceptorApplyFor,interceptor:HeaderInterceptorFunction<HEADERS_COUNT,PATH_QUERY_COUNT>){
+        self.context_accessories.initial_interceptor = Some((status,interceptor));
     }
 
     /// for setting Date header in http response with the current timestamp efficiently
@@ -1110,11 +1318,12 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for sending [`&str`] values to the client
     pub async fn send_str(&mut self,value:&'static str)->Result<(),()>{
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         sender.send_str(value).await
     }
 
     /// for sending back status code as final response
-    pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode<'_>){
+    pub async fn send_status_code_as_final_response(&mut self,status:HttpStatusCode){
         let mut sender = self.sender();
         sender.send_status_code(status);
         _=sender.send_data_as_final_response(ResponseData::Str("")).await;
@@ -1126,6 +1335,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// to let the browsers or the client knows what is coming
     pub async fn send_html_text(&mut self,value:&str)->Result<(),()>{
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         sender.set_header("Content-Type","Text/html");
         sender.send_data_as_final_response(ResponseData::Slice(value.as_bytes())).await
     }
@@ -1133,6 +1343,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     /// for sending json data
     pub async fn send_json(&mut self,json:&impl Serialize)->serde_json::Result<()>{
         let mut sender = self.sender();
+        sender.send_status_code(HttpStatusCode::OK);
         return sender.send_json(json).await;
     }
 
@@ -1157,7 +1368,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
     #[inline(always)]
     /// for returning redirect response to the client with specific status code
-    pub async fn redirect_with_status(&mut self,url:&str,status:HttpStatusCode<'_>)->Result<(),()>{
+    pub async fn redirect_with_status(&mut self,url:&str,status:HttpStatusCode)->Result<(),()>{
         let mut sender = self.sender();
         sender.send_status_code(status);
         sender.set_header_ef("Location",url.as_bytes());
@@ -1342,87 +1553,7 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     }
 
 
-    // pub (crate) async fn serve(
-    //     &mut self,
-    //     matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>
-    // )->
-    //     ServingRequestResults
-    // {
-    //
-    //     return self.serve_ef(matcher).await;
-    //
-    //     // {
-    //     //     let path = self.path();
-    //     //
-    //     //
-    //     //     if path == "/json" {
-    //     //         let mut sender = self.sender();
-    //     //         let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-    //     //         sender.set_header_ef("Date",date);
-    //     //         sender.set_header_ef("Server","water");
-    //     //         sender.set_header_ef("Content-Type","application/json");
-    //     //         const JSON_RESPONSE:&'static [u8] = br#"{"message":"Hello, World!"}"#;
-    //     //         _= sender.send_data_as_final_response(ResponseData::Slice(unsafe {JSON_RESPONSE})).await;
-    //     //         return ServingRequestResults::Done;
-    //     //     }
-    //     //     let mut sender = self.sender();
-    //     //     let date = httpdate::fmt_http_date(std::time::SystemTime::now());
-    //     //     sender.set_header_ef("Date",date);
-    //     //     sender.set_header_ef("Server","water");
-    //     //     sender.set_header_ef("Content-Type","text/plain; charset=utf-8");
-    //     //     _= sender.send_str("Hello, World!").await;
-    //     //     return ServingRequestResults::Done;
-    //     // }
-    //     //
-    //     // let method ;
-    //     // if self.content_length().is_some() {
-    //     //     method = self.method();
-    //     //     if  ["GET","HEAD","DELETE","TRACE"].contains(&method) {
-    //     //         let mut sender = self.sender();
-    //     //         sender.send_status_code(HttpStatusCode::BAD_REQUEST);
-    //     //         _=sender.write_custom_bytes(&[]).await;
-    //     //         return  ServingRequestResults::Stop;
-    //     //     }
-    //     // } else {
-    //     //     method = self.method();
-    //     // }
-    //     // let path = self.path();
-    //     // let f = controller.find_function(path,method);
-    //     // if let Some((controller,func,map)) = f {
-    //     //     if map.is_some() {
-    //     //         self.path_params_map = map;
-    //     //     }
-    //     //     if controller.apply_parents_middlewares && controller.middleware.is_some() {
-    //     //         let mut middlewares:Vec<&'static MiddlewareCallback<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>> = vec![];
-    //     //
-    //     //         controller.push_all_ancestors_middlewares(&mut middlewares);
-    //     //         for m in middlewares {
-    //     //             match  m(self).await {
-    //     //                 MiddlewareResult::Pass => {
-    //     //                     continue;
-    //     //                 }
-    //     //                 MiddlewareResult::Stop => {
-    //     //                     return ServingRequestResults::Done
-    //     //                 }
-    //     //             }
-    //     //         }
-    //     //     }
-    //     //     func(self).await;
-    //     // } else {
-    //     //     let mut sender = self.sender();
-    //     //     sender.send_status_code(HttpStatusCode::NOT_FOUND);
-    //     //     _=sender.send_str("").await;
-    //     //
-    //     //     return  ServingRequestResults::Done;
-    //     // }
-    //     //
-    //     // #[cfg(feature = "debugging")]
-    //     // {
-    //     //     use tracing::info;
-    //     //     info!("request has been served {:?}",self.peer);
-    //     // }
-    //     // ServingRequestResults::Done
-    // }
+
 
 
 
@@ -1669,7 +1800,7 @@ impl <'a,const HEADERS_COUNT:usize
 
         #[cfg(not(feature = "accept_transfer_chunked"))]
         {
-            return   Http1Getter {
+               Http1Getter {
                 body_reading_buffer:  self.body_reading_buffer,
                 left_bytes:self.left_bytes,
                 stream: self.stream,

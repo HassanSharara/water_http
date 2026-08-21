@@ -126,8 +126,8 @@ macro_rules! InitControllersRoot {
     /// defining the name of static Controller Root and it`s should be uppercase
     name: $name:ident ,
     holder_type:$holder:ty,
-    headers_length:$hl:literal,
-    queries_length:$ql:literal
+    headers_length:$hl:expr,
+    queries_length:$ql:expr
      } => {
         use water_http::server::matcher::*;
         pub static mut $name:Option<water_http::server::CapsuleWaterController<$holder,$hl,$ql>> = None;
@@ -165,8 +165,8 @@ macro_rules! InitControllersRoot {
     /// defining the name of static Controller Root and it`s should be uppercase
     $name:ident ,
     $holder:ty,
-          $hl:literal,
-          $hq:literal
+          $hl:expr,
+          $hq:expr
      } => {
        InitControllersRoot! {
            name:$name,

@@ -1,3 +1,9 @@
+## [4.0.6] - 2026-08-21
+- updating macros and adding flexible functions to make the work more easier 
+- Enhanced performance and added new features to improve HTTP request handling
+
+## [4.0.4] - 2026-07-08
+- adding support for advance headers interceptor
 
 ## [4.0.4] - 2026-07-08
 - removed canceling the connection when there is unpredicted route

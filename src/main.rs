@@ -1,8 +1,7 @@
 
-use water_http::server::{ ServerConfigurations};
+use water_http::server::{HeaderInterceptorApplyFor, ServerConfigurations};
 use water_http::{InitControllersRoot, response, WaterController};
 use water_http::http::HttpSenderTrait;
-
 
 InitControllersRoot! {
     name:MAIN_ROOT,
@@ -14,6 +13,9 @@ pub struct CHolder {
     pub user:Option<std::collections::HashMap<String,String>>,
 
 }
+
+
+
 
  fn main() {
     // when debugging feature enabled
@@ -172,20 +174,7 @@ WaterController! {
     children -> ([
         SecondController
     ])
-    // , middleware-> (context {
-    //     println!("middleware function invoked");
-    //
-    //     if let Some(ref holder) = context.holder {
-    //         if holder.user.is_some() {
-    //             println!("user is authenticated");
-    //         }
-    //     }
-    //
-    //     if 1 == 1  { return server::MiddlewareResult::Pass }
-    //
-    //     response!(context -> "invalid middleware passing");
-    //     server::MiddlewareResult::Stop
-    // })
+
 }
 
 WaterController! {
@@ -196,7 +185,20 @@ WaterController! {
     }
     prefix -> ("version2_prefix"),
      middleware -> (context {
-
+        
+        _= context.set_headers_interceptor(
+            super::HeaderInterceptorApplyFor::All,
+            | s | {
+                s.set_header_ef("Server", "water_http");
+               // Allow any frontend domain to read this data
+               s.set_header_ef("Access-Control-Allow-Origin", "*");
+               // Allow common REST methods
+               s.set_header_ef("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+               // Allow common headers sent by modern SPAs (like React/Vue/Expo)
+               s.set_header_ef("Access-Control-Allow-Headers", "Content-Type, Authorization");
+            }
+        );
+        
         _= context.send_str("middleware 2  stopping").await;
         server::MiddlewareResult::Stop
     })

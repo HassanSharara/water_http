@@ -32,7 +32,7 @@ use serde::{Serialize};
 /// and subsequently allowing response middleware to intercept and mutate status, headers,
 /// or body payloads before network transmission.
 pub struct LazyResponse {
-    pub http_status_code: HttpStatusCode<'static>,
+    pub http_status_code: HttpStatusCode,
     /// headers map for response
     pub headers:HashMap<String,String>,
     pub response_data:Bytes
@@ -61,7 +61,7 @@ impl LazyResponse {
     }
 
     /// setting status code
-    pub fn set_status_code(&mut self,s:HttpStatusCode<'static>){
+    pub fn set_status_code(&mut self,s:HttpStatusCode){
         self.http_status_code = s;
     }
 

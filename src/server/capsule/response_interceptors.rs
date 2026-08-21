@@ -1,4 +1,4 @@
-#![cfg(feature = "lazy_response")]
+// #![cfg(feature = "lazy_response")]
 
 use std::future::Future;
 use std::pin::Pin;
@@ -12,7 +12,7 @@ pub(crate) type BoxFutureSend<'a, T> = Pin<SmallBox<dyn Future<Output = T> + Sen
 pub(crate) type BoxFuture<'a, T> = Pin<SmallBox<dyn Future<Output = T> + 'a, SmallBoxSize>>;
 
 #[cfg(all(feature = "thread_shared_struct", feature = "use_tokio_send"))]
-pub(crate) type InterceptorCallback<
+pub type InterceptorCallback<
     H,
     SHARED,
     const HEADER_SIZE: usize,
@@ -22,7 +22,7 @@ pub(crate) type InterceptorCallback<
 ) -> BoxFutureSend<'a, ()>;
 
 #[cfg(all(feature = "thread_shared_struct", not(feature = "use_tokio_send")))]
-pub(crate) type InterceptorCallback<
+pub type InterceptorCallback<
     H,
     SHARED,
     const HEADER_SIZE: usize,
@@ -32,7 +32,7 @@ pub(crate) type InterceptorCallback<
 ) -> BoxFuture<'a, ()>;
 
 #[cfg(all(not(feature = "thread_shared_struct"), feature = "use_tokio_send"))]
-pub(crate) type InterceptorCallback<
+pub type InterceptorCallback<
     H,
     const HEADER_SIZE: usize,
     const QUERY_SIZE: usize,
@@ -41,7 +41,7 @@ pub(crate) type InterceptorCallback<
 ) -> BoxFutureSend<'a, ()>;
 
 #[cfg(all(not(feature = "thread_shared_struct"), not(feature = "use_tokio_send")))]
-pub(crate) type InterceptorCallback<
+pub type InterceptorCallback<
     H,
     const HEADER_SIZE: usize,
     const QUERY_SIZE: usize,

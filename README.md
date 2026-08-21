@@ -7,6 +7,8 @@ and it`s provide stable workload over os systems
 and all the important features for servers 
 
 
+# Documentation
+full  [documentation here](https://github.com/HassanSharara/water_http/blob/main/Documentation.md)
 # Features 
 
  - very slight and easy to use 

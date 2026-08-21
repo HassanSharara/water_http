@@ -36,6 +36,10 @@ const PATH_QUERY_COUNT:usize
     pub (crate)to_advance_bytes:&'a mut  Option<usize>,
 }
 
+fn ct_is(content_type: &[u8], needle: &str) -> bool {
+    content_type.len() >= needle.len()
+        && content_type[..needle.len()].eq_ignore_ascii_case(needle.as_bytes())
+}
 
 impl <'a:'request,'request
     ,
@@ -149,7 +153,7 @@ impl <'a:'request,'request
                 )
             }
 
-        return ParsingBodyResults::Err(
+         ParsingBodyResults::Err(
             WaterErrors::Http(
                 HttpStatusCode::BAD_REQUEST
             )
@@ -209,6 +213,8 @@ impl <'a:'request,'request
     async fn get_body(&'a mut self) ->ParsingBodyResults<'a>{
         self.get_body_by_mechanism(ParsingBodyMechanism::Default).await
     }
+
+
 
     async fn get_body_by_mechanism(&'a mut self,mechanism: ParsingBodyMechanism)->ParsingBodyResults<'a>{
         let content_length = self.request.content_length();
@@ -286,8 +292,8 @@ impl <'a:'request,'request
                             .get_as_bytes("Content-Type") {
                             None => { ParsingBodyResults::Err(WaterErrors::Http(HttpStatusCode::BAD_REQUEST)) }
                             Some(content_type) => {
-                                let lower_case = String::from_utf8_lossy(content_type).to_lowercase();
-                                if lower_case.contains("application/x-www-form-urlencoded") {
+                                // let lower_case = String::from_utf8_lossy(content_type).to_lowercase();
+                                if ct_is(content_type,"application/x-www-form-urlencoded") {
                                     let data = &self.left_bytes[..*content_length];
                                     let x_fields = XWWWFormUrlEncoded::new(data);
                                     return ParsingBodyResults::FullBody(
@@ -296,7 +302,7 @@ impl <'a:'request,'request
                                         )
                                     )
                                 }
-                                else if lower_case.contains("multipart/form-data") {
+                                else if ct_is(content_type,"multipart/form-data") {
                                     return self.get_chunked_body_multipart(
                                         content_type,
                                         &content_length

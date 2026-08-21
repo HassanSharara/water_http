@@ -1,118 +1,92 @@
-mod xwwwformurlencoded;
+mod bytes_puller;
+mod chunked;
 mod multipartformdata;
 mod multer;
-mod bytes_puller;
 mod stream_holders;
-mod chunked;
+mod xwwwformurlencoded;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-pub (crate) use stream_holders::*;
-
-pub use multer::*;
-pub use bytes_puller::*;
 use std::future::Future;
 use std::pin::Pin;
-use bytes::Bytes;
-pub use multipartformdata::MultiPartFormDataField;
-pub use crate::http::request::body::xwwwformurlencoded::*;
+
+use bytes::{Bytes, BytesMut};
+pub use bytes_puller::*;
 pub use chunked::*;
+pub use multipartformdata::MultiPartFormDataField;
+pub use multer::*;
+pub (crate) use stream_holders::*;
+
+pub use xwwwformurlencoded::*;
 use crate::http::request::header::KeyValueMap;
 use crate::server::errors::WaterErrors;
 
-/// indicates the incoming body
-/// as each request has it`s own body
+/// Indicates the incoming body state for a request.
 #[derive(Debug)]
 pub enum IBody<'a> {
-    /// when body type of request should be handled as
-    /// general bytes or manually handled
+    /// When body bytes are handled as a continuous zero-copy slice or processed manually.
     Bytes(&'a [u8]),
-    /// handling multipart-form-data within request
+    /// Handling parsed multipart/form-data.
     MultiPartFormData(FormDataAll),
-    /// handling x-www-form-data within request
-    XWWWFormUrlEncoded(XWWWFormUrlEncoded<'a>)
+    /// Handling parsed x-www-form-urlencoded data.
+    XWWWFormUrlEncoded(XWWWFormUrlEncoded<'a>),
 }
-/// if the incoming body need to be handled as chunks
+
+/// Incoming body stream when handled as chunks.
 pub enum IBodyChunks<'a> {
-    /// handling incoming body bytes as chunked
-    Bytes(
-       BytesPuller<'a>
-    ),
-    /// parsing incoming bytes to [MultiPartFormDataField] Fields
-    /// so each field would be given to callback function as single field handler
-    FormData(
-        MultipartData<'a>
-    ),
+    /// Handling incoming body bytes via puller.
+    Bytes(BytesPuller<'a>),
+    /// Parsing incoming bytes into [MultiPartFormDataField] stream handlers.
+    FormData(MultipartData<'a>),
     #[cfg(feature = "accept_transfer_chunked")]
-    /// handling incoming body as chunked body
-    Chunked(BodyChunkedReader<'a>)
+    /// Reading incoming body with chunked transfer-encoding.
+    Chunked(BodyChunkedReader<'a>),
 }
 
-
-
-
-/// telling the context how we would like to handle incoming body
- pub enum ParsingBodyMechanism {
-    /// letting the context chose how to handle the incoming body bytes depending on
-    /// Content-Type header value
+/// Informs the context how incoming request body bytes should be parsed.
+pub enum ParsingBodyMechanism {
+    /// Let the context determine the parsing strategy based on Content-Type header.
     Default,
-    /// handling the incoming bytes manually
+    /// Keep incoming bytes raw without automatic parsing.
     JustBytes,
-    /// parsing incoming bytes to [MultiPartFormDataField] Fields
+    /// Parse incoming bytes into multipart form fields.
     FormData,
-    /// parse incoming body bytes to [XWWWFormUrlEncoded] struct
+    /// Parse incoming bytes into x-www-form-urlencoded structure.
     XWWWFormData,
     #[cfg(feature = "accept_transfer_chunked")]
-    /// when body is chunked transfer-encoding
-    ChunkedTransferEncoding
- }
-
-/// parsing body mechanism results
-pub enum  ParsingBodyResults<'a> {
-    /// handling the incoming body as chunks because of the size
-    /// # why we need to handle body using chunks ?
-    ///
-    /// well the incoming body could be very long data size for examples ( 4GB )
-    /// and you are running your framework on a vps or low server resources
-    /// so if your server ram size lower than the incoming data size you would face
-    /// stack overflow error or your server would be panicked or encounter kill lag
-    /// or even facing hacking attacks ( examples : if the hacker sent 4 request with 4gb on ram )
-    /// this would make your server down
-    ///
-    /// so we need to handle data as chunks to load small chunks one the context reading buffer,
-    /// and then we could handle this chunks on server slightly  like saving incoming data on hard
-    /// disk synchronously
-    Chunked(IBodyChunks<'a>),
-
-    /// handling the incoming data as full body bytes which is the common use case
-    FullBody(IBody<'a>),
-
-    /// when request is get for examples and it`s not having any payload
-    None,
-    /// when could not handle body
-    Err(WaterErrors<'a>)
+    /// Parse transfer-encoding: chunked body.
+    ChunkedTransferEncoding,
 }
 
+/// Parsing body mechanism execution results.
+pub enum ParsingBodyResults<'a> {
+    /// Incoming body is processed as chunks to protect RAM from oversized payloads.
+    Chunked(IBodyChunks<'a>),
+    /// Full body loaded into memory (common case for smaller payloads).
+    FullBody(IBody<'a>),
+    /// Request has no body (e.g., standard GET request).
+    None,
+    /// Parsing error encountered.
+    Err(WaterErrors<'a>),
+}
 
-impl <'a> ParsingBodyResults<'a> {
-
+impl<'a> ParsingBodyResults<'a> {
     pub async fn on_multipart_form_data_detect(
-        payload:&'a [u8],
+        payload: &'a [u8],
         mut on_detect: impl FnMut(
-        Result<MultiPartFormDataField<'a>,&str>
-    ) -> Pin<Box<dyn Future<Output=HandlingFormDataResult> + Send>>
-    )->Result<(),&'a str>{
-        let mut index:usize = 0;
-        loop {
+            Result<MultiPartFormDataField<'a>, &str>,
+        ) -> Pin<Box<dyn Future<Output = HandlingFormDataResult> + Send>>,
+    ) -> Result<(), &'a str> {
+        let mut index: usize = 0;
+        while index < payload.len() {
             match MultiPartFormDataField::new(&payload[index..]) {
-                None => { break;}
+                None => break,
                 Some(data) => {
-                    index = index + data.field_header_length;
-                    let res = on_detect(Ok(data)).await;
-                    match res {
-                        HandlingFormDataResult::Pass => { continue;}
-                        HandlingFormDataResult::Stop => { break; }
-                        HandlingFormDataResult::Shutdown => { return Err("shutdown connection")}
+                    index += data.field_header_length;
+                    match on_detect(Ok(data)).await {
+                        HandlingFormDataResult::Pass => continue,
+                        HandlingFormDataResult::Stop => break,
+                        HandlingFormDataResult::Shutdown => return Err("shutdown connection"),
                     }
                 }
             }
@@ -120,261 +94,189 @@ impl <'a> ParsingBodyResults<'a> {
         Ok(())
     }
 
-    /// checking if parsing body has error
-    pub fn is_err(&self)->bool {
-        if let ParsingBodyResults::Err(_) = self { return  true}
-        false
+    /// Returns `true` if body parsing resulted in an error.
+    #[inline]
+    pub fn is_err(&self) -> bool {
+        matches!(self, ParsingBodyResults::Err(_))
     }
 
-    /// checking if parsing body returns a [None] Value
-    pub fn is_none(&self)->bool {
-        if let ParsingBodyResults::None = self { return  true}
-        false
+    /// Returns `true` if no body payload was present.
+    #[inline]
+    pub fn is_none(&self) -> bool {
+        matches!(self, ParsingBodyResults::None)
     }
 }
 
-/// telling the framework to stop handling incoming data or resume
- pub enum HandlingFormDataResult {
-    /// to continue reading and parsing new form-data field
-     Pass,
-    /// to stop  parsing new form-data field but continue reading
-     Stop,
-    /// to stop reading and parsing new data
-     Shutdown
- }
+/// Controls stream execution during form-data parsing.
+pub enum HandlingFormDataResult {
+    /// Continue reading and parsing next field.
+    Pass,
+    /// Stop parsing form-data fields but keep connection open.
+    Stop,
+    /// Terminate reading and close the connection immediately.
+    Shutdown,
+}
 
-
-
-/// generated multipart form data field on heap
-/// keep in mind that this approach will allocate new space on heap portion of ram
-/// which take a little much time and considering less efficient than calling chunks function
-#[derive(Debug)]
+/// Represents a single parsed multipart form field using zero-copy byte buffers.
+#[derive(Debug, Clone)]
 pub struct HeapFormField {
-    pub multipart:KeyValueMap,
-    pub data:Vec<u8>
+    pub multipart: KeyValueMap,
+    pub data: Bytes,
 }
 
-impl  HeapFormField {
-    fn from(value: &MultiPartFormDataField,data:&[u8]) -> Self {
+impl HeapFormField {
+    fn from(value: &MultiPartFormDataField, data: &[u8]) -> Self {
         let map = KeyValueMap::from(&value.headers);
         HeapFormField {
-            multipart:map,
-            data:data.to_vec()
+            multipart: map,
+            data: Bytes::copy_from_slice(data),
         }
     }
 
-
-    /// getting the data of this field
-    pub fn data(&self)->&[u8]{
-        self.data.as_ref()
+    /// Returns the body payload bytes of this field.
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        &self.data
     }
 
+    /// Returns the zero-copy `Bytes` handle.
+    #[inline]
+    pub fn bytes(&self) -> Bytes {
+        self.data.clone()
+    }
 
-
-    /// checking if incoming field is a file or not
-    /// by checking file name property
-    /// you could check also content-type manually by using [self.content_type]
-    pub fn is_file(&self)->bool{
+    /// Checks if this field is an uploaded file.
+    #[inline]
+    pub fn is_file(&self) -> bool {
         self.multipart.get_as_bytes("filename").is_some()
     }
 
-    /// for getting content type of field [MultiPartFormDataField]
-    pub fn content_type(&self)->Option<&[u8]>{
-        if let Some(value) = self.multipart.get_as_bytes("Content-Type") {
-            return Some(value.as_ref())
-        }
-        None
+    /// Returns the content-type of this field, if specified.
+    #[inline]
+    pub fn content_type(&self) -> Option<&[u8]> {
+        self.multipart.get_as_bytes("Content-Type").map(|v| v.as_ref())
     }
-
 }
 
-
-
- /// for building incoming form data
- #[derive(Debug)]
- pub struct  FormDataAll {
-     pub fields:Vec<HeapFormField>,
- }
-
+/// Aggregated container for parsed multipart form data fields.
+#[derive(Debug, Clone, Default)]
+pub struct FormDataAll {
+    pub fields: Vec<HeapFormField>,
+}
 
 impl DynamicBodyMapTrait for FormDataAll {
     fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
-        if let Some(field) = self.get_field(key) {
-            return Some(field.data.as_ref())
-        }
-        None
+        self.get_field(key).map(|field| field.data())
     }
 
-    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
-        if let Some(data) = self.get_as_bytes(key){
-           return Some(String::from_utf8_lossy(data))
-        }
-        None
+    fn get(&self, key: &str) -> Option<Cow<'_, str>> {
+        self.get_as_bytes(key).map(String::from_utf8_lossy)
     }
-
-
-
 
     fn all(&self) -> HashMap<String, Bytes> {
-        let mut map = HashMap::new();
+        let mut map = HashMap::with_capacity(self.fields.len());
         for field in &self.fields {
-
-            for  (key,value) in field.multipart.all_pairs() {
-
-                map.insert(key.to_string(),value.clone());
-
+            if let Some(name) = field.multipart.get_as_str("name") {
+                let clean_name = name.trim_matches('"');
+                map.insert(clean_name.to_string(), field.data.clone());
             }
         }
         map
     }
 }
 
-impl  FormDataAll {
-    /// for getting specific field form incoming multipart data
-    pub fn get_field(&self,key:&str)->Option<&HeapFormField>{
-        self.fields.iter().find(|c| {
-            if let Some(f) = c.multipart.get_as_str("name") {
-                return f == key || f.replace("\"","" ) == key
-            }
-                false
+impl FormDataAll {
+    pub fn new() -> Self {
+        Self { fields: Vec::new() }
+    }
+
+    /// Retrieves a field reference by key without heap allocations.
+    pub fn get_field(&self, key: &str) -> Option<&HeapFormField> {
+        let target_key = key.trim_matches('"');
+        self.fields.iter().find(|field| {
+            field
+                .multipart
+                .get_as_str("name")
+                .map_or(false, |name| name.trim_matches('"') == target_key)
         })
     }
-    /// for getting specific field form incoming multipart data
-    pub fn get_mut(&mut self,mut key:&str)->Option<&mut HeapFormField>{
-        if key.starts_with("\"") {
-            key = &key[1..];
-        }
-        if key.ends_with("\""){
-            key = &key[..key.len()-1];
-        }
-        let fields = &mut self.fields;
-        for field in fields  {
-            if let Some(name) = field.multipart.get_as_str("name") {
-                if name == key || name.replace("\"","") == key {
-                    return Some(field);
-                }
-            }
-        }
-        None
+
+    /// Retrieves a mutable field reference by key without heap allocations.
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut HeapFormField> {
+        let target_key = key.trim_matches('"');
+        self.fields.iter_mut().find(|field| {
+            field
+                .multipart
+                .get_as_str("name")
+                .map_or(false, |name| name.trim_matches('"') == target_key)
+        })
     }
 
-    /// initiating new [FormDataAll]
-    pub  fn new()->FormDataAll{
-        FormDataAll {
-            fields:Vec::new(),
-        }
-    }
-
-
-
-
-    pub (crate) fn push(& mut self,field:&MultiPartFormDataField,data:&[u8]){
-
+    /// Appends incoming field data chunks efficiently using zero-copy byte buffering.
+    pub(crate) fn push(&mut self, field: &MultiPartFormDataField, data: &[u8]) {
         if let Some(name) = field.content_disposition_name() {
-            if let Some( field) = self.get_mut(name.as_ref()) {
-                field.data.extend_from_slice(data);
+            if let Some(target) = self.get_mut(name.as_ref()) {
+                // Efficiently extend using BytesMut to avoid redundant Vec reallocation
+                let mut buffer = BytesMut::with_capacity(target.data.len() + data.len());
+                buffer.extend_from_slice(&target.data);
+                buffer.extend_from_slice(data);
+                target.data = buffer.freeze();
                 return;
             }
         }
-        self.fields.push(
-            HeapFormField::from(field,data)
-        );
+        self.fields.push(HeapFormField::from(field, data));
     }
-
-
 }
 
-
-
-
-/// telling context handler of request
-/// if the body handling failed
-/// so that context force stop handling request which cost resources
-/// and continue handling another concurrent requests
-pub enum  HandlingChunkResult<'a> {
+/// Chunk processing state indicator.
+pub enum HandlingChunkResult<'a> {
     Consumed,
-    Err(&'a str)
+    Err(&'a str),
 }
 
-/// for creating dynamic memory safe body holder
-/// functionalities
-///
-/// # Note
-/// all of these function are to make some functionalities easy for you
-/// , if you want blazingly efficient way just use getter function on main context
-///  to get `HttpGetter`
-/// ```rust,ignore
-/// let context = todo!();
-/// let mut getter = context.getter();
-/// ```
-/// ignore defining context because it would be ready for you by the framework
-/// and this is the wright way to get `HttpGetter`
-#[derive(Debug)]
-pub enum  DynamicBodyMap{
-    /// form field
+/// Unified abstraction wrapper for dynamic body types.
+#[derive(Debug, Clone)]
+pub enum DynamicBodyMap {
     FormField(FormDataAll),
-    /// x-www form field
-    Xww(HeapXWWWFormUrlEncoded)
+    Xww(HeapXWWWFormUrlEncoded),
 }
+
 impl DynamicBodyMapTrait for DynamicBodyMap {
     fn get_as_bytes(&self, key: &str) -> Option<&[u8]> {
         match self {
-            DynamicBodyMap::FormField(data) => { data.get_as_bytes(key)}
-            DynamicBodyMap::Xww(data) => {data.get_as_bytes(key)}
+            DynamicBodyMap::FormField(data) => data.get_as_bytes(key),
+            DynamicBodyMap::Xww(data) => data.get_as_bytes(key),
         }
     }
 
-    fn get(&self, key: &str) -> Option<Cow<'_,str>> {
+    fn get(&self, key: &str) -> Option<Cow<'_, str>> {
         match self {
-            DynamicBodyMap::FormField(data) => { data.get(key)}
-            DynamicBodyMap::Xww(data) => {data.get(key)}
+            DynamicBodyMap::FormField(data) => data.get(key),
+            DynamicBodyMap::Xww(data) => data.get(key),
         }
     }
-
-
 
     fn all(&self) -> HashMap<String, Bytes> {
         match self {
-            DynamicBodyMap::FormField(data) => { data.all()}
-            DynamicBodyMap::Xww(data) => {data.all()}
+            DynamicBodyMap::FormField(data) => data.all(),
+            DynamicBodyMap::Xww(data) => data.all(),
         }
     }
 }
 
-/// for creating dynamic memory safe body holder
-/// functionalities
-///
-/// # Note
-/// all of these function are to make some functionalities easy for you
-/// , if you want blazingly efficient way just use getter function on main context
-///  to get `HttpGetter`
-/// ```rust,ignore
-/// let context = todo!();
-/// let mut getter = context.getter();
-/// ```
-/// ignore defining context because it would be ready for you by the framework
-/// and this is the wright way to get `HttpGetter`
-pub trait DynamicBodyMapTrait{
+/// Trait providing unified querying functionality across dynamic body abstractions.
+pub trait DynamicBodyMapTrait {
+    fn get_as_bytes(&self, key: &str) -> Option<&[u8]>;
 
-    /// getting field or any data key value as bytes or [&[u8]]
-    fn get_as_bytes(&self,key:&str)-> Option<&[u8]>;
+    fn get(&self, key: &str) -> Option<Cow<'_, str>>;
 
-    /// getting field or any data key value as [`Cow<'_,str>`]
-    fn get (&self,key:&str)->Option<Cow<'_,str>>;
+    fn all(&self) -> HashMap<String, Bytes>;
 
-
-    /// getting all incoming keys and values as hashmap
-    fn all(&self)-> HashMap<String,Bytes>;
-
-    /// auto implementation for encoding strings
     fn get_as_encoded_string(&self, key: &str) -> Option<String> {
-        let bytes = self.get(key);
-        if let Some(s) = bytes {
-            let e = urlencoding::decode(s.as_ref());
-            if let Ok(c) = e{return Some(c.to_string())}
-            return Some(s.to_string())
-        }
-        None
+        self.get(key).map(|s| {
+            urlencoding::decode(s.as_ref())
+                .map(|c| c.into_owned())
+                .unwrap_or_else(|_| s.into_owned())
+        })
     }
 }
-
