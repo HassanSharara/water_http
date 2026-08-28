@@ -545,6 +545,7 @@ impl  ConnectionStream {
 
                                                     };
                                                     if let Ok( r) = r {
+                                                        reading_buffer.advance_mut(r);
                                                         let l = r.min(rem);
                                                         rem -= l;
                                                         reading_buffer.advance(l);
