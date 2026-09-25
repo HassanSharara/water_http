@@ -1,3 +1,6 @@
+## [4.0.7]
+- fix advancing the buffer size while handling massive data income 
+
 ## [4.0.6] - 2026-08-21
 - updating macros and adding flexible functions to make the work more easier 
 - Enhanced performance and added new features to improve HTTP request handling
