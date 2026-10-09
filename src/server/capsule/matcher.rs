@@ -67,7 +67,7 @@ pub struct MatcherInitializer<'a,
     #[cfg(not(feature = "use_tokio_send"))]
     SHARED:Clone+'static ,
     const QS:usize,const HS:usize> {
-    static_paths:&'a mut HashMap<String,PathHolder<H,SHARED,QS,HS>>,
+    static_paths:&'a mut HashMap<String,Vec<PathHolder<H,SHARED,QS,HS>>>,
     dynamic_paths:&'a mut HashMap<usize,DynamicPathVec<H,SHARED,QS,HS>>,
 
 }
@@ -80,7 +80,7 @@ pub struct MatcherInitializer<'a,
     #[cfg(not(feature = "use_tokio_send"))]
     H:'static,
     const QS:usize,const HS:usize> {
-    static_paths:&'a mut HashMap<String,PathHolder<H,QS,HS>>,
+    static_paths:&'a mut HashMap<String,Vec<PathHolder<H,QS,HS>>>,
     dynamic_paths:&'a mut HashMap<usize,DynamicPathVec<H,QS,HS>>,
 }
 
@@ -97,7 +97,7 @@ pub (crate) struct Matcher<
     #[cfg(not(feature = "use_tokio_send"))]
     SHARED:Clone+'static ,
     const QS:usize,const HS:usize> {
-    pub(crate) static_paths:&'static  HashMap<String,PathHolder<H,SHARED,QS,HS>>,
+    pub(crate) static_paths:&'static  HashMap<String,Vec<PathHolder<H,SHARED,QS,HS>>>,
     pub(crate) dynamic_paths:&'static HashMap<usize,DynamicPathVec<H,SHARED,QS,HS>>,
 
 }
@@ -121,7 +121,7 @@ H:'static + Send,
     }
 
     pub fn new(
-        static_paths:&'static  HashMap<String,PathHolder<H,SHARED,QS,HS>>,
+        static_paths:&'static  HashMap<String,Vec<PathHolder<H,SHARED,QS,HS>>>,
         dynamic_paths:&'static  HashMap<usize,DynamicPathVec<H,SHARED,QS,HS>>,
     )->Matcher<H,SHARED,QS,HS>{
         Matcher {
@@ -133,19 +133,27 @@ H:'static + Send,
     #[inline(always)]
     pub fn match_path<'a>(
         &'a self,
+        method: &str,
         path: &'a str,
     ) -> Option<(&'a PathHolder<H,SHARED, QS, HS>, Option<HashMap<String,String>>)> {
         let path = path.trim_matches('/').split("?").next().unwrap();
         let segment_count = path.split('/').count();
 
         // 1️⃣ static
-        if let Some(holder) = self.static_paths.get(path) {
-            return Some((holder, None));
+        if let Some(holders) = self.static_paths.get(path) {
+            for holder in holders {
+                if holder.method == method {
+                    return Some((holder, None));
+                }
+            }
         }
 
         // 2️⃣ dynamic
         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {
             'outer: for (original_path, holder) in dynamic_vec {
+                if holder.method != method {
+                    continue 'outer;
+                }
                 let mut params = HashMap::new();
                 let mut incoming_iter = path.split('/');
                 let mut original_iter = original_path.split('/');
@@ -172,6 +180,9 @@ H:'static + Send,
         for check_count in (1..=segment_count).rev() {
             if let Some(dynamic_vec) = self.dynamic_paths.get(&check_count) {
                 for (p, holder) in dynamic_vec {
+                    if holder.method != method {
+                        continue;
+                    }
                     if p.contains(">>") || p.contains("/*") || p.contains("<<") {
                         let base_prefix = p.split('{').next().unwrap_or("");
                         if path.starts_with(base_prefix) {
@@ -205,7 +216,7 @@ pub struct Matcher<
     #[cfg(not(feature = "use_tokio_send"))]
     H:'static,
     const QS:usize,const HS:usize> {
-    pub(crate) static_paths:&'static  HashMap<String,PathHolder<H,QS,HS>>,
+    pub(crate) static_paths:&'static  HashMap<String,Vec<PathHolder<H,QS,HS>>>,
     pub(crate) dynamic_paths:&'static  HashMap<usize,DynamicPathVec<H,QS,HS>>,
 }
 
@@ -229,7 +240,7 @@ Matcher<H,QS,HS> {
         }
     }
     pub fn new(
-        static_paths:&'static  HashMap<String,PathHolder<H,QS,HS>>,
+        static_paths:&'static  HashMap<String,Vec<PathHolder<H,QS,HS>>>,
         dynamic_paths:&'static  HashMap<usize,DynamicPathVec<H,QS,HS>>,
     )->Matcher<H,QS,HS>{
         Matcher {
@@ -239,19 +250,27 @@ Matcher<H,QS,HS> {
     }
     pub fn match_path<'a>(
         &'a self,
+        method: &str,
         path: &'a str,
     ) -> Option<(&'a PathHolder<H, QS, HS>, Option<HashMap<String,String>>)> {
         let path = path.trim_matches('/').split("?").next().unwrap();
 
         // 1️⃣ static
-        if let Some(holder) = self.static_paths.get(path) {
-            return Some((holder, None));
+        if let Some(holders) = self.static_paths.get(path) {
+            for holder in holders {
+                if holder.method == method {
+                    return Some((holder, None));
+                }
+            }
         }
         let segment_count = path.split('/').count();
 
         // 2️⃣ dynamic
         if let Some(dynamic_vec) = self.dynamic_paths.get(&segment_count) {
             'outer: for (original_path, holder) in dynamic_vec {
+                if holder.method != method {
+                    continue 'outer;
+                }
                 let mut params = HashMap::new();
                 let mut incoming_iter = path.split('/');
                 let mut original_iter = original_path.split('/');
@@ -278,6 +297,9 @@ Matcher<H,QS,HS> {
         for check_count in (1..=segment_count).rev() {
             if let Some(dynamic_vec) = self.dynamic_paths.get(&check_count) {
                 for (p, holder) in dynamic_vec {
+                    if holder.method != method {
+                        continue;
+                    }
                     if p.contains(">>") || p.contains("/*") || p.contains("<<") {
                         let base_prefix = p.split('{').next().unwrap_or("");
                         if path.starts_with(base_prefix) {
@@ -312,7 +334,7 @@ impl <
 
     pub fn format(
         prefix_string:&mut String,
-        static_paths:& mut HashMap<String,PathHolder<H,HS,QS>>,
+        static_paths:& mut HashMap<String,Vec<PathHolder<H,HS,QS>>>,
         dynamic_paths:& mut HashMap<usize,DynamicPathVec<H,HS,QS>>,
         controller:&'static CapsuleWaterController<H,HS,QS>,
         mut father_controllers:Vec<&'static CapsuleWaterController<H,HS,QS>>
@@ -329,46 +351,6 @@ impl <
                 controllers_vec.push(*c);
             }
             let path = format!("{prefix_string}/{path}").replace("//","/").trim_matches(|c| c=='/').to_string();
-            if path.contains("{") || path.contains("}") {
-                let s = path.split("/");
-                let mut father_middlewares = vec![];
-                #[cfg(feature = "lazy_response")]
-                let mut father_interceptors = vec![];
-                controller.push_all_ancestors_middlewares(&mut father_middlewares);
-                #[cfg(feature = "lazy_response")]
-                controller.push_all_ancestors_interceptors(&mut father_interceptors);
-                #[cfg(feature = "lazy_response")]
-                dynamic_paths.insert(
-                    s.count()
-                    ,
-                    vec![
-                        (path,CapsuleHolder{
-                            method:method.split("_").next().unwrap().to_uppercase(),
-                            controller,
-                            func,
-
-                            father_middlewares,
-                            father_interceptors
-                        })
-                    ]
-                );
-
-                #[cfg(not(feature = "lazy_response"))]
-                dynamic_paths.insert(
-                    s.count()
-                    ,
-                    vec![
-                        (path,CapsuleHolder{
-                            method:method.split("_").next().unwrap().to_uppercase(),
-                            controller,
-                            func,
-
-                            father_middlewares,
-                        })
-                    ]
-                );
-                continue
-            }
             let mut father_middlewares = vec![];
             #[cfg(feature = "lazy_response")]
             let mut father_interceptors = vec![];
@@ -376,21 +358,29 @@ impl <
             controller.push_all_ancestors_middlewares(&mut father_middlewares);
             #[cfg(feature = "lazy_response")]
             controller.push_all_ancestors_interceptors(&mut father_interceptors);
+
             #[cfg(feature = "lazy_response")]
-            static_paths.insert(path,CapsuleHolder{
+            let holder = CapsuleHolder{
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
                 father_middlewares,
                 father_interceptors
-            });
+            };
             #[cfg(not(feature = "lazy_response"))]
-            static_paths.insert(path,CapsuleHolder{
+            let holder = CapsuleHolder{
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
                 father_middlewares,
-            });
+            };
+
+            if path.contains("{") || path.contains("}") {
+                let s = path.split("/").count();
+                dynamic_paths.entry(s).or_default().push((path, holder));
+            } else {
+                static_paths.entry(path).or_default().push(holder);
+            }
         }
         father_controllers.push(controller);
 
@@ -411,7 +401,7 @@ impl <
 
 
     pub (crate) fn serialize<'a>(
-        static_paths:&'a mut HashMap<String,PathHolder<H,HS,QS>>,
+        static_paths:&'a mut HashMap<String,Vec<PathHolder<H,HS,QS>>>,
         dynamic_paths:&'a mut HashMap<usize,DynamicPathVec<H,HS,QS>>,
         controller:&'static CapsuleWaterController<H,HS,QS>
     )->MatcherInitializer<'a,H,HS,QS>{
@@ -453,7 +443,7 @@ impl <
             return;
         }
 
-        self.static_paths.insert(path.to_string(), path_holder);
+        self.static_paths.entry(path.to_string()).or_default().push(path_holder);
     }
 
 }
@@ -473,7 +463,7 @@ impl <
 
     pub fn format(
         prefix_string:&mut String,
-        static_paths:& mut HashMap<String,PathHolder<H,SHARED,HS,QS>>,
+        static_paths:& mut HashMap<String,Vec<PathHolder<H,SHARED,HS,QS>>>,
         dynamic_paths:& mut HashMap<usize,DynamicPathVec<H,SHARED,HS,QS>>,
         controller:&'static CapsuleWaterController<H,SHARED,HS,QS>,
       ){
@@ -484,44 +474,6 @@ impl <
 
         for (method,path,func) in &controller.functions {
             let path = format!("{prefix_string}/{path}").replace("//","/").trim_matches(|c| c=='/').to_string();
-            if path.contains("{") || path.contains("}") {
-                let s = path.split("/");
-                let mut father_middlewares = vec![];
-                #[cfg(feature = "lazy_response")]
-                let mut father_interceptors = vec![];
-
-                controller.push_all_ancestors_middlewares(&mut father_middlewares);
-                #[cfg(feature = "lazy_response")]
-                controller.push_all_ancestors_interceptors(&mut father_interceptors);
-                #[cfg(feature = "lazy_response")]
-                dynamic_paths.insert(
-                    s.count()
-                    ,
-                    vec![
-                        (path,CapsuleHolder{
-                            method:method.split("_").next().unwrap().to_uppercase(),
-                            controller,
-                            func,
-                            father_middlewares,
-                            father_interceptors
-                        })
-                    ]
-                );
-                #[cfg(not(feature = "lazy_response"))]
-                dynamic_paths.insert(
-                    s.count()
-                    ,
-                    vec![
-                        (path,CapsuleHolder{
-                            method:method.split("_").next().unwrap().to_uppercase(),
-                            controller,
-                            func,
-                            father_middlewares,
-                        })
-                    ]
-                );
-                continue
-            }
             let mut father_middlewares = vec![];
             #[cfg(feature = "lazy_response")]
             let mut father_interceptors = vec![];
@@ -529,22 +481,29 @@ impl <
             controller.push_all_ancestors_middlewares(&mut father_middlewares);
             #[cfg(feature = "lazy_response")]
             controller.push_all_ancestors_interceptors(&mut father_interceptors);
-            #[cfg(feature = "lazy_response")]
 
-            static_paths.insert(path,CapsuleHolder{
+            #[cfg(feature = "lazy_response")]
+            let holder = CapsuleHolder{
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
                 father_middlewares,
                 father_interceptors
-            });
+            };
             #[cfg(not(feature = "lazy_response"))]
-            static_paths.insert(path,CapsuleHolder{
+            let holder = CapsuleHolder{
                 method:method.split("_").next().unwrap().to_uppercase(),
                 controller,
                 func,
                 father_middlewares,
-            });
+            };
+
+            if path.contains("{") || path.contains("}") {
+                let s = path.split("/").count();
+                dynamic_paths.entry(s).or_default().push((path, holder));
+            } else {
+                static_paths.entry(path).or_default().push(holder);
+            }
         }
 
         for child in &controller.children {
@@ -560,7 +519,7 @@ impl <
 
 
     pub (crate) fn serialize<'a>(
-        static_paths:&'a mut HashMap<String,PathHolder<H,SHARED,HS,QS>>,
+        static_paths:&'a mut HashMap<String,Vec<PathHolder<H,SHARED,HS,QS>>>,
         dynamic_paths:&'a mut HashMap<usize,DynamicPathVec<H,SHARED,HS,QS>>,
         controller:&'static CapsuleWaterController<H,SHARED,HS,QS>
     )->MatcherInitializer<'a,H,SHARED,HS,QS>{
@@ -601,7 +560,7 @@ impl <
             return;
         }
 
-        self.static_paths.insert(path.to_string(), path_holder);
+        self.static_paths.entry(path.to_string()).or_default().push(path_holder);
     }
 
 }

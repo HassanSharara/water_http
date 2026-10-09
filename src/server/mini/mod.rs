@@ -29,8 +29,8 @@ fn create_listener((address, port): (String, u16)) -> TcpListener {
         not(target_os = "illumos"),
         not(target_os = "cygwin"),
     ))]
-    socket.set_reuseport(true).ok();
-    socket.set_nodelay(true).ok();
+    socket.set_reuseport(true).expect("Failed to reuse socket");
+    socket.set_nodelay(true).expect("set_nodelay method failed");
     socket.bind(socket_addr).expect("Bind failed");
     socket.listen(conf.backlog).expect("Listen failed")
 }

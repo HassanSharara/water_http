@@ -87,12 +87,12 @@ pub  fn run_server<
     shared_factory:fn()->std::pin::Pin<Box<dyn Future<Output=SHARED>>>,
 
     #[cfg(feature = "thread_shared_struct")]
-    static_path:&'static mut Option<HashMap<String,PathHolder<Holder,SHARED,HS,QS>>>,
+    static_path:&'static mut Option<HashMap<String,Vec<PathHolder<Holder,SHARED,HS,QS>>>>,
     #[cfg(feature = "thread_shared_struct")]
     dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,SHARED,HS,QS>>>,
 
     #[cfg(not(feature = "thread_shared_struct"))]
-    static_path:&'static mut Option<HashMap<String,PathHolder<Holder,HS,QS>>>,
+    static_path:&'static mut Option<HashMap<String,Vec<PathHolder<Holder,HS,QS>>>>,
     #[cfg(not(feature = "thread_shared_struct"))]
     dynamic_path:&'static mut Option<HashMap<usize,DynamicPathVec<Holder,HS,QS>>>,
 )
