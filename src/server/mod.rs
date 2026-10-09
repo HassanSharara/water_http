@@ -402,6 +402,16 @@ async fn run_server_with_address<
 
             Ok((stream, socket_addr)) => {
 
+                #[cfg(feature = "on_accept_connection")]
+                if let Some(on_accept) = server_config.on_accept_connection {
+                    match on_accept(&stream, &socket_addr) {
+                        PeerAction::Block => {
+                            drop(stream);
+                            continue;
+                        }
+                        PeerAction::Pass => {}
+                    }
+                }
 
                 #[cfg(feature = "debugging")]
                 connections_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

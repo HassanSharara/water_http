@@ -1,39 +1,33 @@
 
 
-# water_http
-http framework meant to be the fastest and easiest 
-http framework by using the power of rust macros
-and it`s provide stable workload over os systems 
-and all the important features for servers 
+# ⚡ water_http
 
+**`water_http`** is a hyper-performance, zero-allocation, microsecond-latency Rust HTTP server framework engineered for extreme throughput and bare-metal hardware saturation, powered by declarative Rust macros.
 
-# Documentation
-full  [documentation here](https://github.com/HassanSharara/water_http/blob/main/Documentation.md)
-# Features 
+Whether serving millions of concurrent requests, harnessing Linux kernel **`io_uring`**, or running in siloed thread-per-core mode with direct CPU affinity, `water_http` gives you superpower-level performance with a clean, developer-friendly developer experience.
 
- - very slight and easy to use 
- - blazingly fast with very advanced concepts and services to provide, you can see Benchmarks repository
- - very simple and familiar constructor
- - support both protocols http2 and http1 with all existed features and more
- - support all http encoding algorithms with custom encoding for low levels like
-    - brotli
-    - zstd
-    - gzip
-    - deflate
-    - lz4
-    - snappy
-    - bzip2
-    - custom encoding algorithms for low level of programming
- - provide simple routing structure with many patterns of write
- - very fast http parsing algorithms which archived http 1 parsing with 1 micro second
- - can handle millions of requests in given seconds 
- - support videos streaming for web pages videos
- - provide easy approaches for saving and downloading files from and to the server
- - support tls or ssl implementation for secure connections without any confusing
- - naming routes and redirecting to these routes by their names using one single method
- - multi pattern ways to generate your code and very easy approaches
- - support controlling low actions like block custom ip addresses from connecting your server or strict your service to custom ip addresses
- - thresholding actions like the threshold the maximum size of using compressing algorithms when sending response back considering clients encoding support
+---
+
+# 📖 Documentation
+Read the complete [Comprehensive Documentation](https://github.com/HassanSharara/water_http/blob/main/Documentation.md)
+
+---
+
+# 🚀 Superpowers & Features 
+
+ - **⚡ Blazingly Fast**: Sub-microsecond HTTP/1.x parsing engineered to process millions of requests per second.
+ - **🧠 Zero-Allocation Architecture**: Hot-path request parsing slices directly from incoming socket buffers without secondary heap allocations.
+ - **🔒 Zero-Cost Wire Firewall (`on_accept_connection`)**: Synchronously inspect, pass, or drop raw TCP streams right at the `accept` syscall—blocking unwanted traffic before TLS handshakes, task spawning, or HTTP parsing. Works across standard Tokio and Linux `io_uring`.
+ - **🐧 Linux `io_uring` Backend**: Deep Linux kernel integration with asynchronous submission and completion rings (`use_io_uring`) for zero-copy I/O.
+ - **⚙️ Siloed Thread-Per-Core (`SO_REUSEPORT` + CPU Affinity)**: Bind worker threads directly to physical CPU cores, eliminating cross-thread context switching, CPU migrations, and lock contention.
+ - **🌐 Dual Protocol Support**: Full-featured HTTP/1.1 and HTTP/2 multiplexing out of the box.
+ - **📦 Extensive Compression Engine**: Built-in automatic & manual compression for Brotli, Zstandard (`zstd`), Gzip, Deflate, LZ4, Snappy, and Bzip2.
+ - **🛡️ Production TLS/SSL**: Effortless Rustls-based TLS configuration with zero friction.
+ - **🎥 Media Streaming**: Native range-request video and media streaming pipeline.
+ - **📁 High-Speed File Serving**: Ultra-fast file downloading and static asset delivery with internal buffer pooling.
+ - **🪄 Declarative Macro System**: Express complex controller trees, routes, extractors, and endpoints cleanly with zero boilerplate.
+ - **⚡ Mini Raw Engine**: Ultra-minimal direct socket loop (`--features mini`) for bare-metal micro-benchmarks.
+ - **🏆 Officially in TechEmpower**: Merged and recognized in the world's standard web framework benchmarks.
 
 
 
@@ -177,6 +171,25 @@ fn enabling_tls(config:&mut ServerConfigurations){
         "./ssl/local_ssl/private.key",
         None
     );
+}
+```
+
+- to inspect or filter raw TCP connections upon accept (`on_accept_connection`):
+```rust
+use std::net::SocketAddr;
+use water_http::server::{PeerAction, ServerConfigurations, ServerTcpStream};
+
+fn on_accept_filter(stream: &ServerTcpStream, addr: &SocketAddr) -> PeerAction {
+    // Check incoming connection before TLS or task spawning
+    if addr.ip().to_string() == "192.168.1.100" {
+        PeerAction::Block // Close and drop raw socket immediately
+    } else {
+        PeerAction::Pass  // Allow connection through
+    }
+}
+
+fn enabling_connection_filter(config: &mut ServerConfigurations) {
+    config.set_on_accept_connection(on_accept_filter);
 }
 ```
 

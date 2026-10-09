@@ -164,8 +164,22 @@ async fn handle_listener<const H: usize, const Q: usize, Hnd: RequestHandler<H, 
     listener: TcpListener,
     handler: Hnd,
 ) {
+    #[cfg(feature = "on_accept_connection")]
+    let conf = super::get_server_config();
+
     loop {
         if let Ok((stream, add)) = listener.accept().await {
+            #[cfg(feature = "on_accept_connection")]
+            if let Some(on_accept) = conf.on_accept_connection {
+                match on_accept(&stream, &add) {
+                    crate::server::PeerAction::Block => {
+                        drop(stream);
+                        continue;
+                    }
+                    crate::server::PeerAction::Pass => {}
+                }
+            }
+
             tokio::task::spawn_local(handle_connection(
                 HttpStream::Async(stream),
                 add,
