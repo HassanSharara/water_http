@@ -811,7 +811,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
     #[inline(always)]
     fn set_header_ef<'h,K: Into<WaterBytes<'h>>, V: Into<WaterBytes<'h>>>(&mut self, key: K, value: V) {
-        // if !self.is_status_written { self.send_status_code(StatusCode::OK);}
+         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         let key_bytes = key.into();
         let value_bytes = value.into();
 
