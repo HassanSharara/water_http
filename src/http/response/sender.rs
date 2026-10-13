@@ -806,7 +806,7 @@ Http1Sender <'a,'context,HEADERS_COUNT,QUERY_COUNT>  {
     }
     #[inline(always)]
     fn set_header<K:Display, V:Display>(&mut self, key: K, value: V) {
-        // if !self.is_status_written { self.send_status_code(StatusCode::OK);}
+         if !self.is_status_written { self.send_status_code(StatusCode::OK);}
         self.context.response_buffer.extend_from_slice(format!("{key}: {value}\r\n").as_bytes());
     }
     #[inline(always)]
