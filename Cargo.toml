@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.6"
+version = "4.0.8"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -98,6 +98,11 @@ name = "lazy_response_interceptor"
 path = "examples/lazy_response_interceptor.rs"
 required-features = ["lazy_response"]
 
+[[example]]
+name = "on_accept_connection"
+path = "examples/on_accept_connection.rs"
+required-features = ["on_accept_connection"]
+
 
 [features]
 debugging = ["tracing","tracing-subscriber"]
@@ -114,6 +119,7 @@ use_io_uring = ["tokio-uring","water_buffer/uring"]
 cpu_affinity = ["dep:core_affinity"]
 auto_encode_response = []
 enable_dynamic_body_cache = []
+on_accept_connection = []
 
 [dev-dependencies]
 askama = "0.14.0"

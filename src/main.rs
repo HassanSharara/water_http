@@ -40,6 +40,8 @@ pub struct CHolder {
      //     None
      // );
 
+     println!("listening on port 8084");
+
      water_http::RunServer!(
         config,
         MAIN_ROOT,
@@ -112,8 +114,6 @@ WaterController! {
         // in this case hi is the path and method is  GET
         hi(context) [crate::get_response]
 
-        // in this case hi_post would be the path
-        POST => hi_post(context) [crate::get_response]
 
         // in this case POST is the name of path and the method is GET
         "POST" => post(context) [crate::get_response]
@@ -169,7 +169,7 @@ WaterController! {
 
     }
 
-    prefix -> ("hello"),
+    prefix -> ("controller1"),
 
     children -> ([
         SecondController

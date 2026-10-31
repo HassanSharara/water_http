@@ -110,6 +110,22 @@ pub enum RestrictionRule {
     BlacklistIps(Vec<String>),
 }
 
+#[cfg(all(feature = "on_accept_connection", not(feature = "use_io_uring")))]
+pub type ServerTcpStream = tokio::net::TcpStream;
+
+#[cfg(all(feature = "on_accept_connection", feature = "use_io_uring"))]
+pub type ServerTcpStream = tokio_uring::net::TcpStream;
+
+#[cfg(feature = "on_accept_connection")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeerAction {
+    Pass,
+    Block,
+}
+
+#[cfg(feature = "on_accept_connection")]
+pub type OnAcceptCallback = for<'a> fn(&'a ServerTcpStream, &'a std::net::SocketAddr) -> PeerAction;
+
 /// a struct for configurations of the server
 /// we could specify which port we are listening to
 /// and who is going to connect to your server and who is restricted
@@ -194,6 +210,9 @@ pub struct ServerConfigurations {
     // /// https://wwww.example.com/post?id=1&name=2
     // /// as you see in these examples we have just two queries count
     // pub max_http1_query_length:usize,
+    #[cfg(feature = "on_accept_connection")]
+    /// callback function to inspect or filter incoming TCP connections upon accept
+    pub on_accept_connection: Option<OnAcceptCallback>,
 }
 
 #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
@@ -238,7 +257,9 @@ impl ServerConfigurations {
             default_read_buffer_size:READING_BUF_LEN,
             default_write_buffer_size:WRITING_BUF_LEN,
             default_body_buffer_size:EACH_REQUEST_BODY_READING_BUFFER,
-            max_cached_buffers_count:512
+            max_cached_buffers_count:512,
+            #[cfg(feature = "on_accept_connection")]
+            on_accept_connection: None,
         }
     }
 
@@ -268,6 +289,22 @@ impl ServerConfigurations {
     ///
     pub fn set_restriction_to_ips(&mut self,roll:RestrictionRule){
         self.restricted_ips = Some(roll);
+    }
+
+    #[cfg(feature = "on_accept_connection")]
+    /// Set a callback function to inspect each accepted TCP connection.
+    /// Return `PeerAction::Pass` to continue processing the connection,
+    /// or `PeerAction::Block` to immediately reject and drop it.
+    pub fn set_on_accept_connection(&mut self, callback: OnAcceptCallback) {
+        self.on_accept_connection = Some(callback);
+    }
+
+    #[cfg(feature = "on_accept_connection")]
+    /// Set a callback function to inspect each accepted TCP connection.
+    /// Return `PeerAction::Pass` to continue processing the connection,
+    /// or `PeerAction::Block` to immediately reject and drop it.
+    pub fn on_accept_connection(&mut self, callback: OnAcceptCallback) {
+        self.on_accept_connection = Some(callback);
     }
 
     /// enable cpu affinity or core affinity which pin every single thread to single core from available cores
@@ -325,7 +362,27 @@ impl ServerConfigurations {
     }
 }
 
+#[cfg(all(test, feature = "on_accept_connection"))]
+mod tests {
+    use super::*;
 
+    fn sample_pass_callback(_stream: &ServerTcpStream, _addr: &std::net::SocketAddr) -> PeerAction {
+        PeerAction::Pass
+    }
 
+    fn sample_block_callback(_stream: &ServerTcpStream, _addr: &std::net::SocketAddr) -> PeerAction {
+        PeerAction::Block
+    }
 
+    #[test]
+    fn test_on_accept_connection_config() {
+        let mut config = ServerConfigurations::bind("127.0.0.1", 8080);
+        assert!(config.on_accept_connection.is_none());
 
+        config.set_on_accept_connection(sample_pass_callback);
+        assert!(config.on_accept_connection.is_some());
+
+        config.on_accept_connection(sample_block_callback);
+        assert!(config.on_accept_connection.is_some());
+    }
+}

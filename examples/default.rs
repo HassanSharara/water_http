@@ -26,6 +26,14 @@ WaterController! {
         GET => / => main(context) async {
             _= context.send_str("hello world").await;
         }
+        POST => / =>main_post(context)async {
+            _= context.send_str("hello world from post method").await;
+        }
+        GET => check/{id}/name => name(context) async {
+            let res = format!("hello name {id}");
+            _= context.send_string_slice(&res).await;
+        }
+
     }
 
 }

@@ -799,78 +799,75 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     ) -> ServingRequestResults {
 
         let path = self.path();
-        let r = matcher.match_path(path);
+        let incoming_method = self.method();
+        let r = matcher.match_path(incoming_method, path);
 
 
         if let Some((holder,ref param)) = r {
 
-            let method = &holder.method;
-            let incoming_method = self.method();
             if let Some(p) = param {
                 let path_params_cell = unsafe{&mut *self.path_params_map.get()};
                 *path_params_cell = Some(p.clone()).into();
             }
 
-            if *method == incoming_method {
-                // Extract raw pointers to the data while we still have the borrow
-                let middlewares_ptr = holder.father_middlewares.as_ptr();
-                let middlewares_len = holder.father_middlewares.len();
-                let handler = holder.func;
-                #[cfg(feature = "lazy_response")]
-                let interceptors_ptr = holder.father_interceptors.as_ptr();
-                #[cfg(feature = "lazy_response")]
-                let interceptors_len = holder.father_interceptors.len();
-                #[cfg(feature = "lazy_response")]
-                let apply_interceptors = holder.controller.apply_parents_interceptors;
-                // Drop the borrow by ending the scope
-                drop(r); // Explicitly drop to end borrow
+            // Extract raw pointers to the data while we still have the borrow
+            let middlewares_ptr = holder.father_middlewares.as_ptr();
+            let middlewares_len = holder.father_middlewares.len();
+            let handler = holder.func;
+            #[cfg(feature = "lazy_response")]
+            let interceptors_ptr = holder.father_interceptors.as_ptr();
+            #[cfg(feature = "lazy_response")]
+            let interceptors_len = holder.father_interceptors.len();
+            #[cfg(feature = "lazy_response")]
+            let apply_interceptors = holder.controller.apply_parents_interceptors;
+            // Drop the borrow by ending the scope
+            drop(r); // Explicitly drop to end borrow
 
-                // Now reconstruct the slice from raw pointer
-                // SAFETY: The middleware slice is part of the controller which is 'static,
-                // so it's guaranteed to outlive this function call
-                if holder.controller.apply_parents_middlewares {
-                    let middlewares = unsafe {
-                        std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+            // Now reconstruct the slice from raw pointer
+            // SAFETY: The middleware slice is part of the controller which is 'static,
+            // so it's guaranteed to outlive this function call
+            if holder.controller.apply_parents_middlewares {
+                let middlewares = unsafe {
+                    std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+                };
+
+                // middleware chain
+                for m in middlewares {
+                    match m(self).await {
+                        MiddlewareResult::Pass => continue,
+                        MiddlewareResult::Stop => return ServingRequestResults::Done,
+                    }
+                }
+            }
+            // handler
+            handler(self).await;
+            #[cfg(feature = "lazy_response")]
+            {
+                if apply_interceptors {
+                    let interceptors = unsafe {
+                        std::slice::from_raw_parts(interceptors_ptr, interceptors_len)
                     };
 
-                    // middleware chain
-                    for m in middlewares {
-                        match m(self).await {
-                            MiddlewareResult::Pass => continue,
-                            MiddlewareResult::Stop => return ServingRequestResults::Done,
-                        }
+                    for interceptor in interceptors {
+                        interceptor(self).await;
                     }
                 }
-                // handler
-                handler(self).await;
-                #[cfg(feature = "lazy_response")]
-                {
-                    if apply_interceptors {
-                        let interceptors = unsafe {
-                            std::slice::from_raw_parts(interceptors_ptr, interceptors_len)
-                        };
 
-                        for interceptor in interceptors {
-                            interceptor(self).await;
-                        }
+                if let Some(response) = self.lazy_response.take() {
+                    let mut sender = self.sender();
+                    sender.send_status_code(response.http_status_code.clone());
+                    _=(&response.headers).iter().for_each(|(k,v)|{
+                        sender.set_header(k,v);
+                    });
+                    if sender.send_data_as_final_response(
+                        ResponseData::Slice(&response.response_data)
+                    ).await.is_err() {
+                        return  ServingRequestResults::Stop
                     }
 
-                    if let Some(response) = self.lazy_response.take() {
-                        let mut sender = self.sender();
-                        sender.send_status_code(response.http_status_code.clone());
-                        _=(&response.headers).iter().for_each(|(k,v)|{
-                            sender.set_header(k,v);
-                        });
-                        if sender.send_data_as_final_response(
-                            ResponseData::Slice(&response.response_data)
-                        ).await.is_err() {
-                            return  ServingRequestResults::Stop
-                        }
-
-                    }
                 }
-                return ServingRequestResults::Done;
             }
+            return ServingRequestResults::Done;
         }
 
         #[cfg(feature = "debugging")]
@@ -1475,73 +1472,70 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
     ) -> ServingRequestResults
     {
         let path = self.path();
-        let r = matcher.match_path(path);
+        let incoming_method = self.method();
+        let r = matcher.match_path(incoming_method, path);
         if let Some((holder,ref param)) = r {
-            let method = &holder.method;
-            let incoming_method = self.method();
             if let Some(p) = param {
                 let path_params_cell = unsafe{&mut *self.path_params_map.get()};
                 *path_params_cell = Some(p.clone()).into();
             }
 
-            if *method == incoming_method {
-                // Extract raw pointers to the data while we still have the borrow
-                let middlewares_ptr = holder.father_middlewares.as_ptr();
-                let middlewares_len = holder.father_middlewares.len();
-                let handler = holder.func;
-                #[cfg(feature = "lazy_response")]
-                let interceptors_ptr = holder.father_interceptors.as_ptr();
-                #[cfg(feature = "lazy_response")]
-                let interceptors_len = holder.father_interceptors.len();
-                #[cfg(feature = "lazy_response")]
-                 let apply_interceptors = holder.controller.apply_parents_interceptors;
-                // Drop the borrow by ending the scope
-                drop(r); // Explicitly drop to end borrow
-                // Now reconstruct the slice from raw pointer
-                // SAFETY: The middleware slice is part of the controller which is 'static,
-                // so it's guaranteed to outlive this function call
-                if holder.controller.apply_parents_middlewares {
-                    let middlewares = unsafe {
-                        std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+            // Extract raw pointers to the data while we still have the borrow
+            let middlewares_ptr = holder.father_middlewares.as_ptr();
+            let middlewares_len = holder.father_middlewares.len();
+            let handler = holder.func;
+            #[cfg(feature = "lazy_response")]
+            let interceptors_ptr = holder.father_interceptors.as_ptr();
+            #[cfg(feature = "lazy_response")]
+            let interceptors_len = holder.father_interceptors.len();
+            #[cfg(feature = "lazy_response")]
+             let apply_interceptors = holder.controller.apply_parents_interceptors;
+            // Drop the borrow by ending the scope
+            drop(r); // Explicitly drop to end borrow
+            // Now reconstruct the slice from raw pointer
+            // SAFETY: The middleware slice is part of the controller which is 'static,
+            // so it's guaranteed to outlive this function call
+            if holder.controller.apply_parents_middlewares {
+                let middlewares = unsafe {
+                    std::slice::from_raw_parts(middlewares_ptr, middlewares_len)
+                };
+
+                // middleware chain
+                for m in middlewares {
+                    match m(self).await {
+                        MiddlewareResult::Pass => continue,
+                        MiddlewareResult::Stop => return ServingRequestResults::Done,
+                    }
+                }
+            }
+            handler(self).await;
+            #[cfg(feature = "lazy_response")]
+            {
+                if apply_interceptors {
+                    let interceptors = unsafe {
+                        std::slice::from_raw_parts(interceptors_ptr, interceptors_len)
                     };
 
-                    // middleware chain
-                    for m in middlewares {
-                        match m(self).await {
-                            MiddlewareResult::Pass => continue,
-                            MiddlewareResult::Stop => return ServingRequestResults::Done,
-                        }
+                    for interceptor in interceptors {
+                        interceptor(self).await;
                     }
                 }
-                handler(self).await;
-                #[cfg(feature = "lazy_response")]
-                {
-                    if apply_interceptors {
-                        let interceptors = unsafe {
-                            std::slice::from_raw_parts(interceptors_ptr, interceptors_len)
-                        };
 
-                        for interceptor in interceptors {
-                            interceptor(self).await;
-                        }
+                if let Some(response) = self.lazy_response.take() {
+                    let mut sender = self.sender();
+                    sender.send_status_code(response.http_status_code.clone());
+                    _=(&response.headers).iter().for_each(|(k,v)|{
+                        sender.set_header(k,v);
+                    });
+                    if sender.send_data_as_final_response(
+                        ResponseData::Slice(&response.response_data)
+                    ).await.is_err() {
+                        return  ServingRequestResults::Stop
                     }
 
-                    if let Some(response) = self.lazy_response.take() {
-                        let mut sender = self.sender();
-                        sender.send_status_code(response.http_status_code.clone());
-                        _=(&response.headers).iter().for_each(|(k,v)|{
-                            sender.set_header(k,v);
-                        });
-                        if sender.send_data_as_final_response(
-                            ResponseData::Slice(&response.response_data)
-                        ).await.is_err() {
-                            return  ServingRequestResults::Stop
-                        }
-
-                    }
                 }
-                return ServingRequestResults::Done;
             }
+            return ServingRequestResults::Done;
         }
         #[cfg(feature = "debugging")]
         {

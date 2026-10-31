@@ -37,5 +37,6 @@ run_example "public_files_serving"
 run_example "redirect"
 run_example "sending_files"
 run_example "uploading_files"
+run_example "on_accept_connection --features on_accept_connection"
 
 echo "All examples executed successfully!"

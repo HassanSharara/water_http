@@ -1,3 +1,23 @@
+## [4.0.8] - 2026-10-31
+
+### 🚀 Added
+- **`on_accept_connection` Feature Flag:** New opt-in feature (`--features on_accept_connection`) that lets you inspect or filter every incoming TCP connection immediately after `accept()`, before any HTTP parsing occurs. Exposes:
+  - `PeerAction` enum — `Pass` to allow the connection, `Block` to drop it instantly.
+  - `ServerTcpStream` type alias — resolves to `tokio::net::TcpStream` (or `tokio_uring::net::TcpStream` when `use_io_uring` is active).
+  - `OnAcceptCallback` type — a plain `fn(&ServerTcpStream, &SocketAddr) -> PeerAction` callback.
+  - `ServerConfigurations::set_on_accept_connection()` / `on_accept_connection()` — two ergonomic setter methods to register the callback.
+- **New example:** `examples/on_accept_connection.rs` added to demonstrate the feature.
+
+### ⚡ Improved
+- **Smarter routing:** Multiple handlers with different HTTP methods can now be registered on the same path without conflicts — the router correctly resolves the right handler based on the request method every time.
+- **More reliable dynamic paths:** Dynamic and static route registration now follows a unified, consistent flow, making routing behavior more predictable and less error-prone across all path configurations.
+
+
+---
+
+## [4.0.7]
+- fix advancing the buffer size while handling massive data income 
+
 ## [4.0.6] - 2026-08-21
 - updating macros and adding flexible functions to make the work more easier 
 - Enhanced performance and added new features to improve HTTP request handling

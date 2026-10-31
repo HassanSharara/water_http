@@ -9,6 +9,9 @@ Welcome to the official developer documentation for `water_http`, a hyper-perfor
 2. [Installation & Requirements](#2-installation--requirements)
 3. [Feature Flags](#3-feature-flags)
 4. [Startup & Configurations](#4-startup--configurations)
+    - [Configuration Methods](#configuration-methods)
+    - [Setup TLS Configuration](#setup-tls-configuration)
+    - [Connection-Level Acceptance Hook (`on_accept_connection`)](#connection-level-acceptance-hook-on_accept_connection)
 5. [Controller & Routing System](#5-controller--routing-system)
 6. [Request Lifecycle & Handling Context](#6-request-lifecycle--handling-context)
 7. [Writing Responses](#7-writing-responses)
@@ -29,6 +32,7 @@ The ultimate performance bottleneck in web applications is memory allocation and
 * **Zero-Allocation Parsing:** When an HTTP/1.x request is read from the OS socket into the socket ring-buffer, `water_http` parses standard headers, HTTP verbs, paths, and queries using direct slices from that buffer. No new memory allocations occur in the hot path.
 * **Siloed Thread-Per-Core (Shared-Nothing):** When `use_tokio_send` is disabled, the framework binds worker threads directly to physical CPU cores (`cpu_affinity`) and uses `SO_REUSEPORT` at the socket level. Each thread acts as a siloed reactor, eliminating cross-thread CPU scheduling, context switching, and lock contention.
 * **Persistent Connection Buffers:** Instead of allocating memory buffers per request, `water_http` allocates a dedicated connection buffer upon socket acceptance, recycling it for the entire duration of the keep-alive connection.
+* **Zero-Overhead Wire Firewalling:** With `on_accept_connection`, raw incoming TCP sockets are inspected synchronously right out of the `accept` syscall. Unwanted or malicious traffic is dropped immediately without spawning asynchronous tasks, running TLS handshakes, or allocating request structures.
 
 ---
 
@@ -38,8 +42,8 @@ Add `water_http` and its runtime dependency `tokio` to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-water_http = "4.0.4"
-tokio = { version = "1.48.0", features = ["full"] }
+water_http = "4.0.8"
+tokio = { version = "1.53.1", features = ["full"] }
 ```
 
 ### Compiler Requirements
@@ -69,6 +73,7 @@ tokio = { version = "1.48.0", features = ["full"] }
 | `mini` | Bypasses macro-routers and controller structures for direct, raw socket handler loops. | None |
 | `auto_encode_response` | Compresses responses automatically (gzip, brotli, deflate, zstd, snappy, lz4, bzip2). | None |
 | `accept_transfer_chunked`| Enables incoming HTTP chunked transfer encoding processing. | None |
+| `on_accept_connection` | Synchronous TCP accept hook to inspect, pass, or block connections before TLS, task spawning, or parsing. Works on standard Tokio & Linux `io_uring`. | None |
 
 ---
 
@@ -111,6 +116,62 @@ fn enable_tls(config: &mut ServerConfigurations) {
     );
 }
 ```
+
+### Connection-Level Acceptance Hook (`on_accept_connection`)
+
+For security, rate limiting, and zero-cost firewalling, `water_http` provides a dedicated hook executed immediately when a raw TCP connection is accepted from the OS socket listener—**before** TLS handshakes, task spawning, or HTTP parsing occur.
+
+Enable the feature in `Cargo.toml`:
+```toml
+[dependencies]
+water_http = { version = "4.0.8", features = ["on_accept_connection"] }
+```
+
+#### Stream Abstraction (`ServerTcpStream`)
+
+To maintain ultra-high performance regardless of your underlying runtime architecture, the callback uses `ServerTcpStream`:
+* Standard Tokio runtime (`not(feature = "use_io_uring")`): resolves to `tokio::net::TcpStream`.
+* Linux `io_uring` backend (`feature = "use_io_uring"`): resolves to `tokio_uring::net::TcpStream`.
+
+#### Callback Signature & Action Enum
+
+```rust
+pub enum PeerAction {
+    Pass,  // Allows connection to proceed to TLS / HTTP processing
+    Block, // Drops the raw socket immediately with zero task overhead
+}
+
+pub type OnAcceptCallback = for<'a> fn(&'a ServerTcpStream, &'a std::net::SocketAddr) -> PeerAction;
+```
+
+#### Usage Example
+
+```rust
+use std::net::SocketAddr;
+use water_http::server::{PeerAction, ServerConfigurations, ServerTcpStream};
+
+fn firewall_filter(stream: &ServerTcpStream, addr: &SocketAddr) -> PeerAction {
+    // Inspect IP, port, or raw socket metadata
+    if addr.ip().to_string() == "198.51.100.4" {
+        eprintln!("Blocking blacklisted client: {}", addr);
+        PeerAction::Block // Socket is closed and dropped immediately
+    } else {
+        PeerAction::Pass  // Handshake and request processing proceed
+    }
+}
+
+fn main() {
+    let mut config = ServerConfigurations::bind("0.0.0.0", 8080);
+    
+    // Register the on_accept hook
+    config.set_on_accept_connection(firewall_filter);
+    // or: config.on_accept_connection(firewall_filter);
+}
+```
+
+> [!TIP]
+> The `on_accept_connection` callback also seamlessly protects servers running the lightweight `mini` engine (`--features mini,on_accept_connection`).
+
 
 ---
 
@@ -741,18 +802,28 @@ Linux distributions supporting `io_uring` can compile the crate with the `use_io
 
 ## 10. RESTful Design Guidelines & Router Rules
 
-To keep path lookups at near-constant time complexity, the `water_http` router resolves endpoints strictly mapping path keys to handler function pointers.
+The `water_http` router provides both constant-time static path lookups and efficient dynamic segment scanning, with full support for registering multiple HTTP methods on the same path.
 
-> [!WARNING]
-> **Strict Path-Based Routing (No Method Multiplexing):**
-> You cannot bind multiple HTTP verbs (such as `GET` and `POST`) to the exact same path string (e.g. `/api/data`). If paths overlap, the last compiled endpoint will overwrite previous mappings in the lookup table.
+### Multi-Method Routing (4.0.8+)
 
-### Recommended Workarounds:
-Instead of overloading a single path:
-* **Explicit Endpoint Actions:**
-  * Use `GET => /api/data_get`
-  * Use `POST => /api/data_post`
-* **Route Prefixes:** Add explicit verbs or CRUD indicators to path definitions (e.g. `/api/users/get/{id}`, `/api/users/update/{id}`).
+As of version 4.0.8 you can freely bind different HTTP verbs to the same path string. The router resolves the correct handler based on both the path **and** the incoming request method:
+
+```rust
+WaterController! {
+    holder -> crate::MainHolderType,
+    name   -> UsersController,
+    prefix -> ("users"),
+    functions -> {
+        GET  => /      => list_users(context)  async { /* GET /users  */ }
+        POST => /      => create_user(context) async { /* POST /users */ }
+        GET  => {id}   => get_user(context)    async { /* GET /users/{id}  */ }
+        PUT  => {id}   => update_user(context) async { /* PUT /users/{id}  */ }
+    }
+}
+```
+
+> [!TIP]
+> There is no longer any need to suffix paths with the HTTP verb. Write clean, RESTful paths and let the router match on the method automatically.
 
 ---
 
@@ -802,3 +873,4 @@ The crate includes 19 functional examples in the [examples/](file:///Users/hassa
 | [redirect.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/redirect.rs) | Sending redirection headers and codes to browser clients. | None |
 | [sending_files.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/sending_files.rs) | Streaming files, download attachments, range settings, and dynamic block crypting callbacks. | None |
 | [uploading_files.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/uploading_files.rs) | Handling file upload streams, parsing boundary formats, and saving to disk. | None |
+| [on_accept_connection.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/on_accept_connection.rs) | Live demo of the TCP accept hook — alternates PASS and BLOCK decisions on every incoming connection to demonstrate zero-overhead firewalling before HTTP parsing. | `on_accept_connection` |
