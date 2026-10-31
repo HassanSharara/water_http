@@ -802,18 +802,28 @@ Linux distributions supporting `io_uring` can compile the crate with the `use_io
 
 ## 10. RESTful Design Guidelines & Router Rules
 
-To keep path lookups at near-constant time complexity, the `water_http` router resolves endpoints strictly mapping path keys to handler function pointers.
+The `water_http` router provides both constant-time static path lookups and efficient dynamic segment scanning, with full support for registering multiple HTTP methods on the same path.
 
-> [!WARNING]
-> **Strict Path-Based Routing (No Method Multiplexing):**
-> You cannot bind multiple HTTP verbs (such as `GET` and `POST`) to the exact same path string (e.g. `/api/data`). If paths overlap, the last compiled endpoint will overwrite previous mappings in the lookup table.
+### Multi-Method Routing (4.0.8+)
 
-### Recommended Workarounds:
-Instead of overloading a single path:
-* **Explicit Endpoint Actions:**
-  * Use `GET => /api/data_get`
-  * Use `POST => /api/data_post`
-* **Route Prefixes:** Add explicit verbs or CRUD indicators to path definitions (e.g. `/api/users/get/{id}`, `/api/users/update/{id}`).
+As of version 4.0.8 you can freely bind different HTTP verbs to the same path string. The router resolves the correct handler based on both the path **and** the incoming request method:
+
+```rust
+WaterController! {
+    holder -> crate::MainHolderType,
+    name   -> UsersController,
+    prefix -> ("users"),
+    functions -> {
+        GET  => /      => list_users(context)  async { /* GET /users  */ }
+        POST => /      => create_user(context) async { /* POST /users */ }
+        GET  => {id}   => get_user(context)    async { /* GET /users/{id}  */ }
+        PUT  => {id}   => update_user(context) async { /* PUT /users/{id}  */ }
+    }
+}
+```
+
+> [!TIP]
+> There is no longer any need to suffix paths with the HTTP verb. Write clean, RESTful paths and let the router match on the method automatically.
 
 ---
 
@@ -863,3 +873,4 @@ The crate includes 19 functional examples in the [examples/](file:///Users/hassa
 | [redirect.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/redirect.rs) | Sending redirection headers and codes to browser clients. | None |
 | [sending_files.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/sending_files.rs) | Streaming files, download attachments, range settings, and dynamic block crypting callbacks. | None |
 | [uploading_files.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/uploading_files.rs) | Handling file upload streams, parsing boundary formats, and saving to disk. | None |
+| [on_accept_connection.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/on_accept_connection.rs) | Live demo of the TCP accept hook — alternates PASS and BLOCK decisions on every incoming connection to demonstrate zero-overhead firewalling before HTTP parsing. | `on_accept_connection` |
