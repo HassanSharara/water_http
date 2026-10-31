@@ -882,11 +882,4 @@ The high-performance asynchronous `io_uring` completion-based engine is strictly
 * **HTTP/2 Requires a Separate From-Scratch Architecture:** HTTP/2 shifts the network paradigm to a highly multiplexed, single-connection stream framework. Mapping asynchronous, independent kernel completion events back to a heavily stateful, multiplexed frame system requires an entirely custom I/O architecture built from scratch specifically for that purpose.
 
 > 🛠️ **Fallback Behavior:** When your server configurations enable TLS/SSL or require HTTP/2 features, `water_http` transparently shifts routing traffic to its highly optimized, stable **epoll/Tokio-driven runtime network backend**, ensuring 100% feature reliability.
-### 2. Strict Path-Based Routing (No Method Multiplexing)
-   To achieve absolute maximum routing throughput and eliminate pointer-chasing overhead during requests, water_http utilizes an ultra-lean, highly optimized map to resolve route handlers. Consequently, the router matches strictly by the URI path string, introducing a strict design rule:
-
-No Shared Paths Across HTTP Methods: You cannot bind multiple HTTP methods (such as a GET and a POST) to the exact same path string (e.g., /api/data). If paths overlap, one handler will overwrite the other in the map.
-
-The Performance Payload: By removing multi-method conditional branching and nested lookups inside the hot path of the router, path lookup achieves near-constant time complexity, keeping route resolution lightning fast.
-
-💡 Recommended Design Pattern: If you need to handle multiple actions on a single resource, use explicit, high-performance RESTful paths (e.g., GET /api/data_get and POST /api/data_post) or distinct action-based prefixes.
+### 2. Strict Path-Based Routing (No Method Multiplexing) ( fixed ) on ( 4.0.8 version and above )
