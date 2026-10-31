@@ -59,11 +59,11 @@ impl <'a:'request,'request
             ),
             content_length
         );
-        return ParsingBodyResults::Chunked(
+         ParsingBodyResults::Chunked(
             IBodyChunks::Bytes(
                 puller
             )
-        );
+        )
     }
 
     /// getting full body if the body was using multipart form data content type during incoming request
