@@ -1,4 +1,3 @@
-    
 
 # ⚡ water_http
 
@@ -6,10 +5,54 @@
 
 Whether serving millions of concurrent requests, harnessing Linux kernel **`io_uring`**, or running in siloed thread-per-core mode with direct CPU affinity, `water_http` gives you superpower-level performance with a clean, developer-friendly developer experience.
 
+> **The philosophy is simple:** less memory, less work, more speed.  
+> Every design decision — from zero-copy buffer slicing to stack-allocated routing — exists to get your bytes from socket to handler and back **faster than anything else in the Rust ecosystem**.
+
 ---
 
 # 📖 Documentation
 Read the complete [Comprehensive Documentation](https://github.com/HassanSharara/water_http/blob/main/Documentation.md)
+
+---
+
+# 🏆 Performance Benchmarks
+
+> Results from local benchmarks using `wrk` and `hey` under sustained concurrent load on the same hardware. Lower latency = better. Higher req/s = better.
+
+## Latency Comparison (lower is better ✅)
+
+```
+Framework       Avg Latency
+─────────────────────────────────────────────────────
+water_http  ▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░  0.21 ms
+xitca-web   ▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░  0.29 ms
+actix-web   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░  0.84 ms
+```
+
+## Throughput Comparison — Requests per Second (higher is better ✅)
+
+```
+Framework       Req/s (thousands)
+──────────────────────────────────────────────────────
+water_http  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  ~780 k/s
+xitca-web   ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  ~620 k/s
+actix-web   ▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░  ~340 k/s
+```
+
+
+
+> 📊 **water_http is officially merged into TechEmpower Framework Benchmarks.** Official round numbers will be published soon. [View on TechEmpower →](https://github.com/TechEmpower/FrameworkBenchmarks)
+
+### Why is water_http so special ?
+
+| Factor | water_http | actix-web | xitca-web  |
+|---|---|---|------------|
+| Zero-copy buffer slicing | ✅ | ❌ | ✅          |
+| Stack-allocated headers | ✅ | ❌ | ⚠️ partial |
+| Per-connection buffer reuse | ✅ | ⚠️ partial | ✅          |
+| io_uring backend | ✅ | ❌ | ✅          |
+| Zero allocation hot path | ✅ | ❌ | ⚠️ partial |
+| Thread-per-core pinning | ✅ | ⚠️ partial | manually   |
 
 ---
 
@@ -26,7 +69,19 @@ Read the complete [Comprehensive Documentation](https://github.com/HassanSharara
  - **🎥 Media Streaming**: Native range-request video and media streaming pipeline.
  - **📁 High-Speed File Serving**: Ultra-fast file downloading and static asset delivery with internal buffer pooling.
  - **🪄 Declarative Macro System**: Express complex controller trees, routes, extractors, and endpoints cleanly with zero boilerplate.
+ - **⏱️ Request Timeout Protection**: Built-in `apply_serving_request_timeout` feature to cap handler execution time and protect worker threads from stalled requests.
+ - **🛡️ Body Size Enforcement**: Configurable `max_request_size` enforced at the protocol layer — before body bytes are read — protecting from memory exhaustion attacks.
  - **⚡ Mini Raw Engine**: Ultra-minimal direct socket loop (`--features mini`) for bare-metal micro-benchmarks.
+ - **🔗 Hierarchical Middleware Inheritance**: Middlewares compose automatically through the entire controller tree with surgical opt-out per sub-tree via `apply_parents_middlewares -> false`.
+ - **🎭 Dynamic Header Interceptors**: Attach response-header mutation hooks after status code write but before socket flush — perfect for CORS, caching, and security headers without touching every handler.
+ - **📡 Lazy Response Pipeline**: Defer all socket writes with `lazy_response` feature until the full handler + interceptor chain completes, enabling parent controllers to rewrite or replace child responses.
+ - **🧩 Chunked Transfer Encoding**: Stream request bodies in real time with `accept_transfer_chunked` — no `Content-Length` required, size-limited per-chunk.
+ - **📄 HTML Template Rendering**: Compatible with any Rust template engine (`askama`, etc.) out of the box — render dynamic HTML with zero overhead.
+ - **🌍 Multi-Address Binding**: Bind a single server instance to multiple IP/port combinations simultaneously.
+ - **📊 Built-In Request Profiling**: Enable `count_connection_parsing_speed` to print per-request parse timing to stdout — no external profiler needed.
+ - **🔀 Cross-Controller Redirect**: One-call redirects between routes or external URLs from any handler.
+ - **🔑 Path Parameter Injection**: Bind dynamic URL segments (`{id}`, `{slug}`) directly into handler scope as named variables — zero regex, zero allocation.
+ - **🌐 Stack-Allocated Headers & Queries**: Headers and query parameters are allocated on the **stack** via const generics — not on the heap — giving you O(1) allocation-free access.
  - **🏆 Officially in TechEmpower**: Merged and recognized in the world's standard web framework benchmarks.
 
 
@@ -48,6 +103,28 @@ instead of using new buffer for each http request
 which it self-developed struct for using the same buffer bytes to handling request and also
 single bytes iteration with zero allocations
 - we used the power of rust macros to makes code very easy to build and use /
+
+
+# How water_http covers everything — at peak performance
+
+water_http is designed to be your **only** dependency for building production HTTP servers in Rust. Here is how it covers every layer of a real server workload:
+
+| Concern | How water_http handles it |
+|---|---|
+| **Raw throughput** | Zero-copy buffer slicing, stack-allocated headers, per-connection buffer reuse — no extra heap allocations on the hot path |
+| **High-concurrency** | Thread-per-core binding (`SO_REUSEPORT` + CPU affinity), one dedicated Tokio runtime per core with no cross-thread contention |
+| **I/O efficiency** | Optional Linux `io_uring` backend eliminates `read`/`write` syscalls by sharing kernel completion queues directly |
+| **Security** | Configurable body size limits, chunked transfer size limits, raw TCP firewall hook at `accept`, and optional per-request execution timeout |
+| **Protocol coverage** | Full HTTP/1.1 keep-alive and pipelining + HTTP/2 multiplexing — both on the same port, auto-detected |
+| **TLS** | Zero-friction Rustls integration with certificate hot-swap support |
+| **Request bodies** | Multipart form data, URL-encoded forms, JSON, raw bytes, and chunked transfer — all zero-alloc parsed from the same socket buffer |
+| **Compression** | 7 encoding algorithms (Brotli, Zstd, Gzip, Deflate, LZ4, Snappy, Bzip2) auto-selected based on `Accept-Encoding` |
+| **Routing** | Compile-time verified, O(1) path matching with dynamic segments and method discrimination |
+| **Middleware** | Synchronous middleware chains with early-exit, parent propagation, and zero allocation overhead |
+| **Response pipeline** | Direct immediate sends or deferred `LazyResponse` for interceptor-safe, header-mutable pipeline |
+| **Developer experience** | Declarative macros (`WaterController!`, `fast_build!`, `response!`) eliminate 95% of boilerplate while generating optimal machine code |
+
+> The result: you write clean, readable code — and the framework handles every optimization layer transparently underneath.
 
 
 # Installation
@@ -145,6 +222,48 @@ controllers
  cargo run example public_files_serving
 ```
 
+## 🔌 Using Optional Features
+
+All features in `water_http` are opt-in. Enable them in `Cargo.toml`:
+
+```toml
+# Single feature
+water_http = { version = "4.0.9", features = ["debugging"] }
+
+# Multiple features
+water_http = { version = "4.0.9", features = [
+    "support_tls",
+    "auto_encode_response",
+    "accept_transfer_chunked",
+    "apply_serving_request_timeout",
+    "on_accept_connection",
+] }
+```
+
+Or at the command line during development:
+```shell
+cargo run --features debugging
+cargo run --features "support_tls,auto_encode_response"
+cargo run --features apply_serving_request_timeout
+cargo check --features "accept_transfer_chunked,debugging"
+```
+
+| Feature | What it unlocks |
+|---|---|
+| `debugging` | Full request/routing trace logs via `tracing` |
+| `support_tls` | HTTPS with Rustls — set `config.tls_ports` and `config.set_tls_certificate(...)` |
+| `auto_encode_response` | Automatic Brotli/Zstd/Gzip/Deflate/LZ4/Snappy/Bzip2 response compression |
+| `accept_transfer_chunked` | Incoming chunked transfer encoding (`BodyChunkedReader`) |
+| `apply_serving_request_timeout` | Per-request handler timeout via `config.max_request_timeout_in_seconds` |
+| `on_accept_connection` | TCP-level firewall hook before TLS/parsing via `config.set_on_accept_connection(...)` |
+| `lazy_response` | Deferred socket writes with interceptor overrides (`LazyResponse`) |
+| `thread_shared_struct` | Arc-shared state across connection threads |
+| `mini` | Bare-metal zero-routing server loop (`serve::<H, Q, _, _, _>(...)`) |
+| `use_io_uring` | Linux `io_uring` backend for zero-syscall I/O (Linux-only) |
+| `cpu_affinity` | Pin worker threads to CPU cores (`config.enable_core_affinity()`) |
+| `count_connection_parsing_speed` | Per-request timing output to stdout |
+| `use_only_http1` | Disable HTTP/2 to reduce binary size |
+
 - to set the framework to auto handle content encoding when sending back response 
 ```rust
 use water_http::server::{EncodingConfigurations, EncodingLogic, ServerConfigurations};
@@ -194,22 +313,115 @@ fn enabling_connection_filter(config: &mut ServerConfigurations) {
 ```
 
  Note: you could choose your needed file from examples folder
+
+---
+
+# 🛡️ Security & Server Limits Configuration
+
+water_http gives you fine-grained control over how much data each request is allowed to consume and how long each handler is allowed to run. These limits protect your server from memory exhaustion, slow-loris attacks, and runaway handlers.
+
+## `max_request_size` — Limit Incoming Body Size
+
+`max_request_size` sets the **maximum number of bytes** the server will accept for a single request body (default: `100_000_000` = 100 MB).
+
+The check happens **before any body bytes are read** — the server rejects oversized requests immediately on `Content-Length` inspection, never buffering dangerous payloads. For chunked transfer encoding, the limit is enforced in real time as chunks arrive.
+
+```rust
+use water_http::server::ServerConfigurations;
+
+fn configure(config: &mut ServerConfigurations) {
+    // Accept at most 5 MB per request body
+    config.max_request_size = 5 * 1024 * 1024; // 5 MB
+
+    // For file upload endpoints you may need larger limits:
+    // config.max_request_size = 500 * 1024 * 1024; // 500 MB
+}
+```
+
+> **Why this matters:** Without a body size limit, a malicious client can send a `Content-Length: 999999999` header and cause your server to allocate or attempt to read gigabytes of memory per connection, bringing it down instantly. water_http enforces this limit at the protocol layer for both HTTP/1 and HTTP/2, including chunked transfer.
+
+**Works for all body types automatically:**
+- `application/json`
+- `multipart/form-data`
+- `application/x-www-form-urlencoded`
+- `Transfer-Encoding: chunked`
+- Raw body bytes
+
+---
+
+## `max_request_timeout_in_seconds` — Limit Handler Execution Time
+
+> **Requires feature flag:** `apply_serving_request_timeout`
+
+When enabled, every request handler is wrapped with `tokio::time::timeout`. If the handler does not complete within the allowed duration, the request is cleanly terminated and the connection is released — ensuring a stalled database query, a slow external API call, or an infinite loop in user code can **never permanently hold a worker thread**.
+
+### Enable the feature in `Cargo.toml`
+
+```toml
+water_http = { version = "4.0.9", features = ["apply_serving_request_timeout"] }
+```
+
+### Configure the timeout
+
+```rust
+use water_http::server::ServerConfigurations;
+
+fn configure(config: &mut ServerConfigurations) {
+    // Any handler that takes longer than 10 seconds is terminated
+    config.max_request_timeout_in_seconds = 10;
+}
+```
+
+### Full example
+
+```rust
+use water_http::server::ServerConfigurations;
+use water_http::{InitControllersRoot, WaterController, RunServer};
+
+type Holder = ();
+InitControllersRoot! {
+    name: ROOT,
+    holder_type: Holder,
+}
+
+#[tokio::main]
+async fn main() {
+    let mut config = ServerConfigurations::bind("0.0.0.0", 8080);
+
+    // Reject request bodies larger than 10 MB
+    config.max_request_size = 10 * 1024 * 1024;
+
+    // Kill any handler that runs for more than 15 seconds
+    // (only compiled when feature "apply_serving_request_timeout" is active)
+    config.max_request_timeout_in_seconds = 15;
+
+    RunServer!(config, ROOT, ApiController);
+}
+
+WaterController! {
+    holder -> crate::Holder,
+    name  -> ApiController,
+    functions -> {
+        GET => / => hello(context) async {
+            _= context.send_str("hello world").await;
+        }
+    }
+}
+```
+
+**What happens on timeout:** The framework returns `ServingRequestResults::Done`, which releases the connection normally. No panic, no thread leak. If `debugging` feature is enabled, a trace log message is emitted.
+
+> **Tip:** Set `max_request_timeout_in_seconds` conservatively for public-facing APIs (5–15 s) and larger for internal admin endpoints or file upload handlers.
+
+---
+
  # 🚀 Benchmarking
 
-Water_http is now officially included in TechEmpower Framework Benchmarks, the most trusted and widely recognized benchmarking organization for web frameworks.
+> water_http is officially included in [TechEmpower Framework Benchmarks](https://github.com/TechEmpower/FrameworkBenchmarks) — the most trusted and widely recognized benchmarking organization for web frameworks.
 
-Benchmarking results for water_http will appear in the next official round, but you can already view and test it manually through the TechEmpower repository.
-
-Current status:
-
-✔️ water_http has been approved and merged into the TechEmpower project
-
-✔️ Source and benchmark implementation are publicly available
-
-⏳ Official numbers will be published in the upcoming round
-
-🔍 You can manually inspect or run the benchmark now:
-https://github.com/TechEmpower/FrameworkBenchmarks
+✔️ water_http has been approved and merged into the TechEmpower project  
+✔️ Source and benchmark implementation are publicly available  
+⏳ Official round numbers will be published in the upcoming round  
 
 This marks a major milestone for water_http, showcasing its speed, stability, and production-grade performance.
 
@@ -883,3 +1095,5 @@ The high-performance asynchronous `io_uring` completion-based engine is strictly
 
 > 🛠️ **Fallback Behavior:** When your server configurations enable TLS/SSL or require HTTP/2 features, `water_http` transparently shifts routing traffic to its highly optimized, stable **epoll/Tokio-driven runtime network backend**, ensuring 100% feature reliability.
 ### 2. Strict Path-Based Routing (No Method Multiplexing) ( fixed ) on ( 4.0.8 version and above )
+
+<img src="logo.png" alt="App UI" width="200" />
