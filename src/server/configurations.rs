@@ -4,9 +4,9 @@ use tracing::error;
 #[cfg(feature = "auto_encode_response")]
 use crate::server::encoding::{EncodingConfigurations};
 
-pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 4096*4;
+pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 4096*8;
 // pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
-pub (crate) const READING_BUF_LEN:usize = 4096*4;
+pub (crate) const READING_BUF_LEN:usize = 4096*8;
 pub (crate) const WRITING_BUF_LEN:usize = 4096*8;
 pub (crate) const WRITING_FILES_BUF_LEN:usize = 1024*20;
 
@@ -199,6 +199,8 @@ pub struct ServerConfigurations {
     pub backlog:u32,
     /// defining the max size for handling single request
     pub max_request_size:usize,
+    #[cfg(feature = "apply_serving_request_timeout")]
+    pub max_request_timeout_in_seconds:u64,
     // /// setting the max headers length will specify how many headers we would read from incoming request
     // /// and the reason why we use fixed length because we need to make the allocation in the Stack
     // /// so that would give us a very fast request header reading and also for safety
@@ -250,8 +252,10 @@ impl ServerConfigurations {
             #[cfg(all(feature = "support_tls",not(feature="use_io_uring")))]
             tls_ports:vec![],
             backlog:1028,
-            max_request_size:10000,
+            max_request_size:100_000_000,
             listeners_count:1,
+            #[cfg(feature = "apply_serving_request_timeout")]
+            max_request_timeout_in_seconds:20,
             worker_threads_count:worker_threads,
             max_buffer_size_for_cache:65536,
             default_read_buffer_size:READING_BUF_LEN,

@@ -384,7 +384,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             _ => {}
         };
 
-        return  Err(
+          Err(
             WaterErrors::Http(HttpStatusCode::BAD_REQUEST)
         )
 
@@ -402,8 +402,8 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
         match body {
             Chunked(IBodyChunks::FormData(mut data)) => {
-                data.on_field_detected(callback).await
-                    .map_err(|_|())?;
+                return data.on_field_detected(callback).await
+                    .map_err(|_|())
             }
             _=>{}
         }
@@ -794,6 +794,32 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
     #[inline(always)]
     pub(crate) async fn serve_ef(
+        &mut self,
+        matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    ) -> ServingRequestResults {
+
+        #[cfg(feature = "apply_serving_request_timeout")]
+        {
+            let timeout_secs = crate::server::get_server_config().max_request_timeout_in_seconds;
+            let duration = std::time::Duration::from_secs(timeout_secs);
+            match tokio::time::timeout(duration, self.serve_ef_inner(matcher)).await {
+                Ok(result) => return result,
+                Err(_) => {
+                    #[cfg(feature = "debugging")]
+                    {
+                        println!("serve_ef: request timed out after {}s", timeout_secs);
+                    }
+                    return ServingRequestResults::Done;
+                }
+            }
+        }
+
+        #[cfg(not(feature = "apply_serving_request_timeout"))]
+        self.serve_ef_inner(matcher).await
+    }
+
+    #[inline(always)]
+    async fn serve_ef_inner(
         &mut self,
         matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults {
@@ -1467,6 +1493,32 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
     #[inline(always)]
     pub(crate) async fn serve_ef(
+        &mut self,
+        matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    ) -> ServingRequestResults
+    {
+        #[cfg(feature = "apply_serving_request_timeout")]
+        {
+            let timeout_secs = crate::server::get_server_config().max_request_timeout_in_seconds;
+            let duration = std::time::Duration::from_secs(timeout_secs);
+            match tokio::time::timeout(duration, self.serve_ef_inner(matcher)).await {
+                Ok(result) => return result,
+                Err(_) => {
+                    #[cfg(feature = "debugging")]
+                    {
+                        println!("serve_ef: request timed out after {}s", timeout_secs);
+                    }
+                    return ServingRequestResults::Done;
+                }
+            }
+        }
+
+        #[cfg(not(feature = "apply_serving_request_timeout"))]
+        self.serve_ef_inner(matcher).await
+    }
+
+    #[inline(always)]
+    async fn serve_ef_inner(
         &mut self,
         matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults

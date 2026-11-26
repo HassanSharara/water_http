@@ -86,14 +86,14 @@ impl<'a> ResponseData<'a> {
 unsafe impl<'a>  Send for ResponseData<'a> {
 
 }
-// #[cfg(test)]
+// #[cfg(script_tests)]
 // mod test_buffer {
 //     // use bytes::BytesMut;
 //     use  water_buffer::WaterBuffer as BM; type BytesMut = BM<u8>;
 //     use crate::http::status_code::HttpStatusCode as StatusCode;
 //     use crate::http::HttpVersion;
 //
-//     #[test]
+//     #[script_tests]
 //     pub fn buffer_writing_speed(){
 //         let status = StatusCode::OK;
 //         let version = HttpVersion::Http1_1.to_str();

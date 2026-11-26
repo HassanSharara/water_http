@@ -22,6 +22,8 @@ Welcome to the official developer documentation for `water_http`, a hyper-perfor
     - [io_uring Platform Backend](#io_uring-platform-backend)
 10. [RESTful Design Guidelines & Router Rules](#10-restful-design-guidelines--router-rules)
 11. [Troubleshooting & System Setup](#11-troubleshooting--system-setup)
+12. [Code Examples Index](#12-code-examples-index)
+13. [Security & Server Limits](#13-security--server-limits)
 
 ---
 
@@ -59,21 +61,46 @@ tokio = { version = "1.53.1", features = ["full"] }
 
 ## 3. Feature Flags
 
-`water_http` exposes highly granular feature flags to optimize compilation size and run-time architectures:
+`water_http` exposes highly granular feature flags to optimize compilation size and run-time architectures. Each feature is opt-in — you only pay the cost of what you enable.
+
+### How to enable any feature
+
+**Single feature:**
+```toml
+water_http = { version = "4.0.9", features = ["debugging"] }
+```
+
+**Multiple features:**
+```toml
+water_http = { version = "4.0.9", features = ["support_tls", "auto_encode_response", "apply_serving_request_timeout"] }
+```
+
+**At the command line (for development/testing):**
+```shell
+cargo run --features debugging
+cargo run --features "support_tls,auto_encode_response"
+cargo check --features apply_serving_request_timeout
+```
+
+### Available Feature Flags
 
 | Feature Flag | Description | Dependencies |
 | :--- | :--- | :--- |
-| `debugging` | Enables detailed console tracing for routing and request parsing. | `tracing`, `tracing-subscriber` |
-| `support_tls` | Enables secure SSL/TLS listeners. | `rustls`, `rustls-pemfile`, `tokio-rustls` |
-| `use_only_http1` | Disables HTTP/2 support to reduce binary footprint and routing complexity. | None |
-| `use_io_uring` | Replaces standard Epoll/Reactor loop with Linux asynchronous I/O (`io_uring`). | `tokio-uring`, `water_buffer/uring` |
-| `cpu_affinity` | Pin worker threads to specific CPU cores for cache locality. | `core_affinity` |
-| `thread_shared_struct` | Allows injecting state/factory structs shared across connection threads. | None |
-| `lazy_response` | Defers writing payloads to the socket until handlers/interceptors conclude. | None |
-| `mini` | Bypasses macro-routers and controller structures for direct, raw socket handler loops. | None |
-| `auto_encode_response` | Compresses responses automatically (gzip, brotli, deflate, zstd, snappy, lz4, bzip2). | None |
-| `accept_transfer_chunked`| Enables incoming HTTP chunked transfer encoding processing. | None |
-| `on_accept_connection` | Synchronous TCP accept hook to inspect, pass, or block connections before TLS, task spawning, or parsing. Works on standard Tokio & Linux `io_uring`. | None |
+| `debugging` | Enables detailed `tracing`-powered console logs for routing, parsing, and I/O events. Add this during development to see exactly what the framework is doing on every request. | `tracing`, `tracing-subscriber` |
+| `support_tls` | Enables secure SSL/TLS listeners via Rustls. Required for HTTPS. | `rustls`, `rustls-pemfile`, `tokio-rustls` |
+| `use_only_http1` | Disables HTTP/2 support entirely, reducing binary footprint and routing complexity. Use in constrained environments. | None |
+| `use_io_uring` | Replaces the standard epoll/Tokio reactor with Linux `io_uring` completion queues for zero-syscall I/O. Linux-only. Incompatible with TLS and HTTP/2. | `tokio-uring`, `water_buffer/uring` |
+| `cpu_affinity` | Pins worker threads to specific CPU cores for maximum cache locality and minimum context-switching. | `core_affinity` |
+| `thread_shared_struct` | Allows injecting a shared factory/state struct across all connection threads. Required for arc-shared application state. | None |
+| `lazy_response` | Defers writing response payloads to the socket until all handlers and interceptors have concluded. Required for the interceptor cascade architecture. | None |
+| `mini` | Bypasses macro-routers and controller structures for a raw, direct socket handler loop. Zero routing overhead. | None |
+| `auto_encode_response` | Automatically compresses responses using the best encoding accepted by the client (`Accept-Encoding`). Supports Brotli, Zstd, Gzip, Deflate, LZ4, Snappy, Bzip2. | None |
+| `accept_transfer_chunked` | Enables incoming HTTP chunked transfer encoding processing. Required to receive streamed request bodies. | None |
+| `on_accept_connection` | Synchronous TCP accept hook to inspect, pass, or block raw connections before TLS, task spawning, or HTTP parsing. Works on standard Tokio & Linux `io_uring`. | None |
+| `apply_serving_request_timeout` | Wraps every `serve_ef` call with `tokio::time::timeout` using `config.max_request_timeout_in_seconds`. Protects worker threads from stalled handlers. Also activates the `max_request_timeout_in_seconds` field on `ServerConfigurations`. | None |
+| `count_connection_parsing_speed` | Prints per-request parse timing to stdout. Useful for local benchmarking and profiling. | `tracing`, `tracing-subscriber` |
+| `write_logs` | Enables persistent log file writing via `water_http_utils`. | `water_http_utils/write_logs` |
+| `enable_dynamic_body_cache` | Caches parsed body buffers for repeated access within the same request lifetime. | None |
 
 ---
 
@@ -874,3 +901,219 @@ The crate includes 19 functional examples in the [examples/](file:///Users/hassa
 | [sending_files.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/sending_files.rs) | Streaming files, download attachments, range settings, and dynamic block crypting callbacks. | None |
 | [uploading_files.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/uploading_files.rs) | Handling file upload streams, parsing boundary formats, and saving to disk. | None |
 | [on_accept_connection.rs](file:///Users/hassansharara/work/projects/rust/h_crates/water/water_http/examples/on_accept_connection.rs) | Live demo of the TCP accept hook — alternates PASS and BLOCK decisions on every incoming connection to demonstrate zero-overhead firewalling before HTTP parsing. | `on_accept_connection` |
+
+---
+
+## 13. Security & Server Limits
+
+`water_http` enforces security limits at the **protocol layer** — before expensive processing, body buffering, or handler dispatch. This section explains every available protection mechanism and how to configure it.
+
+---
+
+### 13.1 `max_request_size` — Body Size Limit
+
+| Property | Detail |
+|---|---|
+| Field | `ServerConfigurations::max_request_size: usize` |
+| Default | `100_000_000` (100 MB) |
+| Feature flag | None — always available |
+| Enforcement point | Before any body bytes are read |
+
+#### What it protects against
+
+A client can send a request with `Content-Length: 9999999999` and attempt to make the server allocate or buffer gigabytes of memory. Without a size limit the server would either OOM-crash or become unresponsive. `max_request_size` stops this at the protocol layer — requests that declare a body larger than this value are rejected immediately with no body bytes ever read.
+
+For **chunked transfer encoding** (no `Content-Length` header), the limit is enforced in real time as chunks arrive. The total bytes received across all chunks is tracked and compared against `max_request_size`; the connection is terminated the moment the threshold is crossed.
+
+#### How to configure
+
+```rust
+use water_http::server::ServerConfigurations;
+
+fn configure() -> ServerConfigurations {
+    let mut config = ServerConfigurations::bind("0.0.0.0", 8080);
+
+    // Allow at most 5 MB per request body
+    config.max_request_size = 5 * 1024 * 1024; // 5 MB
+
+    // For large file upload endpoints:
+    // config.max_request_size = 500 * 1024 * 1024; // 500 MB
+
+    config
+}
+```
+
+#### Which body types are protected
+
+| Body type | Protected? |
+|---|---|
+| `Content-Length` declared body (HTTP/1 & HTTP/2) | ✅ Checked before first byte |
+| `Transfer-Encoding: chunked` (requires `accept_transfer_chunked`) | ✅ Enforced in real time per chunk |
+| `multipart/form-data` | ✅ Via `Content-Length` or chunked enforcement |
+| `application/x-www-form-urlencoded` | ✅ Via `Content-Length` |
+| Raw body bytes | ✅ Via `Content-Length` |
+
+> [!IMPORTANT]
+> Set `max_request_size` conservatively for public APIs. If your server handles file uploads, create a dedicated upload controller with a higher per-route limit and keep the global limit tight.
+
+---
+
+### 13.2 `max_request_timeout_in_seconds` — Handler Execution Timeout
+
+| Property | Detail |
+|---|---|
+| Field | `ServerConfigurations::max_request_timeout_in_seconds: u64` |
+| Default | `20` (seconds) |
+| Feature flag | **`apply_serving_request_timeout`** — field only exists when feature is on |
+| Enforcement point | Wraps the entire handler + middleware chain |
+
+#### What it protects against
+
+Without a timeout, a handler that blocks on a slow database query, an external HTTP call, or an accidental infinite loop will permanently hold a worker thread for the duration of the stall. Under load, this causes thread exhaustion and brings the server down. `max_request_timeout_in_seconds` guarantees that every handler is bounded in time.
+
+#### Enable the feature
+
+```toml
+# Cargo.toml
+water_http = { version = "4.0.9", features = ["apply_serving_request_timeout"] }
+```
+
+#### Configure the timeout
+
+```rust
+use water_http::server::ServerConfigurations;
+
+fn configure() -> ServerConfigurations {
+    let mut config = ServerConfigurations::bind("0.0.0.0", 8080);
+
+    // Any handler that hasn't completed within 10 seconds is terminated
+    config.max_request_timeout_in_seconds = 10;
+
+    config
+}
+```
+
+#### Full working example
+
+```rust
+use water_http::server::ServerConfigurations;
+use water_http::{InitControllersRoot, WaterController};
+
+type Holder = ();
+InitControllersRoot! {
+    name: ROOT,
+    holder_type: Holder,
+}
+
+fn main() {
+    let mut config = ServerConfigurations::bind("0.0.0.0", 8080);
+
+    // Reject bodies larger than 10 MB
+    config.max_request_size = 10 * 1024 * 1024;
+
+    // Terminate handlers that run longer than 15 seconds
+    // (only compiled when "apply_serving_request_timeout" feature is active)
+    config.max_request_timeout_in_seconds = 15;
+
+    water_http::RunServer!(config, ROOT, ApiController);
+}
+
+WaterController! {
+    holder -> crate::Holder,
+    name  -> ApiController,
+    functions -> {
+        GET => / => hello(context) async {
+            _= context.send_str("Hello, world!").await;
+        }
+
+        // A slow handler that would exceed the timeout:
+        GET => slow => slow_handler(context) async {
+            // This would be terminated after max_request_timeout_in_seconds
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            _= context.send_str("This response is never sent").await;
+        }
+    }
+}
+```
+
+#### What happens on timeout
+
+When the timeout fires:
+1. The future is cancelled cleanly by Tokio — no panic, no thread leak.
+2. `serve_ef` returns `ServingRequestResults::Done` — the connection is released normally.
+3. If the `debugging` feature is also enabled, a trace message is printed: `"serve_ef: request timed out after Ns"`.
+4. The client receives a closed connection (no response body is sent).
+
+#### Recommended values
+
+| Use case | Suggested timeout |
+|---|---|
+| Public REST API | 5–10 seconds |
+| Authenticated internal API | 15–30 seconds |
+| File upload endpoint | 60–300 seconds |
+| Admin / batch processing | 300+ seconds |
+
+> [!TIP]
+> You can combine both limits for maximum protection:
+> ```rust
+> config.max_request_size = 10 * 1024 * 1024;         // 10 MB body limit
+> config.max_request_timeout_in_seconds = 15;          // 15s handler timeout
+> ```
+> Together they ensure no single request can consume unlimited memory **or** unlimited time.
+
+---
+
+### 13.3 `on_accept_connection` — Zero-Cost TCP Firewall
+
+| Property | Detail |
+|---|---|
+| Field | `ServerConfigurations::on_accept_connection: Option<OnAcceptCallback>` |
+| Default | `None` (disabled) |
+| Feature flag | **`on_accept_connection`** |
+| Enforcement point | Immediately at `accept()` syscall — before TLS, task spawn, or any parsing |
+
+The earliest possible interception point. When set, the callback runs synchronously on every incoming TCP connection before anything else happens. See [Section 4 — Connection-Level Acceptance Hook](#connection-level-acceptance-hook-on_accept_connection) for full details and examples.
+
+---
+
+### 13.4 Summary — Defense in Depth
+
+```
+Incoming TCP connection
+         │
+         ▼
+┌─────────────────────────────────┐
+│  on_accept_connection callback  │  ← Block by IP/port at the socket level
+│  (feature: on_accept_connection)│    Zero-cost: no task, no allocation, no TLS
+└─────────────────────────────────┘
+         │  PASS
+         ▼
+┌─────────────────────────────────┐
+│  TLS Handshake (if enabled)     │
+└─────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  HTTP Parsing                   │
+│  Content-Length vs               │  ← Reject oversized declared bodies here
+│  max_request_size               │    Before any body bytes are read
+└─────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Handler Dispatch (serve_ef)    │
+│  + tokio::time::timeout         │  ← Kill stalled handlers here
+│  (feature: apply_serving_       │    No thread leak, no panic
+│   request_timeout)              │
+└─────────────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Chunked body streaming         │
+│  (feature: accept_transfer_     │  ← Enforce max_request_size per chunk
+│   chunked)                      │    Terminate stream when limit hit
+└─────────────────────────────────┘
+         │
+         ▼
+      Response sent
+```

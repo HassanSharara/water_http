@@ -1,3 +1,23 @@
+## [4.0.9] - 2026-11-26
+
+### 🛡️ Security & Safety
+
+- **Body Buffer Overflow Protection:** Added strict enforcement of `max_request_size` against incoming `Content-Length` headers on both HTTP/1 and HTTP/2 paths. Requests declaring a body larger than the configured limit are now rejected immediately — before any body bytes are read — protecting the server from memory exhaustion attacks.
+
+- **Chunked Transfer Size Limiting:** Chunked transfer encoding now tracks total bytes received across all chunks and enforces `max_request_size` in real time. Both H1 stream processing (`h1_chunk_detecting_on_stream`) and H2 frame delivery paths are guarded. Any stream that exceeds the limit is terminated immediately with an error, preventing infinite or oversized chunked payloads from saturating server memory.
+
+- **Request Serving Timeout (`apply_serving_request_timeout`):** New opt-in feature flag that wraps every request handler call with a `tokio::time::timeout`. If a handler exceeds `config.max_request_timeout_in_seconds` (default: 20 seconds), the request is cleanly terminated and the connection is released — ensuring slow or stalled handlers can never permanently hold a worker thread.
+
+
+
+### 🚀 Added
+
+- **`apply_serving_request_timeout` Feature Flag:** New optional compile-time feature. When enabled, every call to `serve_ef` is automatically wrapped with `tokio::time::timeout` using `config.max_request_timeout_in_seconds`. The `max_request_timeout_in_seconds` config field is only compiled in when this feature is active, keeping the binary smaller when not needed. See the README for usage details.
+
+- **`XWWWFormUrlEncoded` Zero-Allocation Optimization:** Replaced internal `HashMap` with `Vec<(&[u8], &[u8])>` for form URL-encoded body parsing — eliminating heap allocations entirely on the hot request path.
+
+---
+
 ## [4.0.8] - 2026-10-31
 
 ### 🚀 Added

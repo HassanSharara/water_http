@@ -2,10 +2,11 @@ use std::borrow::Cow;
 use std::future::Future;
 use std::pin::Pin;
 use bytes::Buf;
-
+// use zstd::zstd_safe::WriteBuf;
 // use twoway::find_bytes;
 use crate::http::request::MultiPartFormDataField;
 use crate::server::connection::BodyReadingBuffer;
+use crate::server::EACH_REQUEST_BODY_READING_BUFFER;
 use crate::util::{found_boundary_in, PatternExistResult};
 
 use super::{H1StreamHolder, H2StreamHolder};
@@ -79,8 +80,6 @@ impl<'a> MultipartData<'a> {
         match &mut self.stream_holder {
             MultipartStreamHolder::H1(h1) => {
                 let left_bytes_len = h1.left_bytes.len();
-
-                // Strip initial boundary on request start if present
                 if h1.left_bytes.starts_with(boundary) {
                     h1.left_bytes = &h1.left_bytes[boundary.len()..];
                     if h1.left_bytes.starts_with(b"\r\n") {
@@ -233,13 +232,15 @@ impl<'a> MultipartData<'a> {
         };
 
         loop {
+            self.reading_buffer.reserve(EACH_REQUEST_BODY_READING_BUFFER / 2);
             let have_enough = self.reading_buffer.bytes_red_by_buffer + left_bytes_len >= self.content_length;
-
-            if !have_enough {
-                if self.reading_buffer.read_buf(h1.stream).await.is_err() {
-                    return Err(());
+                if !have_enough {
+                    match self.reading_buffer.read_buf(h1.stream).await {
+                        Ok(_) => {
+                        }
+                        Err(_) => { return Err(())}
+                    }
                 }
-            }
             // If we already believe we've read the full content length,
             // don't spin waiting for more bytes that will never arrive --
             // just fall through and let the normal field/boundary matching
@@ -287,7 +288,7 @@ impl<'a> MultipartData<'a> {
                 }
                 Some(r_field) => {
                     let chunk = self.reading_buffer.chunk();
-
+                    // println!("invoked from chunk{}",String::from_utf8_lossy(chunk));
                     match found_boundary_in(chunk, boundary) {
                         PatternExistResult::Some(index) => {
                             let data = &chunk[..index];
@@ -295,19 +296,23 @@ impl<'a> MultipartData<'a> {
                                 return Err(());
                             }
 
+
                             let mut consumed = index + boundary_length;
                             if chunk[consumed..].starts_with(b"\r\n") {
                                 consumed += 2;
                             } else if chunk[consumed..].starts_with(b"--") {
                                 self.reading_buffer.advance(consumed + 2);
+
                                 return Ok(());
                             }
-
                             self.reading_buffer.advance(consumed);
+
                             field = None;
+
                             continue;
                         }
                         PatternExistResult::MaybeExistOnLastBytesFromLen(index) => {
+
                             let data = &chunk[..index];
                             if Self::handle_callback(r_field, data, &mut callback, false).await.is_err() {
                                 return Err(());

@@ -1,6 +1,6 @@
 [package]
 name = "water_http"
-version = "4.0.8"
+version = "4.0.9"
 edition = "2021"
 authors = ["Hassan Sharara <hassansharara12@gmail.com>"]
 repository = "https://github.com/HassanSharara/water_http"
@@ -120,6 +120,7 @@ cpu_affinity = ["dep:core_affinity"]
 auto_encode_response = []
 enable_dynamic_body_cache = []
 on_accept_connection = []
+apply_serving_request_timeout = []
 
 [dev-dependencies]
 askama = "0.14.0"

@@ -3,6 +3,7 @@ use std::future::Future;
 use bytes::Buf;
 use h2::RecvStream;
 use http::{ Request};
+// use zstd::zstd_safe::WriteBuf;
 use crate::http::request::{FormDataAll, IBody, BytesPuller, IBodyChunks, IncomingRequest, MultipartData, ParsingBodyMechanism, ParsingBodyResults, XWWWFormUrlEncoded, MultipartStreamHolder, H2StreamHolder, H1StreamHolder, StreamBytesPuller, H1BytesPuller, H2BytesPuller};
 #[cfg(feature = "accept_transfer_chunked")]
 use crate::http::request::BodyChunkedReader;
@@ -162,8 +163,8 @@ impl <'a:'request,'request
 
     #[inline]
     pub (crate) async fn get_xxx_ff(&'a mut self,content_length:&usize)
-    ->ParsingBodyResults<'a>{
-
+    -> ParsingBodyResults<'a> {
+        
         let left_bytes_length = self.left_bytes.len();
         let  remaining = *content_length - left_bytes_length ;
         let mut rem = remaining;
@@ -175,11 +176,19 @@ impl <'a:'request,'request
             tracing::debug!("body reading buffer now is {:?}",String::from_utf8_lossy(self.body_reading_buffer.chunk()));
         }
         while rem > 0 {
+            if self.body_reading_buffer.capacity() < rem {
+                self.body_reading_buffer.reserve(rem);
+            }
             match self.body_reading_buffer.read_buf(self.stream).await {
                 Ok(s) => {
                     #[cfg(feature = "debugging")]
                     {
                         tracing::debug!("[xxx-form-data-field] Reader : we road {:?}",String::from_utf8_lossy(&self.body_reading_buffer[..s]));
+                    }
+                    if s == 0 && rem > 0 {
+                        return ParsingBodyResults::Err(
+                            WaterErrors::Http(HttpStatusCode::BAD_REQUEST)
+                        )
                     }
                     rem -= rem.min(s);
                 }
@@ -197,7 +206,7 @@ impl <'a:'request,'request
         let data = XWWWFormUrlEncoded::new(
            data
         );
-        return ParsingBodyResults::FullBody(
+         ParsingBodyResults::FullBody(
             IBody::XWWWFormUrlEncoded(data)
         )
     }
@@ -219,6 +228,11 @@ impl <'a:'request,'request
     async fn get_body_by_mechanism(&'a mut self,mechanism: ParsingBodyMechanism)->ParsingBodyResults<'a>{
         let content_length = self.request.content_length();
         if let Some( content_length) = content_length {
+            // if *content_length > get_server_config().max_request_size {
+            //     return ParsingBodyResults::Err(WaterErrors::Http(
+            //         HttpStatusCode::INSUFFICIENT_STORAGE
+            //     ))
+            // }
             let body_should_handled_as_chunks = self.left_bytes.len() < *content_length;
             #[cfg(feature = "debugging")]{
                 tracing::debug!("[Body_Should Handled as Chunks] : {}",body_should_handled_as_chunks );

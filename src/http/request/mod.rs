@@ -182,7 +182,7 @@ mod test {
         \r\n\
         mask\r\n\
         ------WebKitFormBoundary7MA4YWxkTrZu0gW--
-        GET /test?id=1 HTTP/1.1\r\n\
+        GET /script_tests?id=1 HTTP/1.1\r\n\
         Connection: Keep-Alive\r\n\
         Accept-Encoding: br,deflate\r\n\
         \r\n";
