@@ -4,9 +4,9 @@ use tracing::error;
 #[cfg(feature = "auto_encode_response")]
 use crate::server::encoding::{EncodingConfigurations};
 
-pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 4096*4;
+pub (crate) const EACH_REQUEST_BODY_READING_BUFFER:usize = 4096*8;
 // pub (crate) const EACH_REQUEST_BODY_WRITING_BUFFER:usize = 1024*4;
-pub (crate) const READING_BUF_LEN:usize = 4096*4;
+pub (crate) const READING_BUF_LEN:usize = 4096*8;
 pub (crate) const WRITING_BUF_LEN:usize = 4096*8;
 pub (crate) const WRITING_FILES_BUF_LEN:usize = 1024*20;
 

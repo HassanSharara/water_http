@@ -983,6 +983,9 @@ impl BodyReadingBuffer {
 
 
 
+    pub (crate) fn reserve(&mut self,len:usize){
+        self.buffer.reserve(len);
+    }
 
 
     #[inline(always)]
@@ -999,6 +1002,7 @@ impl BodyReadingBuffer {
     #[inline(always)]
     pub (crate) fn clear(&mut self){
         self.buffer.clear();
+        // println!("buffer info {} {} {}",self.extended_bytes,self.bytes_red_by_buffer,self.advanced_bytes);
         self.extended_bytes = 0;
         self.bytes_red_by_buffer = 0;
         self.advanced_bytes = 0;
@@ -1052,7 +1056,7 @@ impl BodyReadingBuffer {
             }
             self.bytes_red_by_buffer +=s;
         }
-        return res;
+         res
     }
 
 

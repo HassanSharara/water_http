@@ -384,7 +384,7 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
             _ => {}
         };
 
-        return  Err(
+          Err(
             WaterErrors::Http(HttpStatusCode::BAD_REQUEST)
         )
 
@@ -402,8 +402,8 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
         match body {
             Chunked(IBodyChunks::FormData(mut data)) => {
-                data.on_field_detected(callback).await
-                    .map_err(|_|())?;
+                return data.on_field_detected(callback).await
+                    .map_err(|_|())
             }
             _=>{}
         }
