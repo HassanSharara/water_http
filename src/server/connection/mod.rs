@@ -18,7 +18,7 @@ use tokio_rustls::server::TlsStream;
 use tracing::{debug};
 #[cfg(not(feature = "use_io_uring"))]
 use crate::http::request::{FormingRequestResult, IncomingRequest};
-use crate::server::{CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults};
+use crate::server::{get_server_config, CapsuleWaterController, HttpContext, HttpStream, Protocol, ServingRequestResults};
 #[cfg(not(feature = "use_io_uring"))]
 use crate::server::Http1Context;
 
@@ -357,8 +357,16 @@ impl  ConnectionStream {
                                 }
 
                                 let total_request_size = request.get_total_headers_length();
-                                let left_bytes = &buf_bytes[total_request_size..];
 
+                                if let Some(cl) = request.content_length() {
+                                    let config = get_server_config().max_request_size;
+                                    if *cl + config > total_request_size {
+                                        let response = b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                                        let _ = stream.write_all(response).await;
+                                        break 'main_loop;
+                                    }
+                                }
+                                let left_bytes = &buf_bytes[total_request_size..];
                                 #[cfg(feature = "debugging")]
                                 debug!("left bytes {:?}",String::from_utf8_lossy(left_bytes));
                                 #[cfg(feature = "thread_shared_struct")]
@@ -665,6 +673,15 @@ impl  ConnectionStream {
                               }
 
                               let total_request_size = request.get_total_headers_length();
+                              
+                              if let Some(cl) = request.content_length() {
+                                  let config = get_server_config().max_request_size;
+                                  if *cl + config > total_request_size {
+                                      let response = b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+                                      let _ = stream.write_all(response).await;
+                                      break 'main_loop;
+                                  }
+                              }
                               let left_bytes = &buf_bytes[total_request_size..];
 
                               #[cfg(feature = "debugging")]
@@ -985,6 +1002,11 @@ impl BodyReadingBuffer {
 
     pub (crate) fn reserve(&mut self,len:usize){
         self.buffer.reserve(len);
+    }
+
+    #[inline(always)]
+    pub (crate) fn capacity(&self) -> usize {
+        self.buffer.cap()
     }
 
 

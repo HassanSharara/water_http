@@ -1,3 +1,11 @@
+## [4.0.9] - 2026-11-26
+
+- fixing reserving body buffers when reading
+- fixing chunked body reading
+- adding security implementations for high requests
+- adding request serving timeout
+
+
 ## [4.0.8] - 2026-10-31
 
 ### 🚀 Added

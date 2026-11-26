@@ -120,6 +120,7 @@ cpu_affinity = ["dep:core_affinity"]
 auto_encode_response = []
 enable_dynamic_body_cache = []
 on_accept_connection = []
+apply_serving_request_timeout = []
 
 [dev-dependencies]
 askama = "0.14.0"

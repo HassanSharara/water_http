@@ -23,7 +23,8 @@ pub struct BodyChunkedReader<'a> {
     #[cfg(feature = "accept_transfer_chunked")]
     original_left_bytes_length:usize,
     #[cfg(feature = "accept_transfer_chunked")]
-    to_advance_bytes: &'a mut Option<usize>
+    to_advance_bytes: &'a mut Option<usize>,
+    total_bytes_received: usize,
     // remaining:usize,
 }
 
@@ -80,6 +81,7 @@ impl<'a> BodyChunkedReader<'a> {
              #[cfg(feature = "accept_transfer_chunked")]
              to_advance_bytes,
              stream_holder,
+             total_bytes_received: 0,
          }
      }
 
@@ -88,7 +90,9 @@ impl<'a> BodyChunkedReader<'a> {
      pub async fn on_chunk_detected(&mut self,
         mut callback:impl FnMut(&Chunk,&[u8])->FieldCallBackResult
      )->Result<(),()>{
+         let max_allowed = crate::server::get_server_config().max_request_size;
          let chunk_index = &mut self.chunk_indexes_count;
+         let total_bytes = &mut self.total_bytes_received;
          match &mut self.stream_holder {
              MultipartStreamHolder::H1(holder) => {
                  let mut chunk:Option<Chunk> = None;
@@ -114,6 +118,8 @@ impl<'a> BodyChunkedReader<'a> {
                                                  holder,
                                                  self.reading_buffer,
                                                  chunk_index,
+                                                 total_bytes,
+                                                 max_allowed,
                                                  &mut callback,
                                                  chunk
                                              ).await
@@ -135,6 +141,8 @@ impl<'a> BodyChunkedReader<'a> {
                                                          holder,
                                                          self.reading_buffer,
                                                          chunk_index,
+                                                         total_bytes,
+                                                         max_allowed,
                                                          &mut callback,
                                                          chunk
                                                      ).await;
@@ -171,6 +179,8 @@ impl<'a> BodyChunkedReader<'a> {
                                                      holder,
                                                      self.reading_buffer,
                                                      chunk_index,
+                                                     total_bytes,
+                                                     max_allowed,
                                                      &mut callback,
                                                      chunk
                                                  ).await
@@ -210,17 +220,27 @@ impl<'a> BodyChunkedReader<'a> {
                                  Ok(new_line) => {
                                      match new_line {
                                          None => {
+                                             *total_bytes += holder.left_bytes.len();
+                                             if *total_bytes > max_allowed {
+                                                 return Err(());
+                                             }
                                              try_call_back!(callback,chunk_op,holder.left_bytes);
                                              holder.left_bytes = &[];
                                              return  h1_chunk_detecting_on_stream(
                                                  holder,
                                                  self.reading_buffer,
                                                  chunk_index,
+                                                 total_bytes,
+                                                 max_allowed,
                                                  callback,
                                                  chunk
                                              ).await
                                          }
                                          Some(n) => {
+                                             *total_bytes += n;
+                                             if *total_bytes > max_allowed {
+                                                 return Err(());
+                                             }
                                              try_call_back!(callback,chunk_op,&holder.left_bytes[..n]);
                                              if   holder.left_bytes.len() <= 2 {
                                                  chunk = None;
@@ -229,6 +249,8 @@ impl<'a> BodyChunkedReader<'a> {
                                                      holder,
                                                      self.reading_buffer,
                                                      chunk_index,
+                                                     total_bytes,
+                                                     max_allowed,
                                                      callback,
                                                      chunk
                                                  ).await;
@@ -294,6 +316,10 @@ impl<'a> BodyChunkedReader<'a> {
                          Ok(raw_bytes) => {
                              let frame_data = raw_bytes.as_ref();
                              if !frame_data.is_empty() {
+                                 self.total_bytes_received += frame_data.len();
+                                 if self.total_bytes_received > max_allowed {
+                                     return Err(());
+                                 }
                                  let current_chunk = Chunk {
                                      index: chunk_count,
                                      chunk_size: frame_data.len(),
@@ -326,6 +352,8 @@ async fn h1_chunk_detecting_on_stream(
     holder:& mut H1StreamHolder<'_>,
     reader:&mut BodyReadingBuffer,
     chunk_index:&mut usize,
+    total_bytes:&mut usize,
+    max_allowed:usize,
     mut callback:impl FnMut(&Chunk,&[u8])->FieldCallBackResult,
     mut chunk: Option<Chunk>,
 )->Result<(),()>{
@@ -463,6 +491,10 @@ async fn h1_chunk_detecting_on_stream(
                     Ok(op) => {
                         match op {
                             None => {
+                                *total_bytes += data.len();
+                                if *total_bytes > max_allowed {
+                                    return Err(());
+                                }
                                 match callback(chunk_oop,data) {
                                     Ok(f)=>{
                                         if let Some(f) = f {
@@ -480,6 +512,10 @@ async fn h1_chunk_detecting_on_stream(
                                 }
                             }
                             Some(i) => {
+                                *total_bytes += i;
+                                if *total_bytes > max_allowed {
+                                    return Err(());
+                                }
                                 match callback(chunk_oop,&data[..i]) {
                                     Ok(future) => {
                                         if let Some(future

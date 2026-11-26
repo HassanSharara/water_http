@@ -798,6 +798,32 @@ HttpContext<'a,H,HEADERS_COUNT,PATH_QUERY_COUNT>  {
         matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults {
 
+        #[cfg(feature = "apply_serving_request_timeout")]
+        {
+            let timeout_secs = crate::server::get_server_config().max_request_timeout_in_seconds;
+            let duration = std::time::Duration::from_secs(timeout_secs);
+            match tokio::time::timeout(duration, self.serve_ef_inner(matcher)).await {
+                Ok(result) => return result,
+                Err(_) => {
+                    #[cfg(feature = "debugging")]
+                    {
+                        println!("serve_ef: request timed out after {}s", timeout_secs);
+                    }
+                    return ServingRequestResults::Done;
+                }
+            }
+        }
+
+        #[cfg(not(feature = "apply_serving_request_timeout"))]
+        self.serve_ef_inner(matcher).await
+    }
+
+    #[inline(always)]
+    async fn serve_ef_inner(
+        &mut self,
+        matcher:Matcher<H,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    ) -> ServingRequestResults {
+
         let path = self.path();
         let incoming_method = self.method();
         let r = matcher.match_path(incoming_method, path);
@@ -1467,6 +1493,32 @@ HttpContext<'a,H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>  {
 
     #[inline(always)]
     pub(crate) async fn serve_ef(
+        &mut self,
+        matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
+    ) -> ServingRequestResults
+    {
+        #[cfg(feature = "apply_serving_request_timeout")]
+        {
+            let timeout_secs = crate::server::get_server_config().max_request_timeout_in_seconds;
+            let duration = std::time::Duration::from_secs(timeout_secs);
+            match tokio::time::timeout(duration, self.serve_ef_inner(matcher)).await {
+                Ok(result) => return result,
+                Err(_) => {
+                    #[cfg(feature = "debugging")]
+                    {
+                        println!("serve_ef: request timed out after {}s", timeout_secs);
+                    }
+                    return ServingRequestResults::Done;
+                }
+            }
+        }
+
+        #[cfg(not(feature = "apply_serving_request_timeout"))]
+        self.serve_ef_inner(matcher).await
+    }
+
+    #[inline(always)]
+    async fn serve_ef_inner(
         &mut self,
         matcher:Matcher<H,SHARED,HEADERS_COUNT,PATH_QUERY_COUNT>,
     ) -> ServingRequestResults
