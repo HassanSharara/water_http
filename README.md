@@ -425,7 +425,7 @@ WaterController! {
         // in this case POST is the name of path and the method is GET
         "POST" => post(context) [crate::get_response]
 
-        // in this case method is POST and path is ['test/post1']
+        // in this case method is POST and path is ['script_tests/post1']
         POST test/post1 g(context) async {
             super::get_response(context).await
         }
@@ -580,7 +580,7 @@ WaterController! {
         // in this case POST is the name of path and the method is GET
         "POST" => post(context) [crate::get_response]
 
-        // in this case method is POST and path is ['test/post1']
+        // in this case method is POST and path is ['script_tests/post1']
         POST test/post1 g(context) async {
             super::get_response(context).await
         }

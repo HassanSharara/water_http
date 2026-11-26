@@ -30,7 +30,7 @@ WaterController! {
     middleware -> (context {
        let header = context.get_from_headers("X-srf-Token");
         if let Some(header_value) = header {
-            if header_value == "test" {
+            if header_value == "script_tests" {
                 return server::MiddlewareResult::Pass
             }
         }

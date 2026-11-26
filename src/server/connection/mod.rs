@@ -360,7 +360,7 @@ impl  ConnectionStream {
 
                                 if let Some(cl) = request.content_length() {
                                     let config = get_server_config().max_request_size;
-                                    if *cl + config > total_request_size {
+                                    if *cl + total_request_size  >  config {
                                         let response = b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                                         let _ = stream.write_all(response).await;
                                         break 'main_loop;
@@ -676,7 +676,7 @@ impl  ConnectionStream {
                               
                               if let Some(cl) = request.content_length() {
                                   let config = get_server_config().max_request_size;
-                                  if *cl + config > total_request_size {
+                                  if *cl +  total_request_size >  config {
                                       let response = b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
                                       let _ = stream.write_all(response).await;
                                       break 'main_loop;
